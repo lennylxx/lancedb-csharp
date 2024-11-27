@@ -1,0 +1,7 @@
+# C#
+**/bin/*
+**/obj/*
+
+## Rust
+target
+Cargo.lock
