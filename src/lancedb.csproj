@@ -6,6 +6,17 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <Version>0.0.1</Version>
+    <PackageId>LanceDB</PackageId>
+    <Authors>lennylxx</Authors>
+    <Description>C# SDK for LanceDB. Wraps the official Rust lancedb crate via P/Invoke, providing idiomatic C# async APIs for vector search, full-text search, hybrid search, indexing, and table management.</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/lennylxx/lancedb-csharp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/lennylxx/lancedb-csharp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>lancedb;vector-database;embeddings;vector-search;ai;machine-learning</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <!-- Build the Rust native library before the C# build -->
@@ -27,7 +38,14 @@
     <Content Include="..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>liblancedb_ffi.so</Link>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/linux-x64/native/</PackagePath>
     </Content>
+  </ItemGroup>
+
+  <!-- NuGet package content -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
