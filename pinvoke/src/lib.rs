@@ -18,7 +18,8 @@ pub use table::{
     table_checkout, table_checkout_latest, table_close, table_count_rows, table_create_index,
     table_create_query, table_delete, table_drop_columns, table_get_name, table_is_open,
     table_list_indices, table_list_versions, table_optimize, table_restore, table_schema,
-    table_update, table_uri, table_version, FfiBytes,
+    table_tags_create, table_tags_delete, table_tags_list, table_tags_update, table_update,
+    table_uri, table_version, FfiBytes,
 };
 
 lazy_static! {

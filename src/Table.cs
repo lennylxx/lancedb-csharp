@@ -106,6 +106,22 @@ namespace lancedb
         private static extern void table_optimize(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_tags_list(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_tags_create(
+            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_tags_delete(
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_tags_update(
+            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
+
         private TableHandle? _handle;
 
         internal Table(IntPtr tablePtr)
@@ -677,6 +693,88 @@ namespace lancedb
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<OptimizeStats>(json) ?? new OptimizeStats();
+        }
+
+        /// <summary>
+        /// List all tags on this table.
+        /// </summary>
+        /// <remarks>
+        /// Tags are similar to Git tags — they provide named references to specific
+        /// versions of a table. Tagged versions are exempt from cleanup operations.
+        /// To remove a version that has been tagged, you must first delete the tag.
+        /// </remarks>
+        /// <returns>A dictionary mapping tag names to <see cref="TagInfo"/>.</returns>
+        public async Task<Dictionary<string, TagInfo>> ListTags()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_tags_list(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<Dictionary<string, TagInfo>>(json)
+                ?? new Dictionary<string, TagInfo>();
+        }
+
+        /// <summary>
+        /// Create a new tag for the given version of the table.
+        /// </summary>
+        /// <param name="tag">The name of the tag to create.</param>
+        /// <param name="version">The version number to tag.</param>
+        public async Task CreateTag(string tag, ulong version)
+        {
+            byte[] utf8Tag = NativeCall.ToUtf8(tag);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Tag)
+                    {
+                        table_tags_create(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Delete a tag from the table.
+        /// </summary>
+        /// <param name="tag">The name of the tag to delete.</param>
+        public async Task DeleteTag(string tag)
+        {
+            byte[] utf8Tag = NativeCall.ToUtf8(tag);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Tag)
+                    {
+                        table_tags_delete(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Update an existing tag to point to a new version of the table.
+        /// </summary>
+        /// <param name="tag">The name of the tag to update.</param>
+        /// <param name="version">The new version number for the tag.</param>
+        public async Task UpdateTag(string tag, ulong version)
+        {
+            byte[] utf8Tag = NativeCall.ToUtf8(tag);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Tag)
+                    {
+                        table_tags_update(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
         }
     }
 }

@@ -248,3 +248,45 @@ pub fn optimize_sync(table_ptr: *const Table) {
         table.optimize(OptimizeAction::All).await.unwrap()
     });
 }
+
+/// Creates a tag on the table for the given version.
+pub fn create_tag_sync(table_ptr: *const Table, tag: &str, version: u64) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.tags().await.unwrap().create(tag, version).await.unwrap()
+    });
+}
+
+/// Lists tags on the table.
+pub fn list_tags_sync(
+    table_ptr: *const Table,
+) -> std::collections::HashMap<String, lancedb::table::TagContents> {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.tags().await.unwrap().list().await.unwrap()
+    })
+}
+
+/// Deletes a tag from the table.
+pub fn delete_tag_sync(table_ptr: *const Table, tag: &str) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.tags().await.unwrap().delete(tag).await.unwrap()
+    });
+}
+
+/// Updates a tag to point to a new version.
+pub fn update_tag_sync(table_ptr: *const Table, tag: &str, version: u64) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.tags().await.unwrap().update(tag, version).await.unwrap()
+    });
+}

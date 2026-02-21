@@ -635,6 +635,99 @@ pub extern "C" fn table_optimize(
     });
 }
 
+/// List all tags on the table. Returns a JSON object like {"tag_name": {"version": 1, "manifest_size": 100}}.
+#[no_mangle]
+pub extern "C" fn table_tags_list(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.tags().await {
+            Ok(tags) => match tags.list().await {
+                Ok(tag_map) => {
+                    let json_map: serde_json::Map<String, serde_json::Value> = tag_map
+                        .into_iter()
+                        .map(|(name, contents)| {
+                            (name, serde_json::json!({
+                                "version": contents.version,
+                                "manifest_size": contents.manifest_size,
+                            }))
+                        })
+                        .collect();
+                    let json = serde_json::to_string(&json_map).unwrap_or_default();
+                    let c_str = CString::new(json).unwrap_or_default();
+                    completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                }
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Create a new tag for the given version.
+#[no_mangle]
+pub extern "C" fn table_tags_create(
+    table_ptr: *const Table,
+    tag: *const c_char,
+    version: u64,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let tag_name = crate::ffi::to_string(tag);
+    crate::RUNTIME.spawn(async move {
+        match table.tags().await {
+            Ok(mut tags) => match tags.create(&tag_name, version).await {
+                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Delete a tag from the table.
+#[no_mangle]
+pub extern "C" fn table_tags_delete(
+    table_ptr: *const Table,
+    tag: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let tag_name = crate::ffi::to_string(tag);
+    crate::RUNTIME.spawn(async move {
+        match table.tags().await {
+            Ok(mut tags) => match tags.delete(&tag_name).await {
+                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Update an existing tag to point to a new version.
+#[no_mangle]
+pub extern "C" fn table_tags_update(
+    table_ptr: *const Table,
+    tag: *const c_char,
+    version: u64,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let tag_name = crate::ffi::to_string(tag);
+    crate::RUNTIME.spawn(async move {
+        match table.tags().await {
+            Ok(mut tags) => match tags.update(&tag_name, version).await {
+                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
 /// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
 #[repr(C)]
 pub struct FfiBytes {

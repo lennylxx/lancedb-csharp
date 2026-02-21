@@ -329,3 +329,65 @@ fn test_optimize_after_modifications() {
     table_close(table_ptr);
     database_close(conn_ptr);
 }
+
+#[test]
+fn test_tags_create_and_list() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "tags_test", ipc_bytes);
+
+    let version = common::version_sync(table_ptr);
+    common::create_tag_sync(table_ptr, "v1", version);
+
+    let tags = common::list_tags_sync(table_ptr);
+    assert!(tags.contains_key("v1"));
+    assert_eq!(tags["v1"].version, version);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_tags_delete() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "tags_del", ipc_bytes);
+
+    let version = common::version_sync(table_ptr);
+    common::create_tag_sync(table_ptr, "temp_tag", version);
+    assert!(common::list_tags_sync(table_ptr).contains_key("temp_tag"));
+
+    common::delete_tag_sync(table_ptr, "temp_tag");
+    assert!(!common::list_tags_sync(table_ptr).contains_key("temp_tag"));
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}

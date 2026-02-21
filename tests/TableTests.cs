@@ -519,4 +519,105 @@ public class TableTests
 
         return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
     }
+
+    /// <summary>
+    /// CreateTag and ListTags should create a tag and return it.
+    /// </summary>
+    [Fact]
+    public async Task CreateTag_AndListTags_ReturnsTag()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("tag_test", CreateTestBatch(3));
+
+            var version = await table.Version();
+            await table.CreateTag("v1", version);
+
+            var tags = await table.ListTags();
+
+            Assert.True(tags.ContainsKey("v1"));
+            Assert.Equal(version, tags["v1"].Version);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// DeleteTag should remove a tag from the table.
+    /// </summary>
+    [Fact]
+    public async Task DeleteTag_RemovesTag()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("tag_del", CreateTestBatch(3));
+
+            var version = await table.Version();
+            await table.CreateTag("temp", version);
+            Assert.True((await table.ListTags()).ContainsKey("temp"));
+
+            await table.DeleteTag("temp");
+            Assert.False((await table.ListTags()).ContainsKey("temp"));
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// UpdateTag should change the version a tag points to.
+    /// </summary>
+    [Fact]
+    public async Task UpdateTag_ChangesVersion()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("tag_upd", CreateTestBatch(3));
+
+            var v1 = await table.Version();
+            await table.CreateTag("release", v1);
+
+            await table.Add(CreateTestBatch(2, startId: 10));
+            var v2 = await table.Version();
+
+            await table.UpdateTag("release", v2);
+
+            var tags = await table.ListTags();
+            Assert.Equal(v2, tags["release"].Version);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }
