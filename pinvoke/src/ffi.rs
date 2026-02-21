@@ -1,7 +1,9 @@
-use arrow_schema::{DataType, Schema};
+use arrow_ipc::reader::FileReader;
+use arrow_schema::{DataType, Schema, SchemaRef};
 use libc::c_char;
 use std::collections::HashMap;
 use std::ffi::CStr;
+use std::io::Cursor;
 use std::sync::Arc;
 
 /// Converts a C string pointer to an owned Rust String.
@@ -37,4 +39,35 @@ pub fn parse_optional_json_map(json_ptr: *const c_char) -> Option<HashMap<String
     }
     let json_str = to_string(json_ptr);
     serde_json::from_str(&json_str).ok()
+}
+
+/// Parses an optional JSON-encoded string array from a nullable C string.
+/// Returns None if the pointer is null.
+pub fn parse_optional_json_list(json_ptr: *const c_char) -> Option<Vec<String>> {
+    if json_ptr.is_null() {
+        return None;
+    }
+    let json_str = to_string(json_ptr);
+    serde_json::from_str(&json_str).ok()
+}
+
+/// Parses an optional C string pointer into an Option<String>.
+/// Returns None if the pointer is null.
+pub fn parse_optional_string(ptr: *const c_char) -> Option<String> {
+    if ptr.is_null() {
+        return None;
+    }
+    Some(to_string(ptr))
+}
+
+/// Deserializes Arrow IPC file bytes into a Schema.
+pub fn ipc_to_schema(ipc_data: *const u8, ipc_len: usize) -> Result<SchemaRef, String> {
+    if ipc_data.is_null() || ipc_len == 0 {
+        return Err("Schema IPC data is null or empty".to_string());
+    }
+    let bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) };
+    let cursor = Cursor::new(bytes);
+    let reader =
+        FileReader::try_new(cursor, None).map_err(|e| format!("Invalid IPC schema: {}", e))?;
+    Ok(reader.schema())
 }

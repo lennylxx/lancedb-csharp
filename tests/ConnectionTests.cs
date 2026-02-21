@@ -349,4 +349,179 @@ public class ConnectionTests
 
         return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
     }
+
+    /// <summary>
+    /// ExistOk should silently return the existing table instead of throwing.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_ExistOk_ReturnsExistingTable()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch = CreateTestBatch(5);
+            var table1 = await connection.CreateTable("my_table", batch);
+
+            var table2 = await connection.CreateTable("my_table", new CreateTableOptions
+            {
+                Data = new[] { batch },
+                ExistOk = true
+            });
+
+            Assert.Equal("my_table", table2.Name);
+            table1.Dispose();
+            table2.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// ExistOk on empty table creation should not throw for duplicate names.
+    /// </summary>
+    [Fact]
+    public async Task CreateEmptyTable_ExistOk_ReturnsExistingTable()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table1 = await connection.CreateEmptyTable("my_table");
+
+            var table2 = await connection.CreateEmptyTable("my_table", new CreateTableOptions
+            {
+                ExistOk = true
+            });
+
+            Assert.Equal("my_table", table2.Name);
+            table1.Dispose();
+            table2.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Creating a table with Schema (no data) should create an empty table
+    /// with the specified schema.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_WithSchema_CreatesEmptyTable()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var schema = new Apache.Arrow.Schema.Builder()
+                .Field(new Apache.Arrow.Field("name", Apache.Arrow.Types.StringType.Default, nullable: true))
+                .Field(new Apache.Arrow.Field("age", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+                .Build();
+
+            var table = await connection.CreateTable("schema_table", new CreateTableOptions
+            {
+                Schema = schema
+            });
+
+            Assert.Equal("schema_table", table.Name);
+            var count = await table.CountRows();
+            Assert.Equal(0, count);
+
+            var retrievedSchema = await table.Schema();
+            Assert.Equal(2, retrievedSchema.FieldsList.Count);
+            Assert.Equal("name", retrievedSchema.FieldsList[0].Name);
+            Assert.Equal("age", retrievedSchema.FieldsList[1].Name);
+
+            table.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateTable with neither Data nor Schema should throw ArgumentException.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_NoDataNoSchema_ThrowsArgumentException()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            await Assert.ThrowsAsync<ArgumentException>(
+                () => connection.CreateTable("bad_table", new CreateTableOptions()));
+
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateEmptyTable with a custom schema should use the provided schema.
+    /// </summary>
+    [Fact]
+    public async Task CreateEmptyTable_WithCustomSchema_UsesProvidedSchema()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var schema = new Apache.Arrow.Schema.Builder()
+                .Field(new Apache.Arrow.Field("x", Apache.Arrow.Types.FloatType.Default, nullable: false))
+                .Field(new Apache.Arrow.Field("y", Apache.Arrow.Types.FloatType.Default, nullable: false))
+                .Build();
+
+            var table = await connection.CreateEmptyTable("custom_schema", new CreateTableOptions
+            {
+                Schema = schema
+            });
+
+            var retrievedSchema = await table.Schema();
+            Assert.Equal(2, retrievedSchema.FieldsList.Count);
+            Assert.Equal("x", retrievedSchema.FieldsList[0].Name);
+            Assert.Equal("y", retrievedSchema.FieldsList[1].Name);
+
+            table.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }

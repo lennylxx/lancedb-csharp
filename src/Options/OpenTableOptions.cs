@@ -29,5 +29,22 @@ namespace lancedb
         /// at the expense of more RAM.
         /// </summary>
         public uint? IndexCacheSize { get; set; }
+
+        /// <summary>
+        /// The explicit location (URI) of the table. If provided, the table will
+        /// be opened from this location instead of deriving it from the database
+        /// URI and table name. Useful when integrating with namespace systems
+        /// that manage table locations independently.
+        /// </summary>
+        public string? Location { get; set; }
+
+        /// <summary>
+        /// The namespace for the table, specified as a hierarchical path.
+        ///
+        /// Namespaces organize tables into logical groups (like folders).
+        /// For example, <c>["team", "project"]</c> places the table under
+        /// the "team/project" namespace.
+        /// </summary>
+        public IReadOnlyList<string>? Namespace { get; set; }
     }
 }

@@ -86,10 +86,14 @@ pub extern "C" fn database_open_table(
     table_name: *const c_char,
     storage_options_json: *const c_char,
     index_cache_size: u32,
+    location: *const c_char,
+    namespace_json: *const c_char,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
+    let location_str = ffi::parse_optional_string(location);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     RUNTIME.spawn(async move {
         let mut builder = connection.open_table(table_name);
@@ -98,6 +102,12 @@ pub extern "C" fn database_open_table(
         }
         if index_cache_size > 0 {
             builder = builder.index_cache_size(index_cache_size);
+        }
+        if let Some(loc) = location_str {
+            builder = builder.location(loc);
+        }
+        if let Some(ns) = namespace_list {
+            builder = builder.namespace(ns);
         }
         match builder.execute().await {
             Ok(table) => {
@@ -113,17 +123,65 @@ pub extern "C" fn database_open_table(
 pub extern "C" fn database_create_empty_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
+    schema_ipc_data: *const u8,
+    schema_ipc_len: usize,
+    mode: *const c_char,
+    storage_options_json: *const c_char,
+    location: *const c_char,
+    namespace_json: *const c_char,
+    exist_ok: bool,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
-    let schema = ffi::minimal_schema();
     let connection = ffi_clone_arc!(connection_ptr, Connection);
 
-    ffi_async!(completion, async {
-        connection
+    let schema = if schema_ipc_data.is_null() || schema_ipc_len == 0 {
+        ffi::minimal_schema()
+    } else {
+        match ffi::ipc_to_schema(schema_ipc_data, schema_ipc_len) {
+            Ok(s) => s,
+            Err(e) => {
+                callback_error(completion, e);
+                return;
+            }
+        }
+    };
+
+    let storage_opts = ffi::parse_optional_json_map(storage_options_json);
+    let location_str = ffi::parse_optional_string(location);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
+
+    let create_mode = if exist_ok {
+        CreateTableMode::exist_ok(|req| req)
+    } else if !mode.is_null() {
+        match ffi::to_string(mode).as_str() {
+            "overwrite" => CreateTableMode::Overwrite,
+            _ => CreateTableMode::Create,
+        }
+    } else {
+        CreateTableMode::Create
+    };
+
+    RUNTIME.spawn(async move {
+        let mut builder = connection
             .create_empty_table(table_name, schema)
-            .execute()
-            .await
+            .mode(create_mode);
+        if let Some(opts) = storage_opts {
+            builder = builder.storage_options(opts);
+        }
+        if let Some(loc) = location_str {
+            builder = builder.location(loc);
+        }
+        if let Some(ns) = namespace_list {
+            builder = builder.namespace(ns);
+        }
+        match builder.execute().await {
+            Ok(table) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
     });
 }
 
@@ -135,15 +193,22 @@ pub extern "C" fn database_create_table(
     ipc_len: usize,
     mode: *const c_char,
     storage_options_json: *const c_char,
+    location: *const c_char,
+    namespace_json: *const c_char,
+    exist_ok: bool,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
+    let location_str = ffi::parse_optional_string(location);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
 
     let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
 
-    let create_mode = if mode.is_null() {
+    let create_mode = if exist_ok {
+        CreateTableMode::exist_ok(|req| req)
+    } else if mode.is_null() {
         CreateTableMode::Create
     } else {
         match ffi::to_string(mode).as_str() {
@@ -168,6 +233,12 @@ pub extern "C" fn database_create_table(
         if let Some(opts) = storage_opts {
             builder = builder.storage_options(opts);
         }
+        if let Some(loc) = location_str {
+            builder = builder.location(loc);
+        }
+        if let Some(ns) = namespace_list {
+            builder = builder.namespace(ns);
+        }
 
         match builder.execute().await {
             Ok(table) => {
@@ -189,14 +260,12 @@ pub extern "C" fn database_table_names(
     connection_ptr: *const Connection,
     start_after: *const c_char,
     limit: u32,
+    namespace_json: *const c_char,
     completion: FfiCallback,
 ) {
     let connection = ffi_clone_arc!(connection_ptr, Connection);
-    let start_after_str = if start_after.is_null() {
-        None
-    } else {
-        Some(ffi::to_string(start_after))
-    };
+    let start_after_str = ffi::parse_optional_string(start_after);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
     RUNTIME.spawn(async move {
         let mut builder = connection.table_names();
         if let Some(sa) = start_after_str {
@@ -204,6 +273,9 @@ pub extern "C" fn database_table_names(
         }
         if limit > 0 {
             builder = builder.limit(limit);
+        }
+        if let Some(ns) = namespace_list {
+            builder = builder.namespace(ns);
         }
         match builder.execute().await {
             Ok(names) => {

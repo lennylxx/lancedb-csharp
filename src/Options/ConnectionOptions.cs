@@ -46,6 +46,14 @@ namespace lancedb
         public TimeSpan? ReadConsistencyInterval { get; set; }
 
         /// <summary>
+        /// Configuration for the LanceDB Cloud HTTP client, including retry
+        /// policy, timeouts, and TLS settings.
+        ///
+        /// Requires the remote feature (not yet supported in this SDK).
+        /// </summary>
+        public ClientConfig? ClientConfig { get; set; }
+
+        /// <summary>
         /// Additional options for the storage backend.
         ///
         /// Options such as S3 credentials, request timeouts, or cloud storage
@@ -53,5 +61,108 @@ namespace lancedb
         /// https://lancedb.github.io/lancedb/guides/storage/
         /// </summary>
         public Dictionary<string, string>? StorageOptions { get; set; }
+
+        /// <summary>
+        /// (For LanceDB OSS only) A session to use for this connection.
+        ///
+        /// Sessions allow you to configure cache sizes for index and metadata
+        /// caches, which can significantly impact memory use and performance.
+        /// They can also be re-used across multiple connections to share the
+        /// same cache state.
+        ///
+        /// Not yet wired through FFI in this SDK.
+        /// </summary>
+        public Session? Session { get; set; }
+    }
+
+    /// <summary>
+    /// Configuration for the LanceDB Cloud HTTP client.
+    ///
+    /// Not yet supported in this SDK.
+    /// </summary>
+    public class ClientConfig
+    {
+        /// <summary>
+        /// User agent string for HTTP requests.
+        /// </summary>
+        public string? UserAgent { get; set; }
+
+        /// <summary>
+        /// Retry configuration for HTTP requests.
+        /// </summary>
+        public RetryConfig? RetryConfig { get; set; }
+
+        /// <summary>
+        /// Timeout configuration for HTTP requests.
+        /// </summary>
+        public TimeoutConfig? TimeoutConfig { get; set; }
+
+        /// <summary>
+        /// Extra HTTP headers to include in every request.
+        /// </summary>
+        public Dictionary<string, string>? ExtraHeaders { get; set; }
+    }
+
+    /// <summary>
+    /// Retry configuration for HTTP requests.
+    /// </summary>
+    public class RetryConfig
+    {
+        /// <summary>Maximum number of retries.</summary>
+        public int? Retries { get; set; }
+
+        /// <summary>Maximum number of connection retries.</summary>
+        public int? ConnectRetries { get; set; }
+
+        /// <summary>Maximum number of read retries.</summary>
+        public int? ReadRetries { get; set; }
+
+        /// <summary>Backoff factor between retries.</summary>
+        public float? BackoffFactor { get; set; }
+
+        /// <summary>Backoff jitter between retries.</summary>
+        public float? BackoffJitter { get; set; }
+
+        /// <summary>HTTP status codes to retry on.</summary>
+        public IReadOnlyList<int>? Statuses { get; set; }
+    }
+
+    /// <summary>
+    /// Timeout configuration for HTTP requests.
+    /// </summary>
+    public class TimeoutConfig
+    {
+        /// <summary>Overall request timeout.</summary>
+        public TimeSpan? Timeout { get; set; }
+
+        /// <summary>Connection timeout.</summary>
+        public TimeSpan? ConnectTimeout { get; set; }
+
+        /// <summary>Read timeout.</summary>
+        public TimeSpan? ReadTimeout { get; set; }
+
+        /// <summary>Pool idle timeout.</summary>
+        public TimeSpan? PoolIdleTimeout { get; set; }
+    }
+
+    /// <summary>
+    /// Session for managing index and metadata caches.
+    ///
+    /// Sessions can be re-used across multiple connections to share cache state.
+    /// Not yet wired through FFI in this SDK.
+    /// </summary>
+    public class Session
+    {
+        /// <summary>
+        /// Maximum size of the index cache in bytes.
+        /// If <c>null</c>, the default cache size is used.
+        /// </summary>
+        public long? IndexCacheSizeBytes { get; set; }
+
+        /// <summary>
+        /// Maximum size of the metadata cache in bytes.
+        /// If <c>null</c>, the default cache size is used.
+        /// </summary>
+        public long? MetadataCacheSizeBytes { get; set; }
     }
 }

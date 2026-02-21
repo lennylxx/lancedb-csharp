@@ -27,16 +27,16 @@ namespace lancedb
         private static extern void database_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, NativeCall.FfiCallback completion);
+        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+        private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, IntPtr schema_ipc_data, nuint schema_ipc_len, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, IntPtr storage_options_json, NativeCall.FfiCallback completion);
+        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, NativeCall.FfiCallback completion);
+        private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
@@ -122,6 +122,12 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
                 : null;
             uint indexCacheSize = options?.IndexCacheSize ?? 0;
+            byte[]? locationBytes = options?.Location != null
+                ? NativeCall.ToUtf8(options.Location)
+                : null;
+            byte[]? namespaceJson = options?.Namespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
+                : null;
 
             IntPtr tablePtr = await NativeCall.Async(callback =>
             {
@@ -129,12 +135,16 @@ namespace lancedb
                 {
                     fixed (byte* p = nameBytes)
                     fixed (byte* pStorage = storageJson)
+                    fixed (byte* pLocation = locationBytes)
+                    fixed (byte* pNamespace = namespaceJson)
                     {
                         database_open_table(
                             _handle!.DangerousGetHandle(),
                             new IntPtr(p),
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
                             indexCacheSize,
+                            locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                             callback);
                     }
                 }
@@ -146,22 +156,55 @@ namespace lancedb
         /// Create an empty table with the given name and a minimal schema.
         /// </summary>
         /// <param name="name">The name of the table.</param>
+        /// <param name="options">Options to control the create behavior.</param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">Thrown if a table with the same name already exists.</exception>
         /// <remarks>
         /// The vector index is not created by default.
         /// To create the index, call the <c>CreateIndex</c> method on the table.
         /// </remarks>
-        public async Task<Table> CreateEmptyTable(string name)
+        public async Task<Table> CreateEmptyTable(string name, CreateTableOptions? options = null)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
+            byte[]? schemaIpcBytes = options?.Schema != null
+                ? SerializeSchemaToIpc(options.Schema)
+                : null;
+            byte[]? modeBytes = options != null
+                ? NativeCall.ToUtf8(options.Mode)
+                : null;
+            byte[]? storageJson = options?.StorageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                : null;
+            byte[]? locationBytes = options?.Location != null
+                ? NativeCall.ToUtf8(options.Location)
+                : null;
+            byte[]? namespaceJson = options?.Namespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
+                : null;
+            bool existOk = options?.ExistOk ?? false;
+
             IntPtr tablePtr = await NativeCall.Async(callback =>
             {
                 unsafe
                 {
-                    fixed (byte* p = nameBytes)
+                    fixed (byte* pName = nameBytes)
+                    fixed (byte* pSchema = schemaIpcBytes)
+                    fixed (byte* pMode = modeBytes)
+                    fixed (byte* pStorage = storageJson)
+                    fixed (byte* pLocation = locationBytes)
+                    fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_create_empty_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                        database_create_empty_table(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pName),
+                            schemaIpcBytes != null ? new IntPtr(pSchema) : IntPtr.Zero,
+                            (nuint)(schemaIpcBytes?.Length ?? 0),
+                            modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
+                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                            existOk,
+                            callback);
                     }
                 }
             });
@@ -184,7 +227,11 @@ namespace lancedb
         {
             if (options.Data == null || options.Data.Count == 0)
             {
-                throw new ArgumentException("At least one RecordBatch is required in Data.", nameof(options));
+                if (options.Schema != null)
+                {
+                    return await CreateEmptyTable(name, options);
+                }
+                throw new ArgumentException("Either Data or Schema must be provided.", nameof(options));
             }
 
             byte[] nameBytes = NativeCall.ToUtf8(name);
@@ -192,6 +239,12 @@ namespace lancedb
             byte[] modeBytes = NativeCall.ToUtf8(options.Mode);
             byte[]? storageJson = options.StorageOptions != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                : null;
+            byte[]? locationBytes = options.Location != null
+                ? NativeCall.ToUtf8(options.Location)
+                : null;
+            byte[]? namespaceJson = options.Namespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
                 : null;
 
             IntPtr tablePtr = await NativeCall.Async(callback =>
@@ -202,12 +255,17 @@ namespace lancedb
                     fixed (byte* pData = ipcBytes)
                     fixed (byte* pMode = modeBytes)
                     fixed (byte* pStorage = storageJson)
+                    fixed (byte* pLocation = locationBytes)
+                    fixed (byte* pNamespace = namespaceJson)
                     {
                         database_create_table(
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pName,
                             (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                            options.ExistOk,
                             callback);
                     }
                 }
@@ -248,21 +306,30 @@ namespace lancedb
         /// The maximum number of table names to return. If <c>null</c> or 0, all names
         /// are returned.
         /// </param>
+        /// <param name="ns">
+        /// The namespace to list tables from, specified as a hierarchical path.
+        /// If <c>null</c>, lists tables from the root namespace.
+        /// </param>
         /// <returns>A list of table names in lexicographical order.</returns>
-        public async Task<IReadOnlyList<string>> TableNames(string? startAfter = null, uint limit = 0)
+        public async Task<IReadOnlyList<string>> TableNames(string? startAfter = null, uint limit = 0, IReadOnlyList<string>? ns = null)
         {
             byte[]? startAfterBytes = startAfter != null ? NativeCall.ToUtf8(startAfter) : null;
+            byte[]? namespaceJson = ns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                : null;
 
             IntPtr ptr = await NativeCall.Async(callback =>
             {
                 unsafe
                 {
                     fixed (byte* pStartAfter = startAfterBytes)
+                    fixed (byte* pNamespace = namespaceJson)
                     {
                         database_table_names(
                             _handle!.DangerousGetHandle(),
                             startAfterBytes != null ? new IntPtr(pStartAfter) : IntPtr.Zero,
                             limit,
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                             callback);
                     }
                 }
@@ -335,6 +402,16 @@ namespace lancedb
                 {
                     writer.WriteRecordBatch(batch);
                 }
+                writer.WriteEnd();
+            }
+            return stream.ToArray();
+        }
+
+        private static byte[] SerializeSchemaToIpc(Schema schema)
+        {
+            using var stream = new MemoryStream();
+            using (var writer = new ArrowFileWriter(stream, schema))
+            {
                 writer.WriteEnd();
             }
             return stream.ToArray();
