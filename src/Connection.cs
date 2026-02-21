@@ -4,8 +4,8 @@ namespace lancedb
     using System.Collections.Generic;
     using System.IO;
     using System.Runtime.InteropServices;
-    using System.Text;
     using System.Text.Json;
+    using System.Threading.Tasks;
     using Apache.Arrow;
     using Apache.Arrow.Ipc;
 

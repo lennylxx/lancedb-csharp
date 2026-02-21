@@ -1,5 +1,6 @@
 namespace lancedb
 {
+    using System;
     using System.Runtime.InteropServices;
 
     /// <summary>

@@ -16,7 +16,7 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 
 ## Prerequisites
 
-- [.NET 10.0 SDK](https://dotnet.microsoft.com) or later
+- [.NET 8.0 SDK](https://dotnet.microsoft.com) or later
 - [Rust toolchain](https://rustup.rs/) 1.93.1
 
 ## Build
@@ -226,6 +226,3 @@ await table.AlterColumns(alterations);
 await table.DropColumns(new[] { "old_column" });
 var stats = await table.Optimize();              // Compact and cleanup
 ```
-
-
-

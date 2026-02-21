@@ -3,6 +3,7 @@ namespace lancedb
     using System;
     using System.Runtime.InteropServices;
     using System.Text;
+    using System.Threading.Tasks;
 
     /// <summary>
     /// Centralized helpers for calling Rust FFI functions with proper error handling.
@@ -64,7 +65,24 @@ namespace lancedb
         {
             try
             {
+#if NETSTANDARD2_0
+                if (ptr == IntPtr.Zero)
+                {
+                    return string.Empty;
+                }
+
+                int len = 0;
+                unsafe
+                {
+                    byte* p = (byte*)ptr;
+                    while (p[len] != 0) { len++; }
+                }
+                byte[] bytes = new byte[len];
+                Marshal.Copy(ptr, bytes, 0, len);
+                return Encoding.UTF8.GetString(bytes);
+#else
                 return Marshal.PtrToStringUTF8(ptr) ?? string.Empty;
+#endif
             }
             finally
             {
