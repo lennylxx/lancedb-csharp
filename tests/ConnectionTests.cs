@@ -2,7 +2,7 @@ namespace lancedb.tests;
 
 /// <summary>
 /// Tests for the Connection class.
-/// Requires the Rust native library to be built first: ./build.sh
+/// Requires the Rust native library to be built first.
 /// </summary>
 public class ConnectionTests
 {

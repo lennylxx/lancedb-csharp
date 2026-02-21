@@ -5,9 +5,13 @@ use libc::c_char;
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 
-mod ffi;
+pub mod ffi;
 mod query;
 mod table;
+
+// Re-export FFI functions for integration tests
+pub use query::{query_free, query_nearest_to, vector_query_column, vector_query_free};
+pub use table::{free_string, table_close, table_create_query, table_get_name, table_is_open};
 
 lazy_static! {
     static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create tokio runtime");
