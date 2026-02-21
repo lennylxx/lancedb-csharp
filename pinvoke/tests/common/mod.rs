@@ -4,6 +4,54 @@ use lancedb::connection::Connection;
 use lancedb::table::Table;
 use lancedb_ffi::ffi;
 use std::sync::Arc;
+use std::sync::{Condvar, Mutex};
+
+// Wrapper to make raw pointers Send for use in static Mutex.
+struct FfiCallbackResult {
+    result: *const std::ffi::c_void,
+    error: *const libc::c_char,
+}
+unsafe impl Send for FfiCallbackResult {}
+
+/// Global FFI callback result slot. Tests using this must be serialized.
+static FFI_RESULT: Mutex<Option<FfiCallbackResult>> = Mutex::new(None);
+static FFI_READY: Condvar = Condvar::new();
+/// Lock to serialize FFI callback tests.
+static FFI_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// FFI callback that stores the result/error in a global slot.
+pub extern "C" fn ffi_callback(
+    result: *const std::ffi::c_void,
+    error: *const libc::c_char,
+) {
+    let mut lock = FFI_RESULT.lock().unwrap();
+    *lock = Some(FfiCallbackResult { result, error });
+    FFI_READY.notify_all();
+}
+
+/// Waits for the FFI callback result, returning the result pointer on success
+/// or panicking with the error message on failure.
+pub fn ffi_wait_success() -> *const std::ffi::c_void {
+    let mut lock = FFI_RESULT.lock().unwrap();
+    while lock.is_none() {
+        lock = FFI_READY.wait(lock).unwrap();
+    }
+    let cb = lock.take().unwrap();
+    if !cb.error.is_null() {
+        let err = unsafe { std::ffi::CStr::from_ptr(cb.error) }
+            .to_str()
+            .unwrap()
+            .to_string();
+        lancedb_ffi::free_string(cb.error as *mut libc::c_char);
+        panic!("FFI error: {}", err);
+    }
+    cb.result
+}
+
+/// Acquire the FFI test lock (serialize callback-based tests).
+pub fn ffi_lock() -> std::sync::MutexGuard<'static, ()> {
+    FFI_TEST_LOCK.lock().unwrap()
+}
 
 /// Connects to a local database and returns a raw Connection pointer
 /// matching the FFI ownership model (caller owns the Arc).

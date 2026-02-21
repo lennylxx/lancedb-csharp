@@ -84,7 +84,7 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_create_index(
             IntPtr table_ptr, IntPtr columns_json, IntPtr index_type, IntPtr config_json,
-            bool replace, NativeCall.FfiCallback completion);
+            bool replace, IntPtr name, bool train, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_indices(
@@ -104,7 +104,8 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_optimize(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, long cleanup_older_than_ms, bool delete_unverified,
+            NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_list(
@@ -121,6 +122,25 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_update(
             IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_merge_insert(
+            IntPtr table_ptr, IntPtr on_columns_json,
+            bool when_matched_update_all, IntPtr when_matched_update_all_filter,
+            bool when_not_matched_insert_all,
+            bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
+            IntPtr ipc_data, nuint ipc_len,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_take_offsets(
+            IntPtr table_ptr, IntPtr offsets, nuint offsets_len, IntPtr columns_json,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_take_row_ids(
+            IntPtr table_ptr, IntPtr row_ids, nuint row_ids_len, IntPtr columns_json,
+            NativeCall.FfiCallback completion);
 
         private TableHandle? _handle;
 
@@ -539,12 +559,23 @@ namespace lancedb
         /// <param name="replace">
         /// Whether to replace an existing index on the same columns. Default is <c>true</c>.
         /// </param>
-        public async Task CreateIndex(IReadOnlyList<string> columns, Index index, bool replace = true)
+        /// <param name="name">
+        /// An optional custom name for the index. If <c>null</c>, the name is auto-generated.
+        /// </param>
+        /// <param name="train">
+        /// Whether to train the index with existing data. Default is <c>true</c>.
+        /// When <c>false</c>, an empty index is created that will be populated later
+        /// by the optimize step.
+        /// </param>
+        public async Task CreateIndex(
+            IReadOnlyList<string> columns, Index index,
+            bool replace = true, string? name = null, bool train = true)
         {
             string columnsJson = JsonSerializer.Serialize(columns);
             byte[] columnsBytes = NativeCall.ToUtf8(columnsJson);
             byte[] typeBytes = NativeCall.ToUtf8(index.IndexType);
             byte[] configBytes = NativeCall.ToUtf8(index.ToConfigJson());
+            byte[]? nameBytes = name != null ? NativeCall.ToUtf8(name) : null;
 
             await NativeCall.Async(completion =>
             {
@@ -553,11 +584,12 @@ namespace lancedb
                     fixed (byte* pColumns = columnsBytes)
                     fixed (byte* pType = typeBytes)
                     fixed (byte* pConfig = configBytes)
+                    fixed (byte* pName = nameBytes)
                     {
                         table_create_index(
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pColumns, (IntPtr)pType, (IntPtr)pConfig,
-                            replace, completion);
+                            replace, (IntPtr)pName, train, completion);
                     }
                 }
             }).ConfigureAwait(false);
@@ -684,15 +716,231 @@ namespace lancedb
         /// modification operations.
         /// </para>
         /// </remarks>
+        /// <param name="cleanupOlderThan">
+        /// If specified, prune versions older than this duration. If <c>null</c>, old
+        /// versions are pruned with default settings. Once a version is pruned it
+        /// can no longer be checked out.
+        /// </param>
+        /// <param name="deleteUnverified">
+        /// If <c>true</c>, delete files that are not verified (files newer than 7 days
+        /// that may be part of an in-progress transaction). Only set this to <c>true</c>
+        /// if you are sure there are no in-progress transactions.
+        /// </param>
         /// <returns>Statistics about the optimization operation.</returns>
-        public async Task<OptimizeStats> Optimize()
+        public async Task<OptimizeStats> Optimize(
+            TimeSpan? cleanupOlderThan = null, bool deleteUnverified = false)
         {
+            long cleanupMs = cleanupOlderThan.HasValue
+                ? (long)cleanupOlderThan.Value.TotalMilliseconds
+                : -1;
+
             IntPtr result = await NativeCall.Async(completion =>
             {
-                table_optimize(_handle!.DangerousGetHandle(), completion);
+                table_optimize(
+                    _handle!.DangerousGetHandle(), cleanupMs, deleteUnverified, completion);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<OptimizeStats>(json) ?? new OptimizeStats();
+        }
+
+        /// <summary>
+        /// Create a builder for a merge insert (upsert) operation.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This operation can add rows, update rows, or remove rows in a single operation
+        /// based on a column to join on. This is a useful operation when you have a stream
+        /// of new data and want to update the table based on new and changed records while
+        /// keeping the old unchanged records.
+        /// </para>
+        /// <para>
+        /// Use the returned <see cref="MergeInsertBuilder"/> to configure how to handle:
+        /// - Matched rows (exist in both old and new data)
+        /// - Not-matched rows (exist only in new data)
+        /// - Not-matched-by-source rows (exist only in old data)
+        /// </para>
+        /// <para>
+        /// Then call <see cref="MergeInsertBuilder.Execute"/> with the new data.
+        /// </para>
+        /// </remarks>
+        /// <param name="on">
+        /// The column name(s) to join on. Rows are considered matching if they have the
+        /// same value(s) for these column(s).
+        /// </param>
+        /// <returns>A <see cref="MergeInsertBuilder"/> to configure and execute the operation.</returns>
+        public MergeInsertBuilder MergeInsert(string on)
+        {
+            return new MergeInsertBuilder(this, new[] { on });
+        }
+
+        /// <summary>
+        /// Create a builder for a merge insert (upsert) operation with multiple join columns.
+        /// </summary>
+        /// <param name="on">
+        /// The column names to join on. Rows are considered matching if they have the
+        /// same values for all of these columns.
+        /// </param>
+        /// <returns>A <see cref="MergeInsertBuilder"/> to configure and execute the operation.</returns>
+        public MergeInsertBuilder MergeInsert(IReadOnlyList<string> on)
+        {
+            return new MergeInsertBuilder(this, on);
+        }
+
+        internal async Task ExecuteMergeInsert(
+            IReadOnlyList<string> onColumns,
+            bool whenMatchedUpdateAll, string? whenMatchedUpdateAllFilter,
+            bool whenNotMatchedInsertAll,
+            bool whenNotMatchedBySourceDelete, string? whenNotMatchedBySourceDeleteFilter,
+            IReadOnlyList<RecordBatch> data)
+        {
+            byte[] ipcBytes = SerializeToIpc(data);
+            string onColumnsJson = JsonSerializer.Serialize(onColumns);
+            byte[] onColumnsBytes = NativeCall.ToUtf8(onColumnsJson);
+            byte[]? matchedFilterBytes = whenMatchedUpdateAllFilter != null
+                ? NativeCall.ToUtf8(whenMatchedUpdateAllFilter) : null;
+            byte[]? sourceDeleteFilterBytes = whenNotMatchedBySourceDeleteFilter != null
+                ? NativeCall.ToUtf8(whenNotMatchedBySourceDeleteFilter) : null;
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* pIpc = ipcBytes)
+                    fixed (byte* pOnColumns = onColumnsBytes)
+                    fixed (byte* pMatchedFilter = matchedFilterBytes)
+                    fixed (byte* pSourceDeleteFilter = sourceDeleteFilterBytes)
+                    {
+                        table_merge_insert(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pOnColumns,
+                            whenMatchedUpdateAll, (IntPtr)pMatchedFilter,
+                            whenNotMatchedInsertAll,
+                            whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
+                            (IntPtr)pIpc, (nuint)ipcBytes.Length,
+                            completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Returns rows at the given offset positions.
+        /// </summary>
+        /// <remarks>
+        /// This is a fast, direct access method useful for retrieving specific rows
+        /// by their position in the table. Offsets are 0-based positions.
+        /// </remarks>
+        /// <param name="offsets">The offset positions of the rows to retrieve.</param>
+        /// <param name="columns">
+        /// Optional list of column names to return. If <c>null</c>, all columns are returned.
+        /// </param>
+        /// <returns>A RecordBatch containing the requested rows.</returns>
+        public async Task<RecordBatch> TakeOffsets(
+            IReadOnlyList<ulong> offsets, IReadOnlyList<string>? columns = null)
+        {
+            ulong[] offsetArray = offsets is ulong[] arr ? arr : offsets.ToArray();
+            byte[]? columnsBytes = columns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
+
+            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (ulong* pOffsets = offsetArray)
+                    fixed (byte* pColumns = columnsBytes)
+                    {
+                        table_take_offsets(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pOffsets, (nuint)offsetArray.Length,
+                            (IntPtr)pColumns, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+
+            try
+            {
+                return ReadRecordBatchFromFfiBytes(ffiBytesPtr);
+            }
+            finally
+            {
+                free_ffi_bytes(ffiBytesPtr);
+            }
+        }
+
+        /// <summary>
+        /// Returns rows with the given row IDs.
+        /// </summary>
+        /// <remarks>
+        /// Row IDs are stable, internal identifiers assigned to each row. They can be
+        /// retrieved by using <see cref="QueryBase{T}.WithRowId"/> when executing queries.
+        /// Unlike offsets, row IDs are stable across compaction operations.
+        /// </remarks>
+        /// <param name="rowIds">The row IDs of the rows to retrieve.</param>
+        /// <param name="columns">
+        /// Optional list of column names to return. If <c>null</c>, all columns are returned.
+        /// </param>
+        /// <returns>A RecordBatch containing the requested rows.</returns>
+        public async Task<RecordBatch> TakeRowIds(
+            IReadOnlyList<ulong> rowIds, IReadOnlyList<string>? columns = null)
+        {
+            ulong[] idArray = rowIds is ulong[] arr ? arr : rowIds.ToArray();
+            byte[]? columnsBytes = columns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
+
+            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (ulong* pRowIds = idArray)
+                    fixed (byte* pColumns = columnsBytes)
+                    {
+                        table_take_row_ids(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pRowIds, (nuint)idArray.Length,
+                            (IntPtr)pColumns, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+
+            try
+            {
+                return ReadRecordBatchFromFfiBytes(ffiBytesPtr);
+            }
+            finally
+            {
+                free_ffi_bytes(ffiBytesPtr);
+            }
+        }
+
+        private static unsafe RecordBatch ReadRecordBatchFromFfiBytes(IntPtr ffiBytesPtr)
+        {
+            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
+            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
+
+            byte[] managedBytes = new byte[len];
+            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
+
+            using var stream = new MemoryStream(managedBytes);
+            using var reader = new ArrowFileReader(stream);
+
+            var batches = new List<RecordBatch>();
+            RecordBatch? batch;
+            while ((batch = reader.ReadNextRecordBatch()) != null)
+            {
+                batches.Add(batch);
+            }
+
+            if (batches.Count == 0)
+            {
+                return new RecordBatch(reader.Schema, System.Array.Empty<IArrowArray>(), 0);
+            }
+
+            if (batches.Count == 1)
+            {
+                return batches[0];
+            }
+
+            return QueryBase<Query>.ConcatenateBatches(batches, reader.Schema);
         }
 
         /// <summary>

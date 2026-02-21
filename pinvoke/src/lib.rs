@@ -27,9 +27,9 @@ pub use table::{
     free_ffi_bytes, free_string, table_add, table_add_columns, table_alter_columns,
     table_checkout, table_checkout_latest, table_close, table_count_rows, table_create_index,
     table_create_query, table_delete, table_drop_columns, table_get_name, table_is_open,
-    table_list_indices, table_list_versions, table_optimize, table_restore, table_schema,
-    table_tags_create, table_tags_delete, table_tags_list, table_tags_update, table_update,
-    table_uri, table_version, FfiBytes,
+    table_list_indices, table_list_versions, table_merge_insert, table_optimize, table_restore,
+    table_schema, table_tags_create, table_tags_delete, table_tags_list, table_tags_update,
+    table_take_offsets, table_take_row_ids, table_update, table_uri, table_version, FfiBytes,
 };
 
 lazy_static! {

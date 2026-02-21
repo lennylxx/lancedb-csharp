@@ -369,8 +369,8 @@ namespace lancedb
         /// <summary>
         /// Concatenates multiple RecordBatches into a single RecordBatch.
         /// </summary>
-        private static RecordBatch ConcatenateBatches(
-            System.Collections.Generic.List<RecordBatch> batches, Schema schema)
+        internal static RecordBatch ConcatenateBatches(
+            List<RecordBatch> batches, Schema schema)
         {
             int totalLength = 0;
             foreach (var b in batches)

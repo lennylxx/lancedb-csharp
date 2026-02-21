@@ -620,4 +620,282 @@ public class TableTests
             }
         }
     }
+
+    // Helper to create a batch with id and value columns for MergeInsert tests
+    private static Apache.Arrow.RecordBatch CreateIdValueBatch(int[] ids, string[] values)
+    {
+        var idBuilder = new Apache.Arrow.Int32Array.Builder();
+        var valueBuilder = new Apache.Arrow.StringArray.Builder();
+        foreach (var id in ids) { idBuilder.Append(id); }
+        foreach (var val in values) { valueBuilder.Append(val); }
+
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("value", Apache.Arrow.Types.StringType.Default, nullable: true))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema,
+            new Apache.Arrow.IArrowArray[] { idBuilder.Build(), valueBuilder.Build() },
+            ids.Length);
+    }
+
+    [Fact]
+    public async Task CreateIndex_WithName_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("idx_name");
+        await fixture.Table.Add(CreateTestBatch(10));
+        await fixture.Table.CreateIndex(
+            new[] { "id" }, new BTreeIndex(), replace: true, name: "my_custom_idx");
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Name == "my_custom_idx");
+    }
+
+    [Fact]
+    public async Task CreateIndex_TrainFalse_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("idx_train_false");
+        await fixture.Table.Add(CreateTestBatch(10));
+        await fixture.Table.CreateIndex(
+            new[] { "id" }, new BTreeIndex(), replace: true, train: false);
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.NotEmpty(indices);
+    }
+
+    [Fact]
+    public async Task Optimize_WithCleanupParams_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("opt_params");
+        await fixture.Table.Add(CreateTestBatch(5));
+        await fixture.Table.Add(CreateTestBatch(5, startId: 5));
+
+        var stats = await fixture.Table.Optimize(
+            cleanupOlderThan: TimeSpan.Zero, deleteUnverified: true);
+        Assert.NotNull(stats);
+    }
+
+    [Fact]
+    public async Task MergeInsert_Upsert_InsertsNewAndUpdatesExisting()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var initial = CreateIdValueBatch(new[] { 1, 2, 3 }, new[] { "a", "b", "c" });
+            var table = await connection.CreateTable("merge_upsert", initial);
+
+            var newData = CreateIdValueBatch(new[] { 2, 3, 4 }, new[] { "B", "C", "D" });
+            await table.MergeInsert("id")
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedInsertAll()
+                .Execute(newData);
+
+            long count = await table.CountRows();
+            Assert.Equal(4, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MergeInsert_InsertOnly_InsertsNewRows()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var initial = CreateIdValueBatch(new[] { 1, 2 }, new[] { "a", "b" });
+            var table = await connection.CreateTable("merge_insert_only", initial);
+
+            var newData = CreateIdValueBatch(new[] { 2, 3 }, new[] { "B", "C" });
+            await table.MergeInsert("id")
+                .WhenNotMatchedInsertAll()
+                .Execute(newData);
+
+            long count = await table.CountRows();
+            Assert.Equal(3, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MergeInsert_DeleteNotInSource_RemovesTargetRows()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var initial = CreateIdValueBatch(new[] { 1, 2, 3 }, new[] { "a", "b", "c" });
+            var table = await connection.CreateTable("merge_delete", initial);
+
+            var newData = CreateIdValueBatch(new[] { 2 }, new[] { "B" });
+            await table.MergeInsert("id")
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedBySourceDelete()
+                .Execute(newData);
+
+            long count = await table.CountRows();
+            Assert.Equal(1, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task MergeInsert_WithConditionalUpdate_OnlyUpdatesMatchingCondition()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var initial = CreateIdValueBatch(new[] { 1, 2 }, new[] { "a", "b" });
+            var table = await connection.CreateTable("merge_cond", initial);
+
+            var newData = CreateIdValueBatch(new[] { 1, 2 }, new[] { "A", "B" });
+            await table.MergeInsert("id")
+                .WhenMatchedUpdateAll("target.id = 2")
+                .WhenNotMatchedInsertAll()
+                .Execute(newData);
+
+            long count = await table.CountRows();
+            Assert.Equal(2, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TakeOffsets_ReturnsCorrectRows()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var data = CreateIdValueBatch(new[] { 10, 20, 30, 40, 50 }, new[] { "a", "b", "c", "d", "e" });
+            var table = await connection.CreateTable("take_offsets", data);
+
+            var result = await table.TakeOffsets(new ulong[] { 0, 2, 4 });
+            Assert.Equal(3, result.Length);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TakeOffsets_WithColumns_ReturnsSubset()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var data = CreateIdValueBatch(new[] { 10, 20, 30 }, new[] { "a", "b", "c" });
+            var table = await connection.CreateTable("take_offsets_cols", data);
+
+            var result = await table.TakeOffsets(new ulong[] { 0, 1 }, new[] { "id" });
+            Assert.Equal(2, result.Length);
+            Assert.Equal(1, result.Schema.FieldsList.Count);
+            Assert.Equal("id", result.Schema.FieldsList[0].Name);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TakeRowIds_ReturnsCorrectRows()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var data = CreateIdValueBatch(new[] { 10, 20, 30 }, new[] { "a", "b", "c" });
+            var table = await connection.CreateTable("take_rowids", data);
+
+            // First get the row IDs from a query with WithRowId
+            var query = table.Query().WithRowId();
+            var batch = await query.ToArrow();
+
+            // Extract row IDs from the _rowid column
+            var rowIdCol = batch.Column("_rowid") as Apache.Arrow.UInt64Array;
+            Assert.NotNull(rowIdCol);
+
+            var rowIds = new ulong[] { rowIdCol!.GetValue(0)!.Value, rowIdCol.GetValue(2)!.Value };
+            var result = await table.TakeRowIds(rowIds);
+            Assert.Equal(2, result.Length);
+
+            query.Dispose();
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }

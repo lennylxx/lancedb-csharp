@@ -1,5 +1,5 @@
 use lancedb::index::Index as LanceIndex;
-use lancedb::query::Query;
+use lancedb::query::{ExecutableQuery, Query};
 use lancedb::table::{ColumnAlteration, NewColumnTransform, OptimizeAction, Table};
 use libc::c_char;
 use std::ffi::CString;
@@ -307,6 +307,8 @@ pub extern "C" fn table_uri(
 /// index_type: one of "BTree", "Bitmap", "LabelList", "FTS", "IvfPq", "HnswPq", "HnswSq".
 /// config_json: JSON object with index-specific parameters (can be null for defaults).
 /// replace: whether to replace an existing index on the same columns.
+/// name: optional custom index name (null for auto-generated).
+/// train: whether to train the index with existing data.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_create_index(
     table_ptr: *const Table,
@@ -314,6 +316,8 @@ pub extern "C" fn table_create_index(
     index_type: *const c_char,
     config_json: *const c_char,
     replace: bool,
+    name: *const c_char,
+    train: bool,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -323,6 +327,11 @@ pub extern "C" fn table_create_index(
         "{}".to_string()
     } else {
         crate::ffi::to_string(config_json)
+    };
+    let index_name = if name.is_null() {
+        None
+    } else {
+        Some(crate::ffi::to_string(name))
     };
 
     crate::RUNTIME.spawn(async move {
@@ -351,12 +360,14 @@ pub extern "C" fn table_create_index(
         };
 
         let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
-        match table
+        let mut builder = table
             .create_index(&col_refs, index)
             .replace(replace)
-            .execute()
-            .await
-        {
+            .train(train);
+        if let Some(n) = index_name {
+            builder = builder.name(n);
+        }
+        match builder.execute().await {
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
@@ -608,34 +619,80 @@ pub extern "C" fn table_drop_columns(
 }
 
 /// Optimize the on-disk data and indices for better performance.
-/// Runs compaction, pruning, and index optimization with default settings.
+/// cleanup_older_than_ms: if >= 0, prune versions older than this many milliseconds.
+///   If < 0, use default pruning behavior (keep all versions).
+/// delete_unverified: whether to delete unverified files (files newer than 7 days).
+///   Only meaningful when cleanup_older_than_ms >= 0.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_optimize(
     table_ptr: *const Table,
+    cleanup_older_than_ms: i64,
+    delete_unverified: bool,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
 
     crate::RUNTIME.spawn(async move {
-        match table.optimize(OptimizeAction::All).await {
-            Ok(stats) => {
-                let json = serde_json::json!({
-                    "compaction": stats.compaction.as_ref().map(|c| serde_json::json!({
-                        "fragments_removed": c.fragments_removed,
-                        "fragments_added": c.fragments_added,
-                        "files_removed": c.files_removed,
-                        "files_added": c.files_added,
-                    })),
-                    "prune": stats.prune.as_ref().map(|p| serde_json::json!({
-                        "bytes_removed": p.bytes_removed,
-                        "old_versions": p.old_versions,
-                    })),
-                });
-                let c_str = CString::new(json.to_string()).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+        // Always run compaction first
+        let compaction_stats = match table
+            .optimize(OptimizeAction::Compact {
+                options: Default::default(),
+                remap_options: None,
+            })
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
             }
-            Err(e) => crate::callback_error(completion, e),
+        };
+
+        // Run prune with optional parameters
+        let older_than = if cleanup_older_than_ms >= 0 {
+            Some(chrono::TimeDelta::milliseconds(cleanup_older_than_ms))
+        } else {
+            None
+        };
+
+        let prune_stats = match table
+            .optimize(OptimizeAction::Prune {
+                older_than,
+                delete_unverified: Some(delete_unverified),
+                error_if_tagged_old_versions: None,
+            })
+            .await
+        {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        // Run index optimization
+        if let Err(e) = table
+            .optimize(OptimizeAction::Index(Default::default()))
+            .await
+        {
+            crate::callback_error(completion, e);
+            return;
         }
+
+        let json = serde_json::json!({
+            "compaction": compaction_stats.compaction.as_ref().map(|c| serde_json::json!({
+                "fragments_removed": c.fragments_removed,
+                "fragments_added": c.fragments_added,
+                "files_removed": c.files_removed,
+                "files_added": c.files_added,
+            })),
+            "prune": prune_stats.prune.as_ref().map(|p| serde_json::json!({
+                "bytes_removed": p.bytes_removed,
+                "old_versions": p.old_versions,
+            })),
+        });
+        let c_str = CString::new(json.to_string()).unwrap_or_default();
+        completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
     });
 }
 
@@ -752,6 +809,233 @@ pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
 #[unsafe(no_mangle)]
 pub extern "C" fn table_close(table_ptr: *const Table) {
     ffi_free!(table_ptr, Table);
+}
+
+/// Merge insert (upsert) operation on the table.
+/// on_columns_json: JSON array of column names to match on, e.g. '["id"]'.
+/// when_matched_update_all: if true, update matched rows.
+/// when_matched_update_all_filter: optional SQL filter for matched update (null for none).
+/// when_not_matched_insert_all: if true, insert non-matching source rows.
+/// when_not_matched_by_source_delete: if true, delete target rows not in source.
+/// when_not_matched_by_source_delete_filter: optional SQL filter for source delete (null for none).
+/// ipc_data/ipc_len: Arrow IPC file bytes containing the new data.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_merge_insert(
+    table_ptr: *const Table,
+    on_columns_json: *const c_char,
+    when_matched_update_all: bool,
+    when_matched_update_all_filter: *const c_char,
+    when_not_matched_insert_all: bool,
+    when_not_matched_by_source_delete: bool,
+    when_not_matched_by_source_delete_filter: *const c_char,
+    ipc_data: *const u8,
+    ipc_len: usize,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let on_columns_str = crate::ffi::to_string(on_columns_json);
+
+    let matched_filter = if when_matched_update_all_filter.is_null() {
+        None
+    } else {
+        Some(crate::ffi::to_string(when_matched_update_all_filter))
+    };
+
+    let source_delete_filter = if when_not_matched_by_source_delete_filter.is_null() {
+        None
+    } else {
+        Some(crate::ffi::to_string(when_not_matched_by_source_delete_filter))
+    };
+
+    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+
+    crate::RUNTIME.spawn(async move {
+        let on_columns: Vec<String> = match serde_json::from_str(&on_columns_str) {
+            Ok(c) => c,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let on_refs: Vec<&str> = on_columns.iter().map(|s| s.as_str()).collect();
+        let mut builder = table.merge_insert(&on_refs);
+
+        if when_matched_update_all {
+            builder.when_matched_update_all(matched_filter);
+        }
+        if when_not_matched_insert_all {
+            builder.when_not_matched_insert_all();
+        }
+        if when_not_matched_by_source_delete {
+            builder.when_not_matched_by_source_delete(source_delete_filter);
+        }
+
+        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        match builder.execute(Box::new(reader)).await {
+            Ok(_) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Takes rows by offset positions and returns Arrow IPC bytes.
+/// offsets: pointer to array of u64 offset values.
+/// offsets_len: number of offsets.
+/// columns_json: optional JSON array of column names to select (null for all columns).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_take_offsets(
+    table_ptr: *const Table,
+    offsets: *const u64,
+    offsets_len: usize,
+    columns_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let offset_vec: Vec<u64> = unsafe { std::slice::from_raw_parts(offsets, offsets_len) }.to_vec();
+    let columns_str = if columns_json.is_null() {
+        None
+    } else {
+        Some(crate::ffi::to_string(columns_json))
+    };
+
+    crate::RUNTIME.spawn(async move {
+        use futures::TryStreamExt;
+
+        let mut query = table.take_offsets(offset_vec);
+        if let Some(cols) = columns_str {
+            let columns: Vec<String> = match serde_json::from_str(&cols) {
+                Ok(c) => c,
+                Err(e) => {
+                    crate::callback_error(completion, e);
+                    return;
+                }
+            };
+            let col_tuples: Vec<(String, String)> =
+                columns.iter().map(|c| (c.clone(), c.clone())).collect();
+            query = query.select(lancedb::query::Select::dynamic(col_tuples.as_slice()));
+        }
+
+        let stream = match query.execute().await {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let schema = stream.schema().clone();
+        let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
+            Ok(b) => b,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let ipc_result = if batches.is_empty() {
+            lancedb::ipc::schema_to_ipc_file(&schema)
+        } else {
+            lancedb::ipc::batches_to_ipc_file(&batches)
+        };
+
+        match ipc_result {
+            Ok(ipc_bytes) => {
+                let ffi_bytes = Box::new(FfiBytes {
+                    data: ipc_bytes.as_ptr(),
+                    len: ipc_bytes.len(),
+                    _owner: ipc_bytes,
+                });
+                let ptr = Box::into_raw(ffi_bytes);
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Takes rows by row IDs and returns Arrow IPC bytes.
+/// row_ids: pointer to array of u64 row ID values.
+/// row_ids_len: number of row IDs.
+/// columns_json: optional JSON array of column names to select (null for all columns).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_take_row_ids(
+    table_ptr: *const Table,
+    row_ids: *const u64,
+    row_ids_len: usize,
+    columns_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let id_vec: Vec<u64> = unsafe { std::slice::from_raw_parts(row_ids, row_ids_len) }.to_vec();
+    let columns_str = if columns_json.is_null() {
+        None
+    } else {
+        Some(crate::ffi::to_string(columns_json))
+    };
+
+    crate::RUNTIME.spawn(async move {
+        use futures::TryStreamExt;
+
+        let mut query = table.take_row_ids(id_vec);
+        if let Some(cols) = columns_str {
+            let columns: Vec<String> = match serde_json::from_str(&cols) {
+                Ok(c) => c,
+                Err(e) => {
+                    crate::callback_error(completion, e);
+                    return;
+                }
+            };
+            let col_tuples: Vec<(String, String)> =
+                columns.iter().map(|c| (c.clone(), c.clone())).collect();
+            query = query.select(lancedb::query::Select::dynamic(col_tuples.as_slice()));
+        }
+
+        let stream = match query.execute().await {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let schema = stream.schema().clone();
+        let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
+            Ok(b) => b,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let ipc_result = if batches.is_empty() {
+            lancedb::ipc::schema_to_ipc_file(&schema)
+        } else {
+            lancedb::ipc::batches_to_ipc_file(&batches)
+        };
+
+        match ipc_result {
+            Ok(ipc_bytes) => {
+                let ffi_bytes = Box::new(FfiBytes {
+                    data: ipc_bytes.as_ptr(),
+                    len: ipc_bytes.len(),
+                    _owner: ipc_bytes,
+                });
+                let ptr = Box::into_raw(ffi_bytes);
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
 }
 
 #[unsafe(no_mangle)]

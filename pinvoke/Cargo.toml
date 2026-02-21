@@ -17,6 +17,7 @@ arrow-schema = "57"
 arrow-ipc = "57"
 arrow-array = "57"
 serde_json = "1"
+chrono = "0.4"
 futures = "0.3"
 
 [dev-dependencies]
