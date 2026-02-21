@@ -61,3 +61,49 @@ pub fn drop_all_tables_sync(connection_ptr: *const Connection) {
         connection.drop_all_tables(&[]).await.unwrap()
     });
 }
+
+/// Counts rows in a table, optionally filtered.
+pub fn count_rows_sync(table_ptr: *const Table, filter: Option<String>) -> usize {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.count_rows(filter).await.unwrap() })
+}
+
+/// Deletes rows matching the predicate.
+pub fn delete_sync(table_ptr: *const Table, predicate: &str) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.delete(predicate).await.unwrap() });
+}
+
+/// Updates rows. columns is a list of (column_name, sql_expression) pairs.
+pub fn update_sync(
+    table_ptr: *const Table,
+    filter: Option<String>,
+    columns: Vec<(String, String)>,
+) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let mut builder = table.update();
+        if let Some(f) = filter {
+            builder = builder.only_if(f);
+        }
+        for (name, expr) in columns {
+            builder = builder.column(name, expr);
+        }
+        builder.execute().await.unwrap();
+    });
+}
+
+/// Returns the table's schema as Arrow IPC bytes.
+pub fn schema_ipc_sync(table_ptr: *const Table) -> Vec<u8> {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let schema = rt.block_on(async { table.schema().await.unwrap() });
+    ffi::schema_to_ipc(&schema)
+}

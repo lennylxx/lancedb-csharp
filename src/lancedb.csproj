@@ -15,6 +15,10 @@
     <CargoFlags Condition="'$(CargoProfile)' == 'release'">--release</CargoFlags>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Apache.Arrow" Version="22.1.0" />
+  </ItemGroup>
+
   <Target Name="BuildRustNativeLibrary" BeforeTargets="Build">
     <Exec Command="cargo build $(CargoFlags)" WorkingDirectory="$(MSBuildProjectDirectory)/../pinvoke" />
   </Target>

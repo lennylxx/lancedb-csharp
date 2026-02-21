@@ -111,4 +111,64 @@ public class TableTests
         // Calling Dispose again should be safe (idempotent)
         query.Dispose();
     }
+
+    /// <summary>
+    /// CountRows on an empty table should return 0.
+    /// </summary>
+    [Fact]
+    public async Task CountRows_EmptyTable_ReturnsZero()
+    {
+        using var fixture = await TestFixture.CreateWithTable("count_empty");
+
+        long count = await fixture.Table.CountRows();
+
+        Assert.Equal(0, count);
+    }
+
+    /// <summary>
+    /// Schema should return valid Apache.Arrow.Schema for the table.
+    /// </summary>
+    [Fact]
+    public async Task Schema_ReturnsArrowSchema()
+    {
+        using var fixture = await TestFixture.CreateWithTable("schema_test");
+
+        var schema = await fixture.Table.Schema();
+
+        Assert.NotNull(schema);
+        Assert.Single(schema.FieldsList);
+        Assert.Equal("id", schema.FieldsList[0].Name);
+        Assert.Equal(Apache.Arrow.Types.ArrowTypeId.Int32, schema.FieldsList[0].DataType.TypeId);
+        Assert.False(schema.FieldsList[0].IsNullable);
+    }
+
+    /// <summary>
+    /// Delete with an impossible predicate should not throw.
+    /// </summary>
+    [Fact]
+    public async Task Delete_EmptyResult_DoesNotThrow()
+    {
+        using var fixture = await TestFixture.CreateWithTable("delete_empty");
+
+        await fixture.Table.Delete("id < 0");
+
+        long count = await fixture.Table.CountRows();
+        Assert.Equal(0, count);
+    }
+
+    /// <summary>
+    /// Update with no matching rows should not throw.
+    /// </summary>
+    [Fact]
+    public async Task Update_NoMatchingRows_DoesNotThrow()
+    {
+        using var fixture = await TestFixture.CreateWithTable("update_empty");
+
+        await fixture.Table.Update(
+            new Dictionary<string, string> { { "id", "0" } },
+            @where: "id < 0");
+
+        long count = await fixture.Table.CountRows();
+        Assert.Equal(0, count);
+    }
 }

@@ -8,6 +8,6 @@ cd pinvoke && cargo test
 cd ..
 
 echo "=== Running C# tests ==="
-dotnet test --no-build --verbosity normal
+dotnet test --no-build --verbosity normal --logger "console;verbosity=detailed"
 
 echo "=== All tests passed ==="

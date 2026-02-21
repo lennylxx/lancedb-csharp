@@ -12,7 +12,10 @@ mod table;
 
 // Re-export FFI functions for integration tests
 pub use query::{query_free, query_nearest_to, vector_query_column, vector_query_free};
-pub use table::{free_string, table_close, table_create_query, table_get_name, table_is_open};
+pub use table::{
+    free_ffi_bytes, free_string, table_close, table_count_rows, table_create_query, table_delete,
+    table_get_name, table_is_open, table_schema, table_update, FfiBytes,
+};
 
 lazy_static! {
     static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create tokio runtime");

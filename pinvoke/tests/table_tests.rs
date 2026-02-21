@@ -52,3 +52,42 @@ fn test_table_close_null_is_safe() {
 fn test_free_string_null_is_safe() {
     free_string(ptr::null_mut());
 }
+
+#[test]
+fn test_count_rows_empty_table() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "count_test");
+
+    let count = common::count_rows_sync(table_ptr, None);
+    assert_eq!(count, 0);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_schema_returns_valid_ipc() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "schema_test");
+
+    let ipc_bytes = common::schema_ipc_sync(table_ptr);
+    assert!(!ipc_bytes.is_empty());
+
+    let cursor = std::io::Cursor::new(ipc_bytes);
+    let reader = arrow_ipc::reader::FileReader::try_new(cursor, None).unwrap();
+    let schema = reader.schema();
+    assert_eq!(schema.fields().len(), 1);
+    assert_eq!(schema.field(0).name(), "id");
+    assert_eq!(*schema.field(0).data_type(), arrow_schema::DataType::Int32);
+    assert!(!schema.field(0).is_nullable());
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_free_ffi_bytes_null_is_safe() {
+    free_ffi_bytes(ptr::null_mut());
+}
