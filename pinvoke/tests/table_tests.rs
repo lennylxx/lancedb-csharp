@@ -171,3 +171,33 @@ fn test_checkout_and_restore() {
     table_close(table_ptr);
     database_close(conn_ptr);
 }
+
+#[test]
+fn test_create_btree_index_and_list_indices() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "index_test");
+
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(100));
+    common::create_btree_index_sync(table_ptr, "id");
+
+    let indices = common::list_indices_sync(table_ptr);
+    assert!(!indices.is_empty());
+    assert!(indices.iter().any(|i| i.columns.contains(&"id".to_string())));
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_list_indices_empty_table() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "no_index");
+
+    let indices = common::list_indices_sync(table_ptr);
+    assert!(indices.is_empty());
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}

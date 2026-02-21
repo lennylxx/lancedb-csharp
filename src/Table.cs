@@ -81,6 +81,15 @@ namespace lancedb
         private static extern void table_uri(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_create_index(
+            IntPtr table_ptr, IntPtr columns_json, IntPtr index_type, IntPtr config_json,
+            bool replace, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_list_indices(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
         private TableHandle? _handle;
 
         internal Table(IntPtr tablePtr)
@@ -480,6 +489,61 @@ namespace lancedb
                 table_uri(_handle!.DangerousGetHandle(), completion);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
+        }
+
+        /// <summary>
+        /// Create an index on this table.
+        /// </summary>
+        /// <param name="columns">
+        /// The columns to index. Currently only single-column indices are supported,
+        /// but this accepts a list for future composite index support.
+        /// </param>
+        /// <param name="index">
+        /// The index configuration. Use one of the concrete index classes:
+        /// <see cref="BTreeIndex"/>, <see cref="BitmapIndex"/>, <see cref="LabelListIndex"/>,
+        /// <see cref="FtsIndex"/>, <see cref="IvfPqIndex"/>, <see cref="HnswPqIndex"/>,
+        /// <see cref="HnswSqIndex"/>.
+        /// </param>
+        /// <param name="replace">
+        /// Whether to replace an existing index on the same columns. Default is <c>true</c>.
+        /// </param>
+        public async Task CreateIndex(IReadOnlyList<string> columns, Index index, bool replace = true)
+        {
+            string columnsJson = JsonSerializer.Serialize(columns);
+            byte[] columnsBytes = NativeCall.ToUtf8(columnsJson);
+            byte[] typeBytes = NativeCall.ToUtf8(index.IndexType);
+            byte[] configBytes = NativeCall.ToUtf8(index.ToConfigJson());
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* pColumns = columnsBytes)
+                    fixed (byte* pType = typeBytes)
+                    fixed (byte* pConfig = configBytes)
+                    {
+                        table_create_index(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pColumns, (IntPtr)pType, (IntPtr)pConfig,
+                            replace, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// List all indices that have been created on this table.
+        /// </summary>
+        /// <returns>A list of <see cref="IndexInfo"/> describing each index.</returns>
+        public async Task<IReadOnlyList<IndexInfo>> ListIndices()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_list_indices(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<List<IndexInfo>>(json)
+                ?? new List<IndexInfo>();
         }
     }
 }

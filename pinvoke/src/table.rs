@@ -1,3 +1,4 @@
+use lancedb::index::Index as LanceIndex;
 use lancedb::query::Query;
 use lancedb::table::Table;
 use libc::c_char;
@@ -294,6 +295,214 @@ pub extern "C" fn table_uri(
         match table.uri().await {
             Ok(uri) => {
                 let c_str = CString::new(uri).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Creates an index on the table.
+/// columns_json: JSON array of column names, e.g. '["vector"]'.
+/// index_type: one of "BTree", "Bitmap", "LabelList", "FTS", "IvfPq", "HnswPq", "HnswSq".
+/// config_json: JSON object with index-specific parameters (can be null for defaults).
+/// replace: whether to replace an existing index on the same columns.
+#[no_mangle]
+pub extern "C" fn table_create_index(
+    table_ptr: *const Table,
+    columns_json: *const c_char,
+    index_type: *const c_char,
+    config_json: *const c_char,
+    replace: bool,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let columns_str = crate::ffi::to_string(columns_json);
+    let index_type_str = crate::ffi::to_string(index_type);
+    let config_str = if config_json.is_null() {
+        "{}".to_string()
+    } else {
+        crate::ffi::to_string(config_json)
+    };
+
+    crate::RUNTIME.spawn(async move {
+        let columns: Vec<String> = match serde_json::from_str(&columns_str) {
+            Ok(c) => c,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let config: serde_json::Value = match serde_json::from_str(&config_str) {
+            Ok(c) => c,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let index = match build_index(&index_type_str, &config) {
+            Ok(idx) => idx,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
+        match table
+            .create_index(&col_refs, index)
+            .replace(replace)
+            .execute()
+            .await
+        {
+            Ok(_) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceIndex, String> {
+    use lancedb::index::scalar::*;
+    use lancedb::index::vector::*;
+
+    match index_type {
+        "BTree" => Ok(LanceIndex::BTree(BTreeIndexBuilder::default())),
+        "Bitmap" => Ok(LanceIndex::Bitmap(BitmapIndexBuilder::default())),
+        "LabelList" => Ok(LanceIndex::LabelList(LabelListIndexBuilder::default())),
+        "FTS" => {
+            let mut builder = FtsIndexBuilder::default();
+            if let Some(v) = config.get("with_position").and_then(|v| v.as_bool()) {
+                builder = builder.with_position(v);
+            }
+            if let Some(v) = config.get("base_tokenizer").and_then(|v| v.as_str()) {
+                builder = builder.base_tokenizer(v.to_string());
+            }
+            if let Some(v) = config.get("lower_case").and_then(|v| v.as_bool()) {
+                builder = builder.lower_case(v);
+            }
+            if let Some(v) = config.get("stem").and_then(|v| v.as_bool()) {
+                builder = builder.stem(v);
+            }
+            if let Some(v) = config.get("remove_stop_words").and_then(|v| v.as_bool()) {
+                builder = builder.remove_stop_words(v);
+            }
+            if let Some(v) = config.get("ascii_folding").and_then(|v| v.as_bool()) {
+                builder = builder.ascii_folding(v);
+            }
+            Ok(LanceIndex::FTS(builder))
+        }
+        "IvfPq" => {
+            let mut builder = IvfPqIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("num_sub_vectors").and_then(|v| v.as_u64()) {
+                builder = builder.num_sub_vectors(v as u32);
+            }
+            if let Some(v) = config.get("num_bits").and_then(|v| v.as_u64()) {
+                builder = builder.num_bits(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            Ok(LanceIndex::IvfPq(builder))
+        }
+        "HnswPq" => {
+            let mut builder = IvfHnswPqIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("num_sub_vectors").and_then(|v| v.as_u64()) {
+                builder = builder.num_sub_vectors(v as u32);
+            }
+            if let Some(v) = config.get("num_bits").and_then(|v| v.as_u64()) {
+                builder = builder.num_bits(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("num_edges").and_then(|v| v.as_u64()) {
+                builder = builder.num_edges(v as u32);
+            }
+            if let Some(v) = config.get("ef_construction").and_then(|v| v.as_u64()) {
+                builder = builder.ef_construction(v as u32);
+            }
+            Ok(LanceIndex::IvfHnswPq(builder))
+        }
+        "HnswSq" => {
+            let mut builder = IvfHnswSqIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("num_edges").and_then(|v| v.as_u64()) {
+                builder = builder.num_edges(v as u32);
+            }
+            if let Some(v) = config.get("ef_construction").and_then(|v| v.as_u64()) {
+                builder = builder.ef_construction(v as u32);
+            }
+            Ok(LanceIndex::IvfHnswSq(builder))
+        }
+        _ => Err(format!("Unknown index type: {}", index_type)),
+    }
+}
+
+fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
+    match s.to_lowercase().as_str() {
+        "l2" => Ok(lancedb::DistanceType::L2),
+        "cosine" => Ok(lancedb::DistanceType::Cosine),
+        "dot" => Ok(lancedb::DistanceType::Dot),
+        _ => Err(format!("Unknown distance type: {}", s)),
+    }
+}
+
+/// Returns the table's indices as a JSON string.
+/// Caller must free the returned string with free_string().
+#[no_mangle]
+pub extern "C" fn table_list_indices(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.list_indices().await {
+            Ok(indices) => {
+                let json_indices: Vec<serde_json::Value> = indices
+                    .iter()
+                    .map(|idx| {
+                        serde_json::json!({
+                            "name": idx.name,
+                            "index_type": idx.index_type.to_string(),
+                            "columns": idx.columns,
+                        })
+                    })
+                    .collect();
+                let json = serde_json::to_string(&json_indices).unwrap_or_default();
+                let c_str = CString::new(json).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => crate::callback_error(completion, e),

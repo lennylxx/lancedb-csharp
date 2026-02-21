@@ -306,4 +306,47 @@ public class TableTests
 
         Assert.False(string.IsNullOrEmpty(uri));
     }
+
+    /// <summary>
+    /// CreateIndex with BTree on a scalar column should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_BTree_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("btree_idx");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == "BTREE");
+    }
+
+    /// <summary>
+    /// CreateIndex with Bitmap on a scalar column should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_Bitmap_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bitmap_idx");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BitmapIndex());
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == "BITMAP");
+    }
+
+    /// <summary>
+    /// ListIndices on a table with no indices should return an empty list.
+    /// </summary>
+    [Fact]
+    public async Task ListIndices_NoIndices_ReturnsEmpty()
+    {
+        using var fixture = await TestFixture.CreateWithTable("no_idx");
+
+        var indices = await fixture.Table.ListIndices();
+
+        Assert.Empty(indices);
+    }
 }

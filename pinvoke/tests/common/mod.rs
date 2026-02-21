@@ -170,3 +170,28 @@ pub fn create_table_with_data_sync(
     });
     Arc::into_raw(Arc::new(table))
 }
+
+/// Creates a BTree index on the given column.
+pub fn create_btree_index_sync(table_ptr: *const Table, column: &str) {
+    use lancedb::index::scalar::BTreeIndexBuilder;
+    use lancedb::index::Index;
+
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table
+            .create_index(&[column], Index::BTree(BTreeIndexBuilder::default()))
+            .execute()
+            .await
+            .unwrap()
+    });
+}
+
+/// Lists indices on the table and returns the raw IndexConfig vec.
+pub fn list_indices_sync(table_ptr: *const Table) -> Vec<lancedb::index::IndexConfig> {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.list_indices().await.unwrap() })
+}
