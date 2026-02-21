@@ -588,4 +588,255 @@ public class QueryExecutionTests
         var table = await connection.CreateTable(tableName, batch);
         return new TestFixture(connection, table, tmpDir);
     }
+
+    // ----- Query Missing Features Tests -----
+
+    /// <summary>
+    /// ExplainPlan should return a non-empty plan string.
+    /// </summary>
+    [Fact]
+    public async Task ExplainPlan_ReturnsNonEmptyString()
+    {
+        using var fixture = await TestFixture.CreateWithTable("explain_plan");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query();
+        string plan = await query.ExplainPlan();
+
+        Assert.NotNull(plan);
+        Assert.NotEmpty(plan);
+    }
+
+    /// <summary>
+    /// ExplainPlan with verbose=true should return a different (usually longer) plan.
+    /// </summary>
+    [Fact]
+    public async Task ExplainPlan_Verbose_ReturnsDetailedPlan()
+    {
+        using var fixture = await TestFixture.CreateWithTable("explain_verbose");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query();
+        string plan = await query.ExplainPlan(verbose: true);
+
+        Assert.NotNull(plan);
+        Assert.NotEmpty(plan);
+    }
+
+    /// <summary>
+    /// AnalyzePlan should return a non-empty string with runtime metrics.
+    /// </summary>
+    [Fact]
+    public async Task AnalyzePlan_ReturnsNonEmptyString()
+    {
+        using var fixture = await TestFixture.CreateWithTable("analyze_plan");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query();
+        string plan = await query.AnalyzePlan();
+
+        Assert.NotNull(plan);
+        Assert.NotEmpty(plan);
+    }
+
+    /// <summary>
+    /// OutputSchema should return the schema matching the table columns.
+    /// </summary>
+    [Fact]
+    public async Task OutputSchema_ReturnsTableSchema()
+    {
+        using var fixture = await TestFixture.CreateWithTable("output_schema");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query();
+        var schema = await query.OutputSchema();
+
+        Assert.NotNull(schema);
+        Assert.True(schema.FieldsList.Count > 0);
+        Assert.Equal("id", schema.FieldsList[0].Name);
+    }
+
+    /// <summary>
+    /// OutputSchema with Select should only include selected columns.
+    /// </summary>
+    [Fact]
+    public async Task OutputSchema_WithSelect_ReturnsFilteredSchema()
+    {
+        using var fixture = await TestFixture.CreateWithTable("output_schema_sel");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query().Select(new[] { "id" });
+        var schema = await query.OutputSchema();
+
+        Assert.NotNull(schema);
+        Assert.Equal(1, schema.FieldsList.Count);
+        Assert.Equal("id", schema.FieldsList[0].Name);
+    }
+
+    /// <summary>
+    /// ToArrow with maxBatchLength should still return correct data.
+    /// </summary>
+    [Fact]
+    public async Task ToArrow_WithMaxBatchLength_ReturnsCorrectData()
+    {
+        using var fixture = await TestFixture.CreateWithTable("max_batch");
+        await fixture.Table.Add(CreateTestBatch(10));
+
+        using var query = fixture.Table.Query();
+        var batch = await query.ToArrow(maxBatchLength: 5);
+
+        Assert.NotNull(batch);
+        Assert.Equal(10, batch.Length);
+    }
+
+    /// <summary>
+    /// ToArrow with a long timeout should succeed normally.
+    /// </summary>
+    [Fact]
+    public async Task ToArrow_WithTimeout_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("timeout_test");
+        await fixture.Table.Add(CreateTestBatch(5));
+
+        using var query = fixture.Table.Query();
+        var batch = await query.ToArrow(timeout: TimeSpan.FromSeconds(30));
+
+        Assert.NotNull(batch);
+        Assert.Equal(5, batch.Length);
+    }
+
+    /// <summary>
+    /// VectorQuery ExplainPlan should return a plan string.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_ExplainPlan_ReturnsString()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_explain");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+        string plan = await query.ExplainPlan();
+
+        Assert.NotNull(plan);
+        Assert.NotEmpty(plan);
+    }
+
+    /// <summary>
+    /// VectorQuery AnalyzePlan should return runtime metrics.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_AnalyzePlan_ReturnsString()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_analyze");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+        string plan = await query.AnalyzePlan();
+
+        Assert.NotNull(plan);
+        Assert.NotEmpty(plan);
+    }
+
+    /// <summary>
+    /// VectorQuery OutputSchema should return schema with distance column.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_OutputSchema_IncludesDistanceColumn()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_out_schema");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+        var schema = await query.OutputSchema();
+
+        Assert.NotNull(schema);
+        var fieldNames = schema.FieldsList.Select(f => f.Name).ToList();
+        Assert.Contains("_distance", fieldNames);
+    }
+
+    /// <summary>
+    /// MinimumNprobes should chain successfully and execute.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_MinimumNprobes_ChainsAndExecutes()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_min_nprobes");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+            .MinimumNprobes(1);
+        var batch = await query.ToArrow();
+
+        Assert.NotNull(batch);
+        Assert.True(batch.Length > 0);
+    }
+
+    /// <summary>
+    /// MaximumNprobes should chain successfully and execute.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_MaximumNprobes_ChainsAndExecutes()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_max_nprobes");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+            .MaximumNprobes(50);
+        var batch = await query.ToArrow();
+
+        Assert.NotNull(batch);
+        Assert.True(batch.Length > 0);
+    }
+
+    /// <summary>
+    /// MaximumNprobes(0) means unlimited.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_MaximumNprobes_ZeroMeansUnlimited()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_max_np_zero");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+            .MaximumNprobes(0);
+        var batch = await query.ToArrow();
+
+        Assert.NotNull(batch);
+        Assert.True(batch.Length > 0);
+    }
+
+    /// <summary>
+    /// AddQueryVector should add an additional search vector and execute.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_AddQueryVector_ExecutesSuccessfully()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_add_vec");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+            .AddQueryVector(new float[] { 0.0f, 1.0f, 0.0f });
+        var batch = await query.ToArrow();
+
+        Assert.NotNull(batch);
+        Assert.True(batch.Length > 0);
+    }
+
+    /// <summary>
+    /// VectorQuery with timeout and maxBatchLength should execute successfully.
+    /// </summary>
+    [Fact]
+    public async Task VectorQuery_ToArrow_WithTimeoutAndBatchLength()
+    {
+        using var fixture = await CreateVectorTextFixture("vq_timeout_batch");
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+        var batch = await query.ToArrow(
+            timeout: TimeSpan.FromSeconds(30),
+            maxBatchLength: 2);
+
+        Assert.NotNull(batch);
+        Assert.True(batch.Length > 0);
+    }
 }

@@ -34,7 +34,32 @@ namespace lancedb
         private static extern IntPtr vector_query_with_row_id(IntPtr vq_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void vector_query_execute(IntPtr vq_ptr, NativeCall.FfiCallback completion);
+        private static extern void vector_query_execute(
+            IntPtr vq_ptr, long timeout_ms, uint max_batch_length,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void vector_query_explain_plan(
+            IntPtr vq_ptr, [MarshalAs(UnmanagedType.U1)] bool verbose,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void vector_query_analyze_plan(
+            IntPtr vq_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void vector_query_output_schema(
+            IntPtr vq_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_minimum_nprobes(IntPtr vq_ptr, uint n);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_maximum_nprobes(IntPtr vq_ptr, uint n);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_add_query_vector(
+            IntPtr vq_ptr, float[] vector, UIntPtr len);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr vector_query_column(IntPtr vq_ptr, IntPtr column_name);
@@ -95,8 +120,24 @@ namespace lancedb
             => vector_query_with_row_id(ptr);
 
         /// <inheritdoc/>
-        private protected override void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback)
-            => vector_query_execute(ptr, callback);
+        private protected override void NativeExecute(
+            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback)
+            => vector_query_execute(ptr, timeoutMs, maxBatchLength, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeExplainPlan(
+            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback)
+            => vector_query_explain_plan(ptr, verbose, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeAnalyzePlan(
+            IntPtr ptr, NativeCall.FfiCallback callback)
+            => vector_query_analyze_plan(ptr, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeOutputSchema(
+            IntPtr ptr, NativeCall.FfiCallback callback)
+            => vector_query_output_schema(ptr, callback);
 
         /// <inheritdoc/>
         protected override IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText)
@@ -244,6 +285,75 @@ namespace lancedb
                 NativePtr,
                 lowerBound ?? float.NaN,
                 upperBound ?? float.NaN);
+            ReplacePtr(newPtr);
+            return this;
+        }
+
+        /// <summary>
+        /// Set the minimum number of probes for an IVF index search.
+        /// </summary>
+        /// <remarks>
+        /// Ensures at least this many probes are used regardless of adaptive probe settings.
+        /// </remarks>
+        /// <param name="n">The minimum number of probes.</param>
+        /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
+        public VectorQuery MinimumNprobes(int n)
+        {
+            IntPtr newPtr = vector_query_minimum_nprobes(NativePtr, (uint)n);
+            if (newPtr == IntPtr.Zero)
+            {
+                throw new LanceDbException("Invalid minimum nprobes value");
+            }
+
+            ReplacePtr(newPtr);
+            return this;
+        }
+
+        /// <summary>
+        /// Set the maximum number of probes for an IVF index search.
+        /// </summary>
+        /// <remarks>
+        /// Limits the number of probes even if adaptive probe settings request more.
+        /// Pass 0 for unlimited.
+        /// </remarks>
+        /// <param name="n">The maximum number of probes, or 0 for unlimited.</param>
+        /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
+        public VectorQuery MaximumNprobes(int n)
+        {
+            IntPtr newPtr = vector_query_maximum_nprobes(NativePtr, (uint)n);
+            if (newPtr == IntPtr.Zero)
+            {
+                throw new LanceDbException("Invalid maximum nprobes value");
+            }
+
+            ReplacePtr(newPtr);
+            return this;
+        }
+
+        /// <summary>
+        /// Add an additional query vector for multi-vector search.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This allows running the same query against multiple vectors simultaneously.
+        /// Each query vector is searched independently and the results are combined.
+        /// </para>
+        /// <para>
+        /// The added vector must have the same dimensionality as the original query vector
+        /// supplied to <see cref="Query.NearestTo"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="vector">The additional query vector.</param>
+        /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
+        public VectorQuery AddQueryVector(float[] vector)
+        {
+            IntPtr newPtr = vector_query_add_query_vector(
+                NativePtr, vector, (UIntPtr)vector.Length);
+            if (newPtr == IntPtr.Zero)
+            {
+                throw new LanceDbException("Failed to add query vector");
+            }
+
             ReplacePtr(newPtr);
             return this;
         }

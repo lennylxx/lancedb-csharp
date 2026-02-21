@@ -320,3 +320,271 @@ fn test_vector_query_column_returns_new_pointer() {
     table_close(table_ptr);
     database_close(conn_ptr);
 }
+
+#[test]
+fn test_query_explain_plan_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "explain_q");
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+
+    let query = table_create_query(table_ptr);
+    query_explain_plan(query, false, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let plan = unsafe { std::ffi::CStr::from_ptr(result as *const libc::c_char) }
+        .to_str()
+        .unwrap();
+    assert!(!plan.is_empty());
+
+    free_string(result as *mut libc::c_char);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_analyze_plan_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "analyze_q");
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+
+    let query = table_create_query(table_ptr);
+    query_analyze_plan(query, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let plan = unsafe { std::ffi::CStr::from_ptr(result as *const libc::c_char) }
+        .to_str()
+        .unwrap();
+    assert!(!plan.is_empty());
+
+    free_string(result as *mut libc::c_char);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_output_schema_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "output_s");
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+
+    let query = table_create_query(table_ptr);
+    query_output_schema(query, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_bytes = result as *mut FfiBytes;
+    let len = unsafe { (*ffi_bytes).len };
+    assert!(len > 0);
+
+    free_ffi_bytes(ffi_bytes);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_execute_with_timeout_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "exec_timeout");
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+
+    let query = table_create_query(table_ptr);
+    // timeout_ms=30000, max_batch_length=0 (default)
+    query_execute(query, 30000, 0, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    free_ffi_bytes(result as *mut FfiBytes);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_execute_with_max_batch_length_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "exec_batch");
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(10));
+
+    let query = table_create_query(table_ptr);
+    // timeout_ms=-1 (no timeout), max_batch_length=2
+    query_execute(query, -1, 2, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    free_ffi_bytes(result as *mut FfiBytes);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_minimum_nprobes_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_min_np");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let new_vq = vector_query_minimum_nprobes(vq, 5);
+    assert!(!new_vq.is_null());
+    assert_ne!(vq as usize, new_vq as usize);
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_maximum_nprobes_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_max_np");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let new_vq = vector_query_maximum_nprobes(vq, 50);
+    assert!(!new_vq.is_null());
+    assert_ne!(vq as usize, new_vq as usize);
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_maximum_nprobes_zero_sets_none() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_max_np0");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    // 0 means None (no limit on nprobes)
+    let new_vq = vector_query_maximum_nprobes(vq, 0);
+    assert!(!new_vq.is_null());
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_add_query_vector_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_add_vec");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let extra: [f32; 3] = [4.0, 5.0, 6.0];
+    let new_vq = vector_query_add_query_vector(vq, extra.as_ptr(), 3);
+    assert!(!new_vq.is_null());
+    assert_ne!(vq as usize, new_vq as usize);
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_explain_plan_ffi() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let ipc = create_vector_ipc_data(5, 3);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "vq_explain", ipc);
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    vector_query_explain_plan(vq, false, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let plan = unsafe { std::ffi::CStr::from_ptr(result as *const libc::c_char) }
+        .to_str()
+        .unwrap();
+    assert!(!plan.is_empty());
+
+    free_string(result as *mut libc::c_char);
+    query_free(query);
+    vector_query_free(vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+fn create_test_ipc_data(num_rows: usize) -> Vec<u8> {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+    let ids: Vec<i32> = (0..num_rows as i32).collect();
+    let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(ids))]).unwrap();
+    lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+}
+
+fn create_vector_ipc_data(num_rows: usize, dim: usize) -> Vec<u8> {
+    use arrow_array::{FixedSizeListArray, Float32Array, Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let values: Vec<f32> = (0..num_rows * dim).map(|i| i as f32).collect();
+    let values_array = Float32Array::from(values);
+    let field = Arc::new(Field::new("item", DataType::Float32, true));
+    let vector_array =
+        FixedSizeListArray::try_new(field, dim as i32, Arc::new(values_array), None).unwrap();
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int32, false),
+        Field::new(
+            "vector",
+            DataType::FixedSizeList(
+                Arc::new(Field::new("item", DataType::Float32, true)),
+                dim as i32,
+            ),
+            true,
+        ),
+    ]));
+
+    let ids: Vec<i32> = (0..num_rows as i32).collect();
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![Arc::new(Int32Array::from(ids)), Arc::new(vector_array)],
+    )
+    .unwrap();
+    lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+}

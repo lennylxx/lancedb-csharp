@@ -1,5 +1,5 @@
 use lancedb::index::scalar::FullTextSearchQuery;
-use lancedb::query::{ExecutableQuery, Query, QueryBase, Select, VectorQuery};
+use lancedb::query::{ExecutableQuery, Query, QueryBase, QueryExecutionOptions, Select, VectorQuery};
 use libc::{c_char, c_double, c_float, size_t};
 use std::slice;
 use std::sync::Arc;
@@ -147,16 +147,49 @@ pub extern "C" fn query_nearest_to(
 
 /// Executes a Query and returns results as Arrow IPC bytes via FfiBytes.
 /// The callback receives a pointer to an FfiBytes struct (caller must free with free_ffi_bytes).
+/// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
+/// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
 #[unsafe(no_mangle)]
-pub extern "C" fn query_execute(query_ptr: *const Query, completion: FfiCallback) {
+pub extern "C" fn query_execute(
+    query_ptr: *const Query,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
     let query = ffi_clone_arc!(query_ptr, Query);
-    execute_to_ipc(query, completion);
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_to_ipc_with_options(query, options, completion);
 }
 
 /// Frees a Query pointer.
 #[unsafe(no_mangle)]
 pub extern "C" fn query_free(query_ptr: *const Query) {
     ffi_free!(query_ptr, Query);
+}
+
+/// Returns the query execution plan as a string via callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_explain_plan(
+    query_ptr: *const Query,
+    verbose: bool,
+    completion: FfiCallback,
+) {
+    let query = ffi_clone_arc!(query_ptr, Query);
+    explain_plan_impl(query, verbose, completion);
+}
+
+/// Executes the query and returns runtime metrics as a string via callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_analyze_plan(query_ptr: *const Query, completion: FfiCallback) {
+    let query = ffi_clone_arc!(query_ptr, Query);
+    analyze_plan_impl(query, completion);
+}
+
+/// Returns the output schema as Arrow IPC bytes via callback (FfiBytes pointer).
+#[unsafe(no_mangle)]
+pub extern "C" fn query_output_schema(query_ptr: *const Query, completion: FfiCallback) {
+    let query = ffi_clone_arc!(query_ptr, Query);
+    output_schema_impl(query, completion);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,11 +362,69 @@ pub extern "C" fn vector_query_distance_range(
     Arc::into_raw(Arc::new(new_vq))
 }
 
-/// Executes a VectorQuery and returns results as Arrow IPC bytes via FfiBytes.
+/// Sets the minimum number of partitions to search. Returns a new VectorQuery pointer.
+/// Returns null on error (e.g., invalid value).
 #[unsafe(no_mangle)]
-pub extern "C" fn vector_query_execute(vq_ptr: *const VectorQuery, completion: FfiCallback) {
+pub extern "C" fn vector_query_minimum_nprobes(
+    vq_ptr: *const VectorQuery,
+    minimum_nprobes: u32,
+) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    match vq.clone().minimum_nprobes(minimum_nprobes as usize) {
+        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
+        Err(_) => std::ptr::null(),
+    }
+}
+
+/// Sets the maximum number of partitions to search. Returns a new VectorQuery pointer.
+/// max_nprobes: if 0, sets to None (search all partitions if needed).
+/// Returns null on error (e.g., invalid value).
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_maximum_nprobes(
+    vq_ptr: *const VectorQuery,
+    max_nprobes: u32,
+) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let max = if max_nprobes == 0 {
+        None
+    } else {
+        Some(max_nprobes as usize)
+    };
+    match vq.clone().maximum_nprobes(max) {
+        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
+        Err(_) => std::ptr::null(),
+    }
+}
+
+/// Adds another query vector for multi-vector search. Returns a new VectorQuery pointer.
+/// Returns null on error.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_add_query_vector(
+    vq_ptr: *const VectorQuery,
+    vector_ptr: *const c_float,
+    len: size_t,
+) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let vector: Vec<f32> = unsafe { slice::from_raw_parts(vector_ptr, len as usize) }.to_vec();
+    match vq.clone().add_query_vector(vector) {
+        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
+        Err(_) => std::ptr::null(),
+    }
+}
+
+/// Executes a VectorQuery and returns results as Arrow IPC bytes via FfiBytes.
+/// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
+/// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_execute(
+    vq_ptr: *const VectorQuery,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
     let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
-    execute_to_ipc(vq, completion);
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_to_ipc_with_options(vq, options, completion);
 }
 
 /// Frees a VectorQuery pointer.
@@ -342,19 +433,59 @@ pub extern "C" fn vector_query_free(vector_query_ptr: *const VectorQuery) {
     ffi_free!(vector_query_ptr, VectorQuery);
 }
 
+/// Returns the query execution plan as a string via callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_explain_plan(
+    vq_ptr: *const VectorQuery,
+    verbose: bool,
+    completion: FfiCallback,
+) {
+    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
+    explain_plan_impl(vq, verbose, completion);
+}
+
+/// Executes the VectorQuery and returns runtime metrics as a string via callback.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_analyze_plan(vq_ptr: *const VectorQuery, completion: FfiCallback) {
+    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
+    analyze_plan_impl(vq, completion);
+}
+
+/// Returns the VectorQuery output schema as Arrow IPC bytes via callback (FfiBytes pointer).
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_output_schema(vq_ptr: *const VectorQuery, completion: FfiCallback) {
+    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
+    output_schema_impl(vq, completion);
+}
+
 // ---------------------------------------------------------------------------
-// Shared execution helper
+// Shared execution helpers
 // ---------------------------------------------------------------------------
 
+/// Builds QueryExecutionOptions from FFI parameters.
+fn build_execution_options(timeout_ms: i64, max_batch_length: u32) -> QueryExecutionOptions {
+    let mut options = QueryExecutionOptions::default();
+    if timeout_ms >= 0 {
+        options.timeout = Some(std::time::Duration::from_millis(timeout_ms as u64));
+    }
+    if max_batch_length > 0 {
+        options.max_batch_length = max_batch_length;
+    }
+    options
+}
+
 /// Executes any query that implements ExecutableQuery and returns Arrow IPC bytes.
-fn execute_to_ipc<Q>(query: Arc<Q>, completion: FfiCallback)
-where
+fn execute_to_ipc_with_options<Q>(
+    query: Arc<Q>,
+    options: QueryExecutionOptions,
+    completion: FfiCallback,
+) where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
     crate::RUNTIME.spawn(async move {
         use futures::TryStreamExt;
 
-        let stream = match query.execute().await {
+        let stream = match query.execute_with_options(options).await {
             Ok(s) => s,
             Err(e) => {
                 crate::callback_error(completion, e);
@@ -386,6 +517,73 @@ where
                 });
                 let ptr = Box::into_raw(ffi_bytes);
                 completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Shared implementation for explain_plan across query types.
+fn explain_plan_impl<Q>(query: Arc<Q>, verbose: bool, completion: FfiCallback)
+where
+    Q: ExecutableQuery + Send + Sync + 'static,
+{
+    crate::RUNTIME.spawn(async move {
+        match query.explain_plan(verbose).await {
+            Ok(plan) => {
+                let c_str =
+                    std::ffi::CString::new(plan).unwrap_or_default();
+                completion(
+                    c_str.into_raw() as *const std::ffi::c_void,
+                    std::ptr::null(),
+                );
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Shared implementation for analyze_plan across query types.
+fn analyze_plan_impl<Q>(query: Arc<Q>, completion: FfiCallback)
+where
+    Q: ExecutableQuery + Send + Sync + 'static,
+{
+    crate::RUNTIME.spawn(async move {
+        match query.analyze_plan().await {
+            Ok(plan) => {
+                let c_str =
+                    std::ffi::CString::new(plan).unwrap_or_default();
+                completion(
+                    c_str.into_raw() as *const std::ffi::c_void,
+                    std::ptr::null(),
+                );
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Shared implementation for output_schema across query types.
+fn output_schema_impl<Q>(query: Arc<Q>, completion: FfiCallback)
+where
+    Q: ExecutableQuery + Send + Sync + 'static,
+{
+    crate::RUNTIME.spawn(async move {
+        match query.output_schema().await {
+            Ok(schema) => {
+                let ipc_result = lancedb::ipc::schema_to_ipc_file(&schema);
+                match ipc_result {
+                    Ok(ipc_bytes) => {
+                        let ffi_bytes = Box::new(FfiBytes {
+                            data: ipc_bytes.as_ptr(),
+                            len: ipc_bytes.len(),
+                            _owner: ipc_bytes,
+                        });
+                        let ptr = Box::into_raw(ffi_bytes);
+                        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                    }
+                    Err(e) => crate::callback_error(completion, e),
+                }
             }
             Err(e) => crate::callback_error(completion, e),
         }

@@ -86,7 +86,26 @@ namespace lancedb
         /// <summary>
         /// Calls the native execute FFI function.
         /// </summary>
-        private protected abstract void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback);
+        private protected abstract void NativeExecute(
+            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native explain_plan FFI function.
+        /// </summary>
+        private protected abstract void NativeExplainPlan(
+            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native analyze_plan FFI function.
+        /// </summary>
+        private protected abstract void NativeAnalyzePlan(
+            IntPtr ptr, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native output_schema FFI function.
+        /// </summary>
+        private protected abstract void NativeOutputSchema(
+            IntPtr ptr, NativeCall.FfiCallback callback);
 
         /// <summary>
         /// Replaces the current native pointer with a new one, freeing the old one.
@@ -299,12 +318,22 @@ namespace lancedb
         /// <summary>
         /// Execute the query and return the results as an Arrow <see cref="RecordBatch"/>.
         /// </summary>
+        /// <param name="timeout">
+        /// Optional maximum time for the query to run. If <c>null</c>, no timeout is applied.
+        /// </param>
+        /// <param name="maxBatchLength">
+        /// Optional maximum number of rows per batch. If <c>null</c>, uses the default (1024).
+        /// </param>
         /// <returns>The query results as a RecordBatch.</returns>
-        public async Task<RecordBatch> ToArrow()
+        public async Task<RecordBatch> ToArrow(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
         {
+            long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
+            uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
+
             IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
             {
-                NativeExecute(_ptr, completion);
+                NativeExecute(_ptr, timeoutMs, batchLen, completion);
             }).ConfigureAwait(false);
 
             try
@@ -324,11 +353,92 @@ namespace lancedb
         /// Each dictionary maps column names to their values. This is a convenience
         /// method that calls <see cref="ToArrow"/> and converts the result.
         /// </remarks>
+        /// <param name="timeout">
+        /// Optional maximum time for the query to run. If <c>null</c>, no timeout is applied.
+        /// </param>
+        /// <param name="maxBatchLength">
+        /// Optional maximum number of rows per batch. If <c>null</c>, uses the default (1024).
+        /// </param>
         /// <returns>A list of dictionaries, one per row.</returns>
-        public async Task<IReadOnlyList<Dictionary<string, object?>>> ToList()
+        public async Task<IReadOnlyList<Dictionary<string, object?>>> ToList(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
         {
-            var batch = await ToArrow().ConfigureAwait(false);
+            var batch = await ToArrow(timeout, maxBatchLength).ConfigureAwait(false);
             return RecordBatchToList(batch);
+        }
+
+        /// <summary>
+        /// Return the query execution plan as a string.
+        /// </summary>
+        /// <remarks>
+        /// This will not execute the query. It creates a string representation of the
+        /// plan that will be used to execute the query. Useful for debugging query
+        /// performance.
+        /// </remarks>
+        /// <param name="verbose">If <c>true</c>, includes additional details in the plan.</param>
+        /// <returns>A string representation of the execution plan.</returns>
+        public async Task<string> ExplainPlan(bool verbose = false)
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                NativeExplainPlan(_ptr, verbose, completion);
+            }).ConfigureAwait(false);
+            return NativeCall.ReadStringAndFree(result);
+        }
+
+        /// <summary>
+        /// Execute the query and return the plan with runtime metrics.
+        /// </summary>
+        /// <remarks>
+        /// Shows the same plan as <see cref="ExplainPlan"/> but includes runtime metrics.
+        /// The query is actually executed to collect the metrics.
+        /// </remarks>
+        /// <returns>A string representation of the execution plan with runtime metrics.</returns>
+        public async Task<string> AnalyzePlan()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                NativeAnalyzePlan(_ptr, completion);
+            }).ConfigureAwait(false);
+            return NativeCall.ReadStringAndFree(result);
+        }
+
+        /// <summary>
+        /// Return the output schema for the query without executing it.
+        /// </summary>
+        /// <remarks>
+        /// This can be useful when the selection for a query is built dynamically
+        /// as it is not always obvious what the output schema will be.
+        /// </remarks>
+        /// <returns>The output <see cref="Schema"/>.</returns>
+        public async Task<Schema> OutputSchema()
+        {
+            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            {
+                NativeOutputSchema(_ptr, completion);
+            }).ConfigureAwait(false);
+
+            try
+            {
+                return ReadSchemaFromFfiBytes(ffiBytesPtr);
+            }
+            finally
+            {
+                NativeCall.free_ffi_bytes(ffiBytesPtr);
+            }
+        }
+
+        private static unsafe Schema ReadSchemaFromFfiBytes(IntPtr ffiBytesPtr)
+        {
+            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
+            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
+
+            byte[] managedBytes = new byte[len];
+            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
+
+            using var stream = new System.IO.MemoryStream(managedBytes);
+            using var reader = new ArrowFileReader(stream);
+            return reader.Schema;
         }
 
         /// <summary>

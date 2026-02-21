@@ -50,7 +50,22 @@ namespace lancedb
         private static extern IntPtr query_postfilter(IntPtr query_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void query_execute(IntPtr query_ptr, NativeCall.FfiCallback completion);
+        private static extern void query_execute(
+            IntPtr query_ptr, long timeout_ms, uint max_batch_length,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_explain_plan(
+            IntPtr query_ptr, [MarshalAs(UnmanagedType.U1)] bool verbose,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_analyze_plan(
+            IntPtr query_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_output_schema(
+            IntPtr query_ptr, NativeCall.FfiCallback completion);
 
         internal Query(IntPtr queryPtr)
             : base(queryPtr)
@@ -93,8 +108,24 @@ namespace lancedb
             => query_postfilter(ptr);
 
         /// <inheritdoc/>
-        private protected override void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback)
-            => query_execute(ptr, callback);
+        private protected override void NativeExecute(
+            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback)
+            => query_execute(ptr, timeoutMs, maxBatchLength, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeExplainPlan(
+            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback)
+            => query_explain_plan(ptr, verbose, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeAnalyzePlan(
+            IntPtr ptr, NativeCall.FfiCallback callback)
+            => query_analyze_plan(ptr, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeOutputSchema(
+            IntPtr ptr, NativeCall.FfiCallback callback)
+            => query_output_schema(ptr, callback);
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.
