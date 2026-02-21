@@ -1,3 +1,4 @@
+use lancedb::index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, Query, QueryBase, Select, VectorQuery};
 use libc::{c_char, c_double, size_t};
 use std::slice;
@@ -93,6 +94,20 @@ pub extern "C" fn query_offset(query_ptr: *const Query, offset: u64) -> *const Q
 pub extern "C" fn query_with_row_id(query_ptr: *const Query) -> *const Query {
     let query = ffi_borrow!(query_ptr, Query);
     let new_query = query.clone().with_row_id();
+    Arc::into_raw(Arc::new(new_query))
+}
+
+/// Applies a full-text search to a Query. Returns a new Query pointer.
+/// The query text is a search string for the FTS index.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_full_text_search(
+    query_ptr: *const Query,
+    query_text: *const c_char,
+) -> *const Query {
+    let query = ffi_borrow!(query_ptr, Query);
+    let text = ffi::to_string(query_text);
+    let fts_query = FullTextSearchQuery::new(text);
+    let new_query = query.clone().full_text_search(fts_query);
     Arc::into_raw(Arc::new(new_query))
 }
 

@@ -158,6 +158,25 @@ fn test_query_chaining_multiple_builders() {
 }
 
 #[test]
+fn test_query_full_text_search_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "fts_test");
+
+    let query = table_create_query(table_ptr);
+    let text = CString::new("hello world").unwrap();
+    let new_query = query_full_text_search(query, text.as_ptr());
+
+    assert!(!new_query.is_null());
+    assert_ne!(query as usize, new_query as usize);
+
+    query_free(query);
+    query_free(new_query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
 fn test_vector_query_column_returns_new_pointer() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());

@@ -203,8 +203,98 @@ public class QueryExecutionTests
     }
 
     // -----------------------------------------------------------------------
+    // Full-Text Search Tests
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// FullTextSearch should return matching rows from an FTS-indexed table.
+    /// </summary>
+    [Fact]
+    public async Task FullTextSearch_WithIndex_ReturnsMatchingRows()
+    {
+        using var fixture = await CreateTextFixture("fts_basic");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query().FullTextSearch("apple");
+        var rows = await query.ToList();
+
+        Assert.Single(rows);
+        Assert.Equal("apple banana", rows[0]["content"]);
+    }
+
+    /// <summary>
+    /// FullTextSearch should be chainable with other builder methods.
+    /// </summary>
+    [Fact]
+    public async Task FullTextSearch_WithChaining_Works()
+    {
+        using var fixture = await CreateTextFixture("fts_chain");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .FullTextSearch("cherry")
+            .Select(new[] { "content" });
+        var batch = await query.ToArrow();
+
+        Assert.Equal(1, batch.Length);
+        Assert.Contains(batch.Schema.FieldsList, f => f.Name == "content");
+    }
+
+    /// <summary>
+    /// FullTextSearch with no matching term should return empty results.
+    /// </summary>
+    [Fact]
+    public async Task FullTextSearch_NoMatch_ReturnsEmpty()
+    {
+        using var fixture = await CreateTextFixture("fts_empty");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query().FullTextSearch("zzzznotfound");
+        var batch = await query.ToArrow();
+
+        Assert.Equal(0, batch.Length);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
+
+    private static Apache.Arrow.RecordBatch CreateTextBatch(string[] texts)
+    {
+        var idBuilder = new Apache.Arrow.Int32Array.Builder();
+        var contentBuilder = new Apache.Arrow.StringArray.Builder();
+        for (int i = 0; i < texts.Length; i++)
+        {
+            idBuilder.Append(i);
+            contentBuilder.Append(texts[i]);
+        }
+
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("content", Apache.Arrow.Types.StringType.Default, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema,
+            new Apache.Arrow.IArrowArray[] { idBuilder.Build(), contentBuilder.Build() }, texts.Length);
+    }
+
+    private static async Task<TestFixture> CreateTextFixture(string tableName)
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        var connection = new Connection();
+        await connection.Connect(tmpDir);
+        var batch = CreateTextBatch(new[]
+        {
+            "apple banana",
+            "cherry date",
+            "elderberry fig"
+        });
+        var table = await connection.CreateTable(tableName, batch);
+        return new TestFixture(connection, table, tmpDir);
+    }
 
     private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows, int startId = 0)
     {
