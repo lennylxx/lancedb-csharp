@@ -22,8 +22,6 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         public static extern bool table_is_open(IntPtr table_ptr);
 
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void IntPtrCallback(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr table_create_query(IntPtr table_ptr);

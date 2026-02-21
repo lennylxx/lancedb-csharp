@@ -6,20 +6,17 @@ namespace lancedb
 
     public class Connection
     {
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        public delegate void IntPtrCallback(IntPtr ptr);
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_connect(IntPtr uri, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void database_connect(IntPtr uri, IntPtrCallback completion);
+        private static extern void database_close(IntPtr connection_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void database_close(IntPtr connection_ptr);
+        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtrCallback completion);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        public static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, IntPtrCallback completion);
+        private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
         private IntPtr _connectionPtr;
 
@@ -40,22 +37,17 @@ namespace lancedb
         /// <param name="opts">The <see cref="ConnectionOptions"/> to use when connecting to the database.</param>
         public async Task Connect(string uri, ConnectionOptions? opts = null)
         {
-            var tcs = new TaskCompletionSource<IntPtr>();
-            IntPtrCallback completion = (ptr) => tcs.SetResult(ptr);
-            GCHandle completionHandle = GCHandle.Alloc(completion, GCHandleType.Normal);
-            byte[] uriUtf8Bytes = Encoding.UTF8.GetBytes(uri);
-
-            unsafe
+            byte[] uriBytes = NativeCall.ToUtf8(uri);
+            _connectionPtr = await NativeCall.Async(callback =>
             {
-                fixed (byte* uriBytePtr = uriUtf8Bytes)
+                unsafe
                 {
-                    database_connect(new IntPtr(uriBytePtr), completion);
+                    fixed (byte* p = uriBytes)
+                    {
+                        database_connect(new IntPtr(p), callback);
+                    }
                 }
-            }
-
-            IntPtr connectionPtr = await tcs.Task.ConfigureAwait(false);
-            _connectionPtr = connectionPtr;
-            completionHandle.Free();
+            });
         }
 
         public void Close()
@@ -69,22 +61,17 @@ namespace lancedb
         /// <param name="name">The name of the table</param>
         public async Task<Table> OpenTable(string name, OpenTableOptions? options = null)
         {
-            var tcs = new TaskCompletionSource<IntPtr>();
-            IntPtrCallback completion = (ptr) => tcs.SetResult(ptr);
-            GCHandle completionHandle = GCHandle.Alloc(completion, GCHandleType.Normal);
-            byte[] nameUtf8Bytes = Encoding.UTF8.GetBytes(name);
-
-            unsafe
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            IntPtr tablePtr = await NativeCall.Async(callback =>
             {
-                fixed (byte* nameBytePtr = nameUtf8Bytes)
+                unsafe
                 {
-                    database_open_table(_connectionPtr, new IntPtr(nameBytePtr), completion);
+                    fixed (byte* p = nameBytes)
+                    {
+                        database_open_table(_connectionPtr, new IntPtr(p), callback);
+                    }
                 }
-            }
-
-            IntPtr tablePtr = await tcs.Task.ConfigureAwait(false);
-            completionHandle.Free();
-
+            });
             return new Table(tablePtr);
         }
 
@@ -94,22 +81,17 @@ namespace lancedb
         /// <param name="name">The name of the table</param>
         public async Task<Table> CreateEmptyTable(string name)
         {
-            var tcs = new TaskCompletionSource<IntPtr>();
-            IntPtrCallback completion = (ptr) => tcs.SetResult(ptr);
-            GCHandle completionHandle = GCHandle.Alloc(completion, GCHandleType.Normal);
-            byte[] nameUtf8Bytes = Encoding.UTF8.GetBytes(name);
-
-            unsafe
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            IntPtr tablePtr = await NativeCall.Async(callback =>
             {
-                fixed (byte* nameBytePtr = nameUtf8Bytes)
+                unsafe
                 {
-                    database_create_empty_table(_connectionPtr, new IntPtr(nameBytePtr), completion);
+                    fixed (byte* p = nameBytes)
+                    {
+                        database_create_empty_table(_connectionPtr, new IntPtr(p), callback);
+                    }
                 }
-            }
-
-            IntPtr tablePtr = await tcs.Task.ConfigureAwait(false);
-            completionHandle.Free();
-
+            });
             return new Table(tablePtr);
         }
     }
