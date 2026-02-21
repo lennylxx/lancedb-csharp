@@ -6,7 +6,7 @@ use std::sync::Arc;
 use crate::ffi;
 
 /// Creates a VectorQuery from a Query by finding nearest vectors.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn query_nearest_to(
     query_ptr: *const Query,
     vector_ptr: *const c_double,
@@ -24,7 +24,7 @@ pub extern "C" fn query_nearest_to(
 }
 
 /// Sets the column for a VectorQuery.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vector_query_column(
     vector_query_ptr: *const VectorQuery,
     column_name: *const c_char,
@@ -38,13 +38,13 @@ pub extern "C" fn vector_query_column(
 }
 
 /// Frees a Query pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn query_free(query_ptr: *const Query) {
     ffi_free!(query_ptr, Query);
 }
 
 /// Frees a VectorQuery pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn vector_query_free(vector_query_ptr: *const VectorQuery) {
     ffi_free!(vector_query_ptr, VectorQuery);
 }

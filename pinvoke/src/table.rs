@@ -8,7 +8,7 @@ use std::sync::Arc;
 use crate::FfiCallback;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
     let table = ffi_borrow!(table_ptr, Table);
     let name = table.name();
@@ -16,13 +16,13 @@ pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
     c_str_name.into_raw()
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_is_open(table_ptr: *const Table) -> bool {
     !table_ptr.is_null()
 }
 
 /// Creates a new Query from the table.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_create_query(table_ptr: *const Table) -> *const Query {
     let table = ffi_borrow!(table_ptr, Table);
     let query = table.query().clone();
@@ -31,7 +31,7 @@ pub extern "C" fn table_create_query(table_ptr: *const Table) -> *const Query {
 
 /// Counts the number of rows in the table, optionally filtered by a SQL predicate.
 /// Returns the count as a pointer-sized integer via the callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_count_rows(
     table_ptr: *const Table,
     filter: *const c_char,
@@ -54,7 +54,7 @@ pub extern "C" fn table_count_rows(
 }
 
 /// Deletes rows from the table matching the given SQL predicate.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_delete(
     table_ptr: *const Table,
     predicate: *const c_char,
@@ -74,7 +74,7 @@ pub extern "C" fn table_delete(
 
 /// Updates rows in the table. columns_json is a JSON array of [name, expr] pairs.
 /// filter is an optional SQL predicate (null for all rows).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_update(
     table_ptr: *const Table,
     filter: *const c_char,
@@ -117,7 +117,7 @@ pub extern "C" fn table_update(
 
 /// Returns the table's Arrow schema serialized as Arrow IPC bytes.
 /// The callback receives a pointer to an FfiBytes struct (caller must free with free_ffi_bytes).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_schema(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -144,7 +144,7 @@ pub extern "C" fn table_schema(
 
 /// Adds data to the table from Arrow IPC file bytes.
 /// mode is "append" (default) or "overwrite" (null = "append").
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_add(
     table_ptr: *const Table,
     ipc_data: *const u8,
@@ -185,7 +185,7 @@ pub extern "C" fn table_add(
 }
 
 /// Returns the current version of the table as a u64 via the callback.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_version(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -203,7 +203,7 @@ pub extern "C" fn table_version(
 
 /// Returns the table versions as a JSON string.
 /// Caller must free the returned string with free_string().
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_list_versions(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -232,7 +232,7 @@ pub extern "C" fn table_list_versions(
 }
 
 /// Checks out a specific version of the table.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_checkout(
     table_ptr: *const Table,
     version: u64,
@@ -250,7 +250,7 @@ pub extern "C" fn table_checkout(
 }
 
 /// Checks out the latest version of the table.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_checkout_latest(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -267,7 +267,7 @@ pub extern "C" fn table_checkout_latest(
 }
 
 /// Restores the table to the currently checked out version.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_restore(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -285,7 +285,7 @@ pub extern "C" fn table_restore(
 
 /// Returns the table's storage URI as a C string.
 /// Caller must free the returned string with free_string().
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_uri(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -307,7 +307,7 @@ pub extern "C" fn table_uri(
 /// index_type: one of "BTree", "Bitmap", "LabelList", "FTS", "IvfPq", "HnswPq", "HnswSq".
 /// config_json: JSON object with index-specific parameters (can be null for defaults).
 /// replace: whether to replace an existing index on the same columns.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_create_index(
     table_ptr: *const Table,
     columns_json: *const c_char,
@@ -497,7 +497,7 @@ fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
 
 /// Returns the table's indices as a JSON string.
 /// Caller must free the returned string with free_string().
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_list_indices(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -527,7 +527,7 @@ pub extern "C" fn table_list_indices(
 
 /// Add new columns to the table using SQL expressions.
 /// transforms_json is a JSON array of [name, expression] pairs, e.g. [["doubled","id * 2"]].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_add_columns(
     table_ptr: *const Table,
     transforms_json: *const c_char,
@@ -549,7 +549,7 @@ pub extern "C" fn table_add_columns(
 /// Alter existing columns (rename, set nullable, cast type).
 /// alterations_json is a JSON array of objects with "path", optional "rename",
 /// optional "nullable", optional "data_type" (as Arrow DataType string).
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_alter_columns(
     table_ptr: *const Table,
     alterations_json: *const c_char,
@@ -584,7 +584,7 @@ pub extern "C" fn table_alter_columns(
 
 /// Drop columns from the table.
 /// columns_json is a JSON array of column names, e.g. ["col1","col2"].
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_drop_columns(
     table_ptr: *const Table,
     columns_json: *const c_char,
@@ -605,7 +605,7 @@ pub extern "C" fn table_drop_columns(
 
 /// Optimize the on-disk data and indices for better performance.
 /// Runs compaction, pruning, and index optimization with default settings.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_optimize(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -636,7 +636,7 @@ pub extern "C" fn table_optimize(
 }
 
 /// List all tags on the table. Returns a JSON object like {"tag_name": {"version": 1, "manifest_size": 100}}.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_tags_list(
     table_ptr: *const Table,
     completion: FfiCallback,
@@ -667,7 +667,7 @@ pub extern "C" fn table_tags_list(
 }
 
 /// Create a new tag for the given version.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_tags_create(
     table_ptr: *const Table,
     tag: *const c_char,
@@ -688,7 +688,7 @@ pub extern "C" fn table_tags_create(
 }
 
 /// Delete a tag from the table.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_tags_delete(
     table_ptr: *const Table,
     tag: *const c_char,
@@ -708,7 +708,7 @@ pub extern "C" fn table_tags_delete(
 }
 
 /// Update an existing tag to point to a new version.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_tags_update(
     table_ptr: *const Table,
     tag: *const c_char,
@@ -737,7 +737,7 @@ pub struct FfiBytes {
 }
 
 /// Frees an FfiBytes struct allocated by Rust.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
     if !ptr.is_null() {
         unsafe { drop(Box::from_raw(ptr)) };
@@ -745,12 +745,12 @@ pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
 }
 
 /// Closes the table and frees the underlying Arc.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn table_close(table_ptr: *const Table) {
     ffi_free!(table_ptr, Table);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn free_string(c_string: *mut c_char) {
     unsafe {
         if c_string.is_null() {

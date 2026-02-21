@@ -3,7 +3,7 @@ name = "lancedb-ffi"
 version = "0.0.1"
 description = "C-compatible FFI bindings for the LanceDB Rust crate"
 rust-version = "1.93.1"
-edition = "2021"
+edition = "2024"
 
 [lib]
 crate-type = ["cdylib", "rlib"]

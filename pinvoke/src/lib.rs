@@ -37,7 +37,7 @@ fn callback_error(completion: FfiCallback, err: impl std::fmt::Display) {
     completion(std::ptr::null(), msg.into_raw());
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_connect(
     uri: *const c_char,
     completion: FfiCallback,
@@ -48,7 +48,7 @@ pub extern "C" fn database_connect(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_open_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
@@ -61,7 +61,7 @@ pub extern "C" fn database_open_table(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_create_empty_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
@@ -79,7 +79,7 @@ pub extern "C" fn database_create_empty_table(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_create_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
@@ -126,12 +126,12 @@ pub extern "C" fn database_create_table(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_close(connection_ptr: *const Connection) {
     ffi_free!(connection_ptr, Connection);
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_table_names(
     connection_ptr: *const Connection,
     completion: FfiCallback,
@@ -149,7 +149,7 @@ pub extern "C" fn database_table_names(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_drop_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
@@ -167,7 +167,7 @@ pub extern "C" fn database_drop_table(
     });
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "C" fn database_drop_all_tables(
     connection_ptr: *const Connection,
     completion: FfiCallback,
