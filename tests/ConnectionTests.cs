@@ -524,4 +524,165 @@ public class ConnectionTests
             }
         }
     }
+
+    /// <summary>
+    /// ConnectOptions with StorageOptions should be serialized and passed through FFI.
+    /// </summary>
+    [Fact]
+    public async Task Connect_WithStorageOptions_Succeeds()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir, new ConnectionOptions
+            {
+                StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "allow_http", "true" }
+                }
+            });
+            var names = await connection.TableNames();
+            Assert.Empty(names);
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// ConnectOptions with ReadConsistencyInterval should be passed through FFI.
+    /// </summary>
+    [Fact]
+    public async Task Connect_WithReadConsistencyInterval_Succeeds()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir, new ConnectionOptions
+            {
+                ReadConsistencyInterval = TimeSpan.FromSeconds(5)
+            });
+            var names = await connection.TableNames();
+            Assert.Empty(names);
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// OpenTable with StorageOptions should wire through FFI without error.
+    /// </summary>
+    [Fact]
+    public async Task OpenTable_WithStorageOptions_Succeeds()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table1 = await connection.CreateEmptyTable("opts_table");
+            table1.Dispose();
+
+            var table2 = await connection.OpenTable("opts_table", new OpenTableOptions
+            {
+                StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "allow_http", "true" }
+                },
+                IndexCacheSize = 512
+            });
+            Assert.Equal("opts_table", table2.Name);
+            table2.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateTable with StorageOptions should wire through FFI without error.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_WithStorageOptions_Succeeds()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch = CreateTestBatch(3);
+            var table = await connection.CreateTable("storage_table", new CreateTableOptions
+            {
+                Data = new[] { batch },
+                StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "allow_http", "true" }
+                }
+            });
+            Assert.Equal("storage_table", table.Name);
+            Assert.Equal(3, await table.CountRows());
+            table.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateTable with overwrite mode via options should replace an existing table.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_OverwriteModeViaOptions_ReplacesExisting()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch1 = CreateTestBatch(5);
+            var t1 = await connection.CreateTable("ow_table", batch1);
+            Assert.Equal(5, await t1.CountRows());
+            t1.Dispose();
+
+            var batch2 = CreateTestBatch(2);
+            var t2 = await connection.CreateTable("ow_table", new CreateTableOptions
+            {
+                Data = new[] { batch2 },
+                Mode = "overwrite"
+            });
+            Assert.Equal(2, await t2.CountRows());
+            t2.Dispose();
+            connection.Close();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }

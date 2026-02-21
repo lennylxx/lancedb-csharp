@@ -171,6 +171,48 @@ pub fn create_table_with_data_sync(
     Arc::into_raw(Arc::new(table))
 }
 
+/// Creates an empty table with a custom schema and returns a raw Table pointer.
+pub fn create_empty_table_with_schema_sync(
+    connection_ptr: *const Connection,
+    name: &str,
+    schema: arrow_schema::SchemaRef,
+) -> *const Table {
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let table = rt.block_on(async {
+        connection
+            .create_empty_table(name, schema)
+            .execute()
+            .await
+            .unwrap()
+    });
+    Arc::into_raw(Arc::new(table))
+}
+
+/// Creates a table with exist_ok mode and returns a raw Table pointer.
+pub fn create_table_exist_ok_sync(
+    connection_ptr: *const Connection,
+    name: &str,
+    ipc_bytes: Vec<u8>,
+) -> *const Table {
+    use lancedb::database::CreateTableMode;
+
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
+    let table = rt.block_on(async {
+        connection
+            .create_table(name, reader)
+            .mode(CreateTableMode::exist_ok(|req| req))
+            .execute()
+            .await
+            .unwrap()
+    });
+    Arc::into_raw(Arc::new(table))
+}
+
 /// Creates a BTree index on the given column.
 pub fn create_btree_index_sync(table_ptr: *const Table, column: &str) {
     use lancedb::index::scalar::BTreeIndexBuilder;
