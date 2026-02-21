@@ -381,6 +381,12 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             if let Some(v) = config.get("base_tokenizer").and_then(|v| v.as_str()) {
                 builder = builder.base_tokenizer(v.to_string());
             }
+            if let Some(v) = config.get("language").and_then(|v| v.as_str()) {
+                builder = builder.language(v).map_err(|e| e.to_string())?;
+            }
+            if let Some(v) = config.get("max_token_length").and_then(|v| v.as_u64()) {
+                builder = builder.max_token_length(Some(v as usize));
+            }
             if let Some(v) = config.get("lower_case").and_then(|v| v.as_bool()) {
                 builder = builder.lower_case(v);
             }
@@ -415,6 +421,9 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
                 builder = builder.sample_rate(v as u32);
             }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
             Ok(LanceIndex::IvfPq(builder))
         }
         "HnswPq" => {
@@ -443,6 +452,9 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             if let Some(v) = config.get("ef_construction").and_then(|v| v.as_u64()) {
                 builder = builder.ef_construction(v as u32);
             }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
             Ok(LanceIndex::IvfHnswPq(builder))
         }
         "HnswSq" => {
@@ -464,6 +476,9 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             }
             if let Some(v) = config.get("ef_construction").and_then(|v| v.as_u64()) {
                 builder = builder.ef_construction(v as u32);
+            }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
             }
             Ok(LanceIndex::IvfHnswSq(builder))
         }

@@ -78,6 +78,17 @@ namespace lancedb
         public string BaseTokenizer { get; set; } = "simple";
 
         /// <summary>
+        /// The language for stemming and stop words. Default is <c>"English"</c>.
+        /// </summary>
+        public string Language { get; set; } = "English";
+
+        /// <summary>
+        /// The maximum token length to index. Tokens longer than this are ignored.
+        /// Default is 40.
+        /// </summary>
+        public int? MaxTokenLength { get; set; } = 40;
+
+        /// <summary>
         /// Whether to convert tokens to lower case. Default is <c>true</c>.
         /// </summary>
         public bool LowerCase { get; set; } = true;
@@ -97,20 +108,37 @@ namespace lancedb
         /// </summary>
         public bool AsciiFolding { get; set; } = true;
 
+        /// <summary>
+        /// Minimum ngram length for ngram tokenization. Default is 3.
+        /// </summary>
+        public int NgramMinLength { get; set; } = 3;
+
+        /// <summary>
+        /// Maximum ngram length for ngram tokenization. Default is 3.
+        /// </summary>
+        public int NgramMaxLength { get; set; } = 3;
+
+        /// <summary>
+        /// Whether to only generate prefix ngrams. Default is <c>false</c>.
+        /// </summary>
+        public bool PrefixOnly { get; set; } = false;
+
         internal override string IndexType => "FTS";
 
         internal override string ToConfigJson()
         {
-            var config = new
+            var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                with_position = WithPosition,
-                base_tokenizer = BaseTokenizer,
-                lower_case = LowerCase,
-                stem = Stem,
-                remove_stop_words = RemoveStopWords,
-                ascii_folding = AsciiFolding,
+                ["with_position"] = WithPosition,
+                ["base_tokenizer"] = BaseTokenizer,
+                ["language"] = Language,
+                ["lower_case"] = LowerCase,
+                ["stem"] = Stem,
+                ["remove_stop_words"] = RemoveStopWords,
+                ["ascii_folding"] = AsciiFolding,
             };
-            return JsonSerializer.Serialize(config);
+            if (MaxTokenLength.HasValue) { dict["max_token_length"] = MaxTokenLength.Value; }
+            return JsonSerializer.Serialize(dict);
         }
     }
 
@@ -123,7 +151,7 @@ namespace lancedb
         /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
-        public string? DistanceType { get; set; }
+        public string DistanceType { get; set; } = "l2";
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -138,29 +166,37 @@ namespace lancedb
         /// <summary>
         /// Number of bits to encode each sub-vector. Only 4 and 8 are supported. Default is 8.
         /// </summary>
-        public int? NumBits { get; set; }
+        public int NumBits { get; set; } = 8;
 
         /// <summary>
         /// Max iterations to train kmeans. Default is 50.
         /// </summary>
-        public int? MaxIterations { get; set; }
+        public int MaxIterations { get; set; } = 50;
 
         /// <summary>
         /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
         /// </summary>
-        public int? SampleRate { get; set; }
+        public int SampleRate { get; set; } = 256;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
 
         internal override string IndexType => "IvfPq";
 
         internal override string ToConfigJson()
         {
-            var dict = new System.Collections.Generic.Dictionary<string, object>();
-            if (DistanceType != null) { dict["distance_type"] = DistanceType; }
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["num_bits"] = NumBits,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+            };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (NumSubVectors.HasValue) { dict["num_sub_vectors"] = NumSubVectors.Value; }
-            if (NumBits.HasValue) { dict["num_bits"] = NumBits.Value; }
-            if (MaxIterations.HasValue) { dict["max_iterations"] = MaxIterations.Value; }
-            if (SampleRate.HasValue) { dict["sample_rate"] = SampleRate.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
             return JsonSerializer.Serialize(dict);
         }
     }
@@ -174,7 +210,7 @@ namespace lancedb
         /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
-        public string? DistanceType { get; set; }
+        public string DistanceType { get; set; } = "l2";
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -189,41 +225,49 @@ namespace lancedb
         /// <summary>
         /// Number of bits to encode each sub-vector. Only 4 and 8 are supported. Default is 8.
         /// </summary>
-        public int? NumBits { get; set; }
+        public int NumBits { get; set; } = 8;
 
         /// <summary>
         /// Max iterations to train kmeans. Default is 50.
         /// </summary>
-        public int? MaxIterations { get; set; }
+        public int MaxIterations { get; set; } = 50;
 
         /// <summary>
         /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
         /// </summary>
-        public int? SampleRate { get; set; }
+        public int SampleRate { get; set; } = 256;
 
         /// <summary>
         /// The number of neighbors in the HNSW graph. Default is 20.
         /// </summary>
-        public int? NumEdges { get; set; }
+        public int NumEdges { get; set; } = 20;
 
         /// <summary>
         /// The number of candidates during HNSW construction. Default is 300.
         /// </summary>
-        public int? EfConstruction { get; set; }
+        public int EfConstruction { get; set; } = 300;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
 
         internal override string IndexType => "HnswPq";
 
         internal override string ToConfigJson()
         {
-            var dict = new System.Collections.Generic.Dictionary<string, object>();
-            if (DistanceType != null) { dict["distance_type"] = DistanceType; }
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["num_bits"] = NumBits,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+                ["num_edges"] = NumEdges,
+                ["ef_construction"] = EfConstruction,
+            };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (NumSubVectors.HasValue) { dict["num_sub_vectors"] = NumSubVectors.Value; }
-            if (NumBits.HasValue) { dict["num_bits"] = NumBits.Value; }
-            if (MaxIterations.HasValue) { dict["max_iterations"] = MaxIterations.Value; }
-            if (SampleRate.HasValue) { dict["sample_rate"] = SampleRate.Value; }
-            if (NumEdges.HasValue) { dict["num_edges"] = NumEdges.Value; }
-            if (EfConstruction.HasValue) { dict["ef_construction"] = EfConstruction.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
             return JsonSerializer.Serialize(dict);
         }
     }
@@ -237,7 +281,7 @@ namespace lancedb
         /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
-        public string? DistanceType { get; set; }
+        public string DistanceType { get; set; } = "l2";
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -247,34 +291,42 @@ namespace lancedb
         /// <summary>
         /// Max iterations to train kmeans. Default is 50.
         /// </summary>
-        public int? MaxIterations { get; set; }
+        public int MaxIterations { get; set; } = 50;
 
         /// <summary>
         /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
         /// </summary>
-        public int? SampleRate { get; set; }
+        public int SampleRate { get; set; } = 256;
 
         /// <summary>
         /// The number of neighbors in the HNSW graph. Default is 20.
         /// </summary>
-        public int? NumEdges { get; set; }
+        public int NumEdges { get; set; } = 20;
 
         /// <summary>
         /// The number of candidates during HNSW construction. Default is 300.
         /// </summary>
-        public int? EfConstruction { get; set; }
+        public int EfConstruction { get; set; } = 300;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
 
         internal override string IndexType => "HnswSq";
 
         internal override string ToConfigJson()
         {
-            var dict = new System.Collections.Generic.Dictionary<string, object>();
-            if (DistanceType != null) { dict["distance_type"] = DistanceType; }
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+                ["num_edges"] = NumEdges,
+                ["ef_construction"] = EfConstruction,
+            };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
-            if (MaxIterations.HasValue) { dict["max_iterations"] = MaxIterations.Value; }
-            if (SampleRate.HasValue) { dict["sample_rate"] = SampleRate.Value; }
-            if (NumEdges.HasValue) { dict["num_edges"] = NumEdges.Value; }
-            if (EfConstruction.HasValue) { dict["ef_construction"] = EfConstruction.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
             return JsonSerializer.Serialize(dict);
         }
     }
