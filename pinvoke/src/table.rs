@@ -487,12 +487,7 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
 }
 
 fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
-    match s.to_lowercase().as_str() {
-        "l2" => Ok(lancedb::DistanceType::L2),
-        "cosine" => Ok(lancedb::DistanceType::Cosine),
-        "dot" => Ok(lancedb::DistanceType::Dot),
-        _ => Err(format!("Unknown distance type: {}", s)),
-    }
+    crate::ffi::parse_distance_type(s)
 }
 
 /// Returns the table's indices as a JSON string.
@@ -733,7 +728,7 @@ pub extern "C" fn table_tags_update(
 pub struct FfiBytes {
     pub data: *const u8,
     pub len: usize,
-    _owner: Vec<u8>,
+    pub(crate) _owner: Vec<u8>,
 }
 
 /// Frees an FfiBytes struct allocated by Rust.

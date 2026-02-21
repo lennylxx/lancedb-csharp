@@ -12,7 +12,13 @@ mod query;
 mod table;
 
 // Re-export FFI functions for integration tests
-pub use query::{query_free, query_nearest_to, vector_query_column, vector_query_free};
+pub use query::{
+    query_execute, query_free, query_limit, query_nearest_to, query_offset, query_only_if,
+    query_select, query_with_row_id, vector_query_bypass_vector_index, vector_query_column,
+    vector_query_distance_type, vector_query_execute, vector_query_free, vector_query_limit,
+    vector_query_nprobes, vector_query_offset, vector_query_only_if, vector_query_postfilter,
+    vector_query_refine_factor, vector_query_select, vector_query_with_row_id,
+};
 pub use table::{
     free_ffi_bytes, free_string, table_add, table_add_columns, table_alter_columns,
     table_checkout, table_checkout_latest, table_close, table_count_rows, table_create_index,

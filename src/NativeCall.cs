@@ -21,6 +21,9 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void free_string(IntPtr ptr);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void free_ffi_bytes(IntPtr ptr);
+
         /// <summary>
         /// Calls an async FFI function that uses the unified (result, error) callback pattern.
         /// Returns the result IntPtr on success, or throws LanceDbException on error.

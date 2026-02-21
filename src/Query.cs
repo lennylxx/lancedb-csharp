@@ -6,18 +6,74 @@ namespace lancedb
     /// A builder for LanceDB queries.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// This class is not intended to be created directly. Instead, use the
     /// <see cref="Table.Query"/> method to create a query.
+    /// </para>
+    /// <para>
+    /// Queries allow you to search your existing data. By default the query will
+    /// return all the data in the table in no particular order. The builder
+    /// methods can be used to control the query using filtering, projection,
+    /// and limits.
+    /// </para>
     /// </remarks>
-    public class Query : QueryBase
+    public class Query : QueryBase<Query>
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr query_nearest_to(IntPtr query_ptr, double[] vector, UIntPtr len);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_free(IntPtr query_ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_select(IntPtr query_ptr, IntPtr columns_json);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_only_if(IntPtr query_ptr, IntPtr predicate);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_limit(IntPtr query_ptr, ulong limit);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_offset(IntPtr query_ptr, ulong offset);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_with_row_id(IntPtr query_ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_execute(IntPtr query_ptr, NativeCall.FfiCallback completion);
 
         internal Query(IntPtr queryPtr)
             : base(queryPtr)
         {
         }
+
+        /// <inheritdoc/>
+        protected override void NativeFree(IntPtr ptr) => query_free(ptr);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeSelect(IntPtr ptr, IntPtr columnsJson)
+            => query_select(ptr, columnsJson);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeOnlyIf(IntPtr ptr, IntPtr predicate)
+            => query_only_if(ptr, predicate);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeLimit(IntPtr ptr, ulong limit)
+            => query_limit(ptr, limit);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeOffset(IntPtr ptr, ulong offset)
+            => query_offset(ptr, offset);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeWithRowId(IntPtr ptr)
+            => query_with_row_id(ptr);
+
+        /// <inheritdoc/>
+        private protected override void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback)
+            => query_execute(ptr, callback);
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.
@@ -58,7 +114,7 @@ namespace lancedb
         /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
         public VectorQuery NearestTo(double[] vector)
         {
-            IntPtr vectorQueryPtr = query_nearest_to(QueryPtr, vector, (UIntPtr)vector.Length);
+            IntPtr vectorQueryPtr = query_nearest_to(NativePtr, vector, (UIntPtr)vector.Length);
             return new VectorQuery(vectorQueryPtr);
         }
     }

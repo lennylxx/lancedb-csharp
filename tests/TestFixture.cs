@@ -10,7 +10,7 @@ public class TestFixture : IDisposable
     public Table Table { get; }
     private readonly string _tmpDir;
 
-    private TestFixture(Connection connection, Table table, string tmpDir)
+    internal TestFixture(Connection connection, Table table, string tmpDir)
     {
         Connection = connection;
         Table = table;

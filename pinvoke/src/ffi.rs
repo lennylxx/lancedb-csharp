@@ -17,3 +17,13 @@ pub fn minimal_schema() -> Arc<Schema> {
     use arrow_schema::Field;
     Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]))
 }
+
+/// Parses a distance type string into a LanceDB DistanceType enum.
+pub fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
+    match s.to_lowercase().as_str() {
+        "l2" => Ok(lancedb::DistanceType::L2),
+        "cosine" => Ok(lancedb::DistanceType::Cosine),
+        "dot" => Ok(lancedb::DistanceType::Dot),
+        _ => Err(format!("Unknown distance type: {}", s)),
+    }
+}
