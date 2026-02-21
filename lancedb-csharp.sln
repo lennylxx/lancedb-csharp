@@ -6,7 +6,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lancedb", "src\lancedb.csproj", "{861DAD1B-C970-E928-1A86-E9BC3A1C8152}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "lancedb.tests", "tests\lancedb.tests.csproj", "{928D85E7-FDCC-405E-BB41-969AE723D7EE}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "benchmark", "benchmark\benchmark.csproj", "{878D0113-6D90-471E-AE9A-C7109EC6BB17}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "tests", "tests\tests.csproj", "{928D85E7-FDCC-405E-BB41-969AE723D7EE}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -18,6 +20,10 @@ Global
 		{861DAD1B-C970-E928-1A86-E9BC3A1C8152}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{861DAD1B-C970-E928-1A86-E9BC3A1C8152}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{861DAD1B-C970-E928-1A86-E9BC3A1C8152}.Release|Any CPU.Build.0 = Release|Any CPU
+		{878D0113-6D90-471E-AE9A-C7109EC6BB17}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{878D0113-6D90-471E-AE9A-C7109EC6BB17}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{878D0113-6D90-471E-AE9A-C7109EC6BB17}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{878D0113-6D90-471E-AE9A-C7109EC6BB17}.Release|Any CPU.Build.0 = Release|Any CPU
 		{928D85E7-FDCC-405E-BB41-969AE723D7EE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{928D85E7-FDCC-405E-BB41-969AE723D7EE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{928D85E7-FDCC-405E-BB41-969AE723D7EE}.Release|Any CPU.ActiveCfg = Release|Any CPU

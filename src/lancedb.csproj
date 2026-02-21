@@ -24,10 +24,10 @@
   </Target>
 
   <ItemGroup>
-    <None Include="..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so')">
+    <Content Include="..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Link>liblancedb_ffi.so</Link>
-    </None>
+    </Content>
   </ItemGroup>
 
 </Project>
