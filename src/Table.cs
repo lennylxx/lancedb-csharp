@@ -52,6 +52,11 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void free_ffi_bytes(IntPtr ptr);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_add(
+            IntPtr table_ptr, IntPtr ipc_data, nuint ipc_len, IntPtr mode,
+            NativeCall.FfiCallback completion);
+
         private TableHandle? _handle;
 
         internal Table(IntPtr tablePtr)
@@ -274,6 +279,71 @@ namespace lancedb
             using var stream = new MemoryStream(managedBytes);
             using var reader = new ArrowFileReader(stream);
             return reader.Schema;
+        }
+
+        /// <summary>
+        /// Add more data to the Table.
+        /// </summary>
+        /// <param name="data">
+        /// The data to add, as one or more Arrow <see cref="RecordBatch"/> objects.
+        /// </param>
+        /// <param name="mode">
+        /// The mode to use when adding data. Default is <c>"append"</c>.
+        /// - <c>"append"</c> - Append the new data to the table.
+        /// - <c>"overwrite"</c> - Replace the existing data with the new data.
+        /// </param>
+        public async Task Add(IReadOnlyList<RecordBatch> data, string mode = "append")
+        {
+            byte[] ipcBytes = SerializeToIpc(data);
+            byte[] utf8Mode = NativeCall.ToUtf8(mode);
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* pData = ipcBytes)
+                    fixed (byte* pMode = utf8Mode)
+                    {
+                        table_add(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
+                            completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Add a single <see cref="RecordBatch"/> to the Table.
+        /// </summary>
+        /// <param name="data">The data to add.</param>
+        /// <param name="mode">
+        /// The mode to use when adding data. Default is <c>"append"</c>.
+        /// - <c>"append"</c> - Append the new data to the table.
+        /// - <c>"overwrite"</c> - Replace the existing data with the new data.
+        /// </param>
+        public Task Add(RecordBatch data, string mode = "append")
+        {
+            return Add(new[] { data }, mode);
+        }
+
+        private static byte[] SerializeToIpc(IReadOnlyList<RecordBatch> batches)
+        {
+            if (batches.Count == 0)
+            {
+                throw new ArgumentException("At least one RecordBatch is required.", nameof(batches));
+            }
+
+            using var stream = new MemoryStream();
+            using (var writer = new ArrowFileWriter(stream, batches[0].Schema))
+            {
+                foreach (var batch in batches)
+                {
+                    writer.WriteRecordBatch(batch);
+                }
+                writer.WriteEnd();
+            }
+            return stream.ToArray();
         }
     }
 }

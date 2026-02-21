@@ -171,4 +171,64 @@ public class TableTests
         long count = await fixture.Table.CountRows();
         Assert.Equal(0, count);
     }
+
+    /// <summary>
+    /// Add a single RecordBatch and verify row count increases.
+    /// </summary>
+    [Fact]
+    public async Task Add_SingleBatch_IncreasesRowCount()
+    {
+        using var fixture = await TestFixture.CreateWithTable("add_single");
+
+        var batch = CreateTestBatch(5);
+        await fixture.Table.Add(batch);
+
+        long count = await fixture.Table.CountRows();
+        Assert.Equal(5, count);
+    }
+
+    /// <summary>
+    /// Add data twice in append mode and verify rows accumulate.
+    /// </summary>
+    [Fact]
+    public async Task Add_AppendMode_AccumulatesRows()
+    {
+        using var fixture = await TestFixture.CreateWithTable("add_append");
+
+        await fixture.Table.Add(CreateTestBatch(3));
+        await fixture.Table.Add(CreateTestBatch(4));
+
+        long count = await fixture.Table.CountRows();
+        Assert.Equal(7, count);
+    }
+
+    /// <summary>
+    /// Add data in overwrite mode replaces existing data.
+    /// </summary>
+    [Fact]
+    public async Task Add_OverwriteMode_ReplacesData()
+    {
+        using var fixture = await TestFixture.CreateWithTable("add_overwrite");
+
+        await fixture.Table.Add(CreateTestBatch(10));
+        await fixture.Table.Add(CreateTestBatch(3), mode: "overwrite");
+
+        long count = await fixture.Table.CountRows();
+        Assert.Equal(3, count);
+    }
+
+    private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
+    {
+        var idArray = new Apache.Arrow.Int32Array.Builder();
+        for (int i = 0; i < numRows; i++)
+        {
+            idArray.Append(i);
+        }
+
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
+    }
 }

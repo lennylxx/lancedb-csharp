@@ -91,3 +91,46 @@ fn test_schema_returns_valid_ipc() {
 fn test_free_ffi_bytes_null_is_safe() {
     free_ffi_bytes(ptr::null_mut());
 }
+
+#[test]
+fn test_add_data_and_count_rows() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "add_test");
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 0);
+
+    let ipc_bytes = create_test_ipc_data(3);
+    common::add_ipc_sync(table_ptr, ipc_bytes);
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_add_data_append_mode() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "append_test");
+
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(2));
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(3));
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+fn create_test_ipc_data(num_rows: usize) -> Vec<u8> {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+    let ids: Vec<i32> = (0..num_rows as i32).collect();
+    let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(ids))]).unwrap();
+    lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+}

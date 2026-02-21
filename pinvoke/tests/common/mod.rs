@@ -105,5 +105,16 @@ pub fn schema_ipc_sync(table_ptr: *const Table) -> Vec<u8> {
     let table = unsafe { Arc::from_raw(table_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
     let schema = rt.block_on(async { table.schema().await.unwrap() });
-    ffi::schema_to_ipc(&schema)
+    lancedb::ipc::schema_to_ipc_file(&schema).unwrap()
+}
+
+/// Adds data from Arrow IPC bytes to the table.
+pub fn add_ipc_sync(table_ptr: *const Table, ipc_bytes: Vec<u8>) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
+        table.add(reader).execute().await.unwrap();
+    });
 }

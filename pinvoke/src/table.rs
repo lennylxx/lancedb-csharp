@@ -124,15 +124,59 @@ pub extern "C" fn table_schema(
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::RUNTIME.spawn(async move {
         match table.schema().await {
-            Ok(schema) => {
-                let ipc_bytes = crate::ffi::schema_to_ipc(&schema);
-                let ffi_bytes = Box::new(FfiBytes {
-                    data: ipc_bytes.as_ptr(),
-                    len: ipc_bytes.len(),
-                    _owner: ipc_bytes,
-                });
-                let ptr = Box::into_raw(ffi_bytes);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            Ok(schema) => match lancedb::ipc::schema_to_ipc_file(&schema) {
+                Ok(ipc_bytes) => {
+                    let ffi_bytes = Box::new(FfiBytes {
+                        data: ipc_bytes.as_ptr(),
+                        len: ipc_bytes.len(),
+                        _owner: ipc_bytes,
+                    });
+                    let ptr = Box::into_raw(ffi_bytes);
+                    completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                }
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Adds data to the table from Arrow IPC file bytes.
+/// mode is "append" (default) or "overwrite" (null = "append").
+#[no_mangle]
+pub extern "C" fn table_add(
+    table_ptr: *const Table,
+    ipc_data: *const u8,
+    ipc_len: usize,
+    mode: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+
+    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+
+    let add_mode = if mode.is_null() {
+        lancedb::table::AddDataMode::Append
+    } else {
+        let mode_str = crate::ffi::to_string(mode);
+        match mode_str.as_str() {
+            "overwrite" => lancedb::table::AddDataMode::Overwrite,
+            _ => lancedb::table::AddDataMode::Append,
+        }
+    };
+
+    crate::RUNTIME.spawn(async move {
+        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
+            }
+        };
+
+        match table.add(reader).mode(add_mode).execute().await {
+            Ok(_) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => crate::callback_error(completion, e),
         }
