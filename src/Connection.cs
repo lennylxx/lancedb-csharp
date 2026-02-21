@@ -172,30 +172,26 @@ namespace lancedb
         /// Create a table in the database.
         /// </summary>
         /// <param name="name">The name of the table.</param>
-        /// <param name="data">
-        /// The initial data to populate the table with, as one or more Arrow
-        /// <see cref="RecordBatch"/> objects. The table schema is inferred from the data.
-        /// </param>
-        /// <param name="mode">
-        /// The mode to use when creating the table. Default is <c>"create"</c>.
-        /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
-        /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
-        /// </param>
-        /// <param name="storageOptions">
-        /// Additional options for the storage backend. Options already set on the
-        /// connection will be inherited by the table, but can be overridden here.
+        /// <param name="options">
+        /// Options to control the create behavior, including the initial data,
+        /// create mode, and storage options.
         /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
-        public async Task<Table> CreateTable(string name, IReadOnlyList<RecordBatch> data, string mode = "create", Dictionary<string, string>? storageOptions = null)
+        public async Task<Table> CreateTable(string name, CreateTableOptions options)
         {
+            if (options.Data == null || options.Data.Count == 0)
+            {
+                throw new ArgumentException("At least one RecordBatch is required in Data.", nameof(options));
+            }
+
             byte[] nameBytes = NativeCall.ToUtf8(name);
-            byte[] ipcBytes = SerializeToIpc(data);
-            byte[] modeBytes = NativeCall.ToUtf8(mode);
-            byte[]? storageJson = storageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(storageOptions))
+            byte[] ipcBytes = SerializeToIpc(options.Data);
+            byte[] modeBytes = NativeCall.ToUtf8(options.Mode);
+            byte[]? storageJson = options.StorageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
                 : null;
 
             IntPtr tablePtr = await NativeCall.Async(callback =>
@@ -220,29 +216,25 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Create a table in the database.
+        /// Create a table in the database with a single <see cref="RecordBatch"/>.
         /// </summary>
         /// <param name="name">The name of the table.</param>
         /// <param name="data">
-        /// The initial data to populate the table with, as a single Arrow <see cref="RecordBatch"/>.
-        /// The table schema is inferred from the data.
+        /// The initial data to populate the table with. The table schema is inferred
+        /// from the data.
         /// </param>
         /// <param name="mode">
         /// The mode to use when creating the table. Default is <c>"create"</c>.
         /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
         /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
         /// </param>
-        /// <param name="storageOptions">
-        /// Additional options for the storage backend. Options already set on the
-        /// connection will be inherited by the table, but can be overridden here.
-        /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
-        public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create", Dictionary<string, string>? storageOptions = null)
+        public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create")
         {
-            return CreateTable(name, new[] { data }, mode, storageOptions);
+            return CreateTable(name, new CreateTableOptions { Data = new[] { data }, Mode = mode });
         }
 
         /// <summary>
