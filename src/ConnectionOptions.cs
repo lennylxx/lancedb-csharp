@@ -9,33 +9,33 @@ namespace lancedb
         /// - `s3://bucket/path/to/database` or `gs://bucket/path/to/database` - database on cloud storage
         /// - `db://host:port` - remote database (LanceDB cloud)
         /// </summary>
-        public string Uri { get; set; }
+        public string? Uri { get; set; }
 
         /// <summary>
         /// User provided options for object storage. For example, S3 credentials or request timeouts.
         ///
         /// The various options are described at https://lancedb.github.io/lancedb/guides/storage/
         /// </summary>
-        public Dictionary<string, string> StorageOptions { get; set; }
+        public Dictionary<string, string>? StorageOptions { get; set; }
 
         /// <summary>
         /// API key for the remote connections
         ///
         /// Can also be passed by setting environment variable `LANCEDB_API_KEY`
         /// </summary>
-        public string ApiKey { get; set; }
+        public string? ApiKey { get; set; }
 
         /// <summary>
         /// Region to connect. Default is 'us-east-1'
         /// </summary>
-        public string Region { get; set; }
+        public string? Region { get; set; }
 
         /// <summary>
         /// Override the host URL for the remote connection.
         ///
         /// This is useful for local testing.
         /// </summary>
-        public string HostOverride { get; set; }
+        public string? HostOverride { get; set; }
 
         /// <summary>
         /// Duration in milliseconds for request timeout. Default = 10,000 (10 seconds)
