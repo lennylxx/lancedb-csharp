@@ -276,6 +276,25 @@ public class TableTests
     }
 
     /// <summary>
+    /// ListVersions Timestamp should be a parseable RFC 3339 / ISO 8601 date.
+    /// </summary>
+    [Fact]
+    public async Task ListVersions_Timestamp_IsValidIso8601()
+    {
+        using var fixture = await TestFixture.CreateWithTable("version_ts");
+
+        var versions = await fixture.Table.ListVersions();
+
+        Assert.NotEmpty(versions);
+        var timestamp = versions[0].Timestamp;
+        Assert.True(
+            DateTimeOffset.TryParse(timestamp, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind, out var parsed),
+            $"Timestamp '{timestamp}' is not a valid ISO 8601 date");
+        Assert.True(parsed.Year >= 2024, $"Timestamp year {parsed.Year} seems too old");
+    }
+
+    /// <summary>
     /// Checkout a previous version and verify row count matches that version.
     /// </summary>
     [Fact]
