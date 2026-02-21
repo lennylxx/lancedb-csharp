@@ -399,6 +399,15 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             if let Some(v) = config.get("ascii_folding").and_then(|v| v.as_bool()) {
                 builder = builder.ascii_folding(v);
             }
+            if let Some(v) = config.get("ngram_min_length").and_then(|v| v.as_u64()) {
+                builder = builder.ngram_min_length(v as u32);
+            }
+            if let Some(v) = config.get("ngram_max_length").and_then(|v| v.as_u64()) {
+                builder = builder.ngram_max_length(v as u32);
+            }
+            if let Some(v) = config.get("prefix_only").and_then(|v| v.as_bool()) {
+                builder = builder.ngram_prefix_only(v);
+            }
             Ok(LanceIndex::FTS(builder))
         }
         "IvfPq" => {

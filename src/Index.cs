@@ -136,6 +136,9 @@ namespace lancedb
                 ["stem"] = Stem,
                 ["remove_stop_words"] = RemoveStopWords,
                 ["ascii_folding"] = AsciiFolding,
+                ["ngram_min_length"] = NgramMinLength,
+                ["ngram_max_length"] = NgramMaxLength,
+                ["prefix_only"] = PrefixOnly,
             };
             if (MaxTokenLength.HasValue) { dict["max_token_length"] = MaxTokenLength.Value; }
             return JsonSerializer.Serialize(dict);
