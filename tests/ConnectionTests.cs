@@ -233,4 +233,109 @@ public class ConnectionTests
             }
         }
     }
+
+    /// <summary>
+    /// CreateTable with initial data should create the table and populate it.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_WithData_CreatesAndPopulates()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var batch = CreateTestBatch(5);
+            var table = await connection.CreateTable("my_table", batch);
+
+            Assert.Equal("my_table", table.Name);
+            long count = await table.CountRows();
+            Assert.Equal(5, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateTable with duplicate name should throw LanceDbException.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_DuplicateName_ThrowsLanceDbException()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var batch = CreateTestBatch(3);
+            await connection.CreateTable("dup_table", batch);
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => connection.CreateTable("dup_table", CreateTestBatch(2)));
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// CreateTable with overwrite mode should replace existing table data.
+    /// </summary>
+    [Fact]
+    public async Task CreateTable_OverwriteMode_ReplacesExisting()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            await connection.CreateTable("overwrite_test", CreateTestBatch(10));
+            var table = await connection.CreateTable("overwrite_test", CreateTestBatch(3), mode: "overwrite");
+
+            long count = await table.CountRows();
+            Assert.Equal(3, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
+    {
+        var idArray = new Apache.Arrow.Int32Array.Builder();
+        for (int i = 0; i < numRows; i++)
+        {
+            idArray.Append(i);
+        }
+
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
+    }
 }

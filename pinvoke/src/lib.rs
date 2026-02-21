@@ -1,4 +1,5 @@
 use lancedb::connection::Connection;
+use lancedb::database::CreateTableMode;
 use lazy_static::lazy_static;
 use libc::c_char;
 use std::ffi::CString;
@@ -73,6 +74,53 @@ pub extern "C" fn database_create_empty_table(
             .create_empty_table(table_name, schema)
             .execute()
             .await
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn database_create_table(
+    connection_ptr: *const Connection,
+    table_name: *const c_char,
+    ipc_data: *const u8,
+    ipc_len: usize,
+    mode: *const c_char,
+    completion: FfiCallback,
+) {
+    let table_name = ffi::to_string(table_name);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+
+    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+
+    let create_mode = if mode.is_null() {
+        CreateTableMode::Create
+    } else {
+        match ffi::to_string(mode).as_str() {
+            "overwrite" => CreateTableMode::Overwrite,
+            _ => CreateTableMode::Create,
+        }
+    };
+
+    RUNTIME.spawn(async move {
+        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
+            Ok(r) => r,
+            Err(e) => {
+                callback_error(completion, e);
+                return;
+            }
+        };
+
+        match connection
+            .create_table(table_name, reader)
+            .mode(create_mode)
+            .execute()
+            .await
+        {
+            Ok(table) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
     });
 }
 

@@ -150,3 +150,23 @@ pub fn restore_sync(table_ptr: *const Table) {
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async { table.restore().await.unwrap() });
 }
+
+/// Creates a table with initial IPC data and returns a raw Table pointer.
+pub fn create_table_with_data_sync(
+    connection_ptr: *const Connection,
+    name: &str,
+    ipc_bytes: Vec<u8>,
+) -> *const Table {
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
+    let table = rt.block_on(async {
+        connection
+            .create_table(name, reader)
+            .execute()
+            .await
+            .unwrap()
+    });
+    Arc::into_raw(Arc::new(table))
+}

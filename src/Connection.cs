@@ -1,8 +1,12 @@
 namespace lancedb
 {
     using System;
+    using System.Collections.Generic;
+    using System.IO;
     using System.Runtime.InteropServices;
     using System.Text;
+    using Apache.Arrow;
+    using Apache.Arrow.Ipc;
 
     /// <summary>
     /// A connection to a LanceDB database.
@@ -26,6 +30,9 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_table_names(IntPtr connection_ptr, NativeCall.FfiCallback completion);
@@ -138,6 +145,70 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Create a table in the database.
+        /// </summary>
+        /// <param name="name">The name of the table.</param>
+        /// <param name="data">
+        /// The initial data to populate the table with, as one or more Arrow
+        /// <see cref="RecordBatch"/> objects. The table schema is inferred from the data.
+        /// </param>
+        /// <param name="mode">
+        /// The mode to use when creating the table. Default is <c>"create"</c>.
+        /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
+        /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
+        /// </param>
+        /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
+        /// <exception cref="LanceDbException">
+        /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
+        /// </exception>
+        public async Task<Table> CreateTable(string name, IReadOnlyList<RecordBatch> data, string mode = "create")
+        {
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            byte[] ipcBytes = SerializeToIpc(data);
+            byte[] modeBytes = NativeCall.ToUtf8(mode);
+
+            IntPtr tablePtr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pName = nameBytes)
+                    fixed (byte* pData = ipcBytes)
+                    fixed (byte* pMode = modeBytes)
+                    {
+                        database_create_table(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pName,
+                            (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
+                            callback);
+                    }
+                }
+            });
+            return new Table(tablePtr);
+        }
+
+        /// <summary>
+        /// Create a table in the database.
+        /// </summary>
+        /// <param name="name">The name of the table.</param>
+        /// <param name="data">
+        /// The initial data to populate the table with, as a single Arrow <see cref="RecordBatch"/>.
+        /// The table schema is inferred from the data.
+        /// </param>
+        /// <param name="mode">
+        /// The mode to use when creating the table. Default is <c>"create"</c>.
+        /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
+        /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
+        /// </param>
+        /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
+        /// <exception cref="LanceDbException">
+        /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
+        /// </exception>
+        public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create")
+        {
+            return CreateTable(name, new[] { data }, mode);
+        }
+
+        /// <summary>
         /// Get the names of all tables in the database.
         /// </summary>
         /// <remarks>
@@ -153,7 +224,7 @@ namespace lancedb
             string joined = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(joined))
             {
-                return Array.Empty<string>();
+                return System.Array.Empty<string>();
             }
             return joined.Split('\n');
         }
@@ -187,6 +258,25 @@ namespace lancedb
             {
                 database_drop_all_tables(_handle!.DangerousGetHandle(), callback);
             });
+        }
+
+        private static byte[] SerializeToIpc(IReadOnlyList<RecordBatch> batches)
+        {
+            if (batches.Count == 0)
+            {
+                throw new ArgumentException("At least one RecordBatch is required.", nameof(batches));
+            }
+
+            using var stream = new MemoryStream();
+            using (var writer = new ArrowFileWriter(stream, batches[0].Schema))
+            {
+                foreach (var batch in batches)
+                {
+                    writer.WriteRecordBatch(batch);
+                }
+                writer.WriteEnd();
+            }
+            return stream.ToArray();
         }
     }
 }

@@ -80,3 +80,27 @@ fn test_drop_all_tables() {
 
     database_close(ptr);
 }
+
+#[test]
+fn test_create_table_with_data() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, false)]));
+    let batch =
+        RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "my_table", ipc_bytes);
+    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
+
+    let names = common::table_names_sync(conn_ptr);
+    assert_eq!(names, vec!["my_table"]);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
