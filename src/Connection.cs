@@ -18,6 +18,9 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         public static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtrCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, IntPtrCallback completion);
+
         private IntPtr _connectionPtr;
 
         public Connection()
@@ -76,6 +79,31 @@ namespace lancedb
                 fixed (byte* nameBytePtr = nameUtf8Bytes)
                 {
                     database_open_table(_connectionPtr, new IntPtr(nameBytePtr), completion);
+                }
+            }
+
+            IntPtr tablePtr = await tcs.Task.ConfigureAwait(false);
+            completionHandle.Free();
+
+            return new Table(tablePtr);
+        }
+
+        /// <summary>
+        /// Create an empty table with the given name and a minimal schema.
+        /// </summary>
+        /// <param name="name">The name of the table</param>
+        public async Task<Table> CreateEmptyTable(string name)
+        {
+            var tcs = new TaskCompletionSource<IntPtr>();
+            IntPtrCallback completion = (ptr) => tcs.SetResult(ptr);
+            GCHandle completionHandle = GCHandle.Alloc(completion, GCHandleType.Normal);
+            byte[] nameUtf8Bytes = Encoding.UTF8.GetBytes(name);
+
+            unsafe
+            {
+                fixed (byte* nameBytePtr = nameUtf8Bytes)
+                {
+                    database_create_empty_table(_connectionPtr, new IntPtr(nameBytePtr), completion);
                 }
             }
 

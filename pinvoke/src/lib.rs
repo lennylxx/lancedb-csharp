@@ -22,7 +22,6 @@ pub extern "C" fn database_connect(
     RUNTIME.spawn(async move {
         let connection = lancedb::connection::connect(dataset_uri).execute().await;
 
-        // allocate it on the heap to avoid it being released
         let arc_connection = Arc::new(connection.unwrap());
         let ptr = Arc::into_raw(arc_connection);
         completion(ptr);
@@ -36,13 +35,12 @@ pub extern "C" fn database_open_table(
     completion: extern "C" fn(*const Table),
 ) {
     let table_name = ffi::get_static_str(table_name);
-    let connection = unsafe {
-        if !connection_ptr.is_null() {
-            Arc::from_raw(connection_ptr)
-        } else {
-            panic!("Connection pointer is null");
-        }
-    };
+    // Clone the Arc so the original pointer stays valid for the caller
+    unsafe {
+        assert!(!connection_ptr.is_null(), "Connection pointer is null");
+        Arc::increment_strong_count(connection_ptr);
+    }
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
     RUNTIME.spawn(async move {
         let table = connection.open_table(table_name).execute().await;
         let arc_table = Arc::new(table.unwrap());
@@ -52,15 +50,38 @@ pub extern "C" fn database_open_table(
     });
 }
 
+/// Create an empty table with the given name and a minimal schema (single "id" int32 column).
+#[no_mangle]
+pub extern "C" fn database_create_empty_table(
+    connection_ptr: *const Connection,
+    table_name: *const c_char,
+    completion: extern "C" fn(*const Table),
+) {
+    let table_name = ffi::get_static_str(table_name);
+    let schema = ffi::minimal_schema();
+
+    // Borrow the connection without consuming it
+    unsafe {
+        assert!(!connection_ptr.is_null(), "Connection pointer is null");
+        Arc::increment_strong_count(connection_ptr);
+    }
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+
+    RUNTIME.spawn(async move {
+        let table = connection
+            .create_empty_table(table_name, schema)
+            .execute()
+            .await;
+        let arc_table = Arc::new(table.unwrap());
+        let ptr = Arc::into_raw(arc_table);
+        completion(ptr);
+    });
+}
+
 #[no_mangle]
 pub extern "C" fn database_close(connection_ptr: *const Connection) {
-    let connection = unsafe {
-        if !connection_ptr.is_null() {
-            Arc::from_raw(connection_ptr)
-        } else {
-            panic!("Connection pointer is null");
-        }
-    };
-
-    drop(connection);
+    unsafe {
+        assert!(!connection_ptr.is_null(), "Connection pointer is null");
+        drop(Arc::from_raw(connection_ptr));
+    }
 }
