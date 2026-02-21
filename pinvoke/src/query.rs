@@ -35,8 +35,8 @@ pub extern "C" fn vector_query_column(
     assert!(!vector_query_ptr.is_null(), "VectorQuery pointer is null");
     let vector_query = unsafe { &*vector_query_ptr };
 
-    let column_name = ffi::get_static_str(column_name);
-    <VectorQuery as Clone>::clone(vector_query).column(column_name);
+    let column_name = ffi::to_string(column_name);
+    <VectorQuery as Clone>::clone(vector_query).column(&column_name);
 
     vector_query_ptr
 }

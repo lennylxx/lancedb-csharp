@@ -22,9 +22,9 @@ pub extern "C" fn database_connect(
     uri: *const c_char,
     completion: extern "C" fn(*const Connection),
 ) {
-    let dataset_uri: &str = ffi::get_static_str(uri);
+    let dataset_uri = ffi::to_string(uri);
     RUNTIME.spawn(async move {
-        let connection = lancedb::connection::connect(dataset_uri).execute().await;
+        let connection = lancedb::connection::connect(&dataset_uri).execute().await;
 
         let arc_connection = Arc::new(connection.unwrap());
         let ptr = Arc::into_raw(arc_connection);
@@ -38,7 +38,7 @@ pub extern "C" fn database_open_table(
     table_name: *const c_char,
     completion: extern "C" fn(*const Table),
 ) {
-    let table_name = ffi::get_static_str(table_name);
+    let table_name = ffi::to_string(table_name);
     // Clone the Arc so the original pointer stays valid for the caller
     unsafe {
         assert!(!connection_ptr.is_null(), "Connection pointer is null");
@@ -61,7 +61,7 @@ pub extern "C" fn database_create_empty_table(
     table_name: *const c_char,
     completion: extern "C" fn(*const Table),
 ) {
-    let table_name = ffi::get_static_str(table_name);
+    let table_name = ffi::to_string(table_name);
     let schema = ffi::minimal_schema();
 
     // Borrow the connection without consuming it

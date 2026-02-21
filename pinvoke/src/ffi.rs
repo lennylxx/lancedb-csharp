@@ -3,10 +3,12 @@ use libc::c_char;
 use std::ffi::CStr;
 use std::sync::Arc;
 
-pub fn get_static_str(c_string: *const c_char) -> &'static str {
+/// Converts a C string pointer to an owned Rust String.
+/// The caller retains ownership of the original C string.
+pub fn to_string(c_string: *const c_char) -> String {
     assert!(!c_string.is_null(), "Received null pointer");
     let c_str = unsafe { CStr::from_ptr(c_string) };
-    c_str.to_str().expect("Invalid UTF-8 data")
+    c_str.to_str().expect("Invalid UTF-8 data").to_owned()
 }
 
 /// Create a minimal Arrow schema with a single "id" integer field.
