@@ -5,6 +5,7 @@ namespace lancedb
     using System.IO;
     using System.Runtime.InteropServices;
     using System.Text;
+    using System.Text.Json;
     using Apache.Arrow;
     using Apache.Arrow.Ipc;
 
@@ -23,19 +24,19 @@ namespace lancedb
     public class Connection : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_connect(IntPtr uri, NativeCall.FfiCallback completion);
+        private static extern void database_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, NativeCall.FfiCallback completion);
+        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, IntPtr storage_options_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_table_names(IntPtr connection_ptr, NativeCall.FfiCallback completion);
+        private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
@@ -58,18 +59,30 @@ namespace lancedb
         /// - s3://bucket/path or gs://bucket/path — database on cloud storage
         /// - db://host:port — remote database (LanceDB Cloud)
         /// </param>
-        /// <param name="opts">Options to control the connection behavior.</param>
+        /// <param name="options">Options to control the connection behavior.</param>
         /// <returns>A task that completes when the connection is established.</returns>
-        public async Task Connect(string uri, ConnectionOptions? opts = null)
+        public async Task Connect(string uri, ConnectionOptions? options = null)
         {
             byte[] uriBytes = NativeCall.ToUtf8(uri);
+            double rciSecs = options?.ReadConsistencyInterval.HasValue == true
+                ? options.ReadConsistencyInterval!.Value.TotalSeconds
+                : double.NaN;
+            byte[]? storageJson = options?.StorageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                : null;
+
             IntPtr ptr = await NativeCall.Async(callback =>
             {
                 unsafe
                 {
                     fixed (byte* p = uriBytes)
+                    fixed (byte* pStorage = storageJson)
                     {
-                        database_connect(new IntPtr(p), callback);
+                        database_connect(
+                            new IntPtr(p),
+                            rciSecs,
+                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            callback);
                     }
                 }
             });
@@ -105,13 +118,24 @@ namespace lancedb
         public async Task<Table> OpenTable(string name, OpenTableOptions? options = null)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
+            byte[]? storageJson = options?.StorageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                : null;
+            uint indexCacheSize = options?.IndexCacheSize ?? 0;
+
             IntPtr tablePtr = await NativeCall.Async(callback =>
             {
                 unsafe
                 {
                     fixed (byte* p = nameBytes)
+                    fixed (byte* pStorage = storageJson)
                     {
-                        database_open_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                        database_open_table(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(p),
+                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            indexCacheSize,
+                            callback);
                     }
                 }
             });
@@ -157,15 +181,22 @@ namespace lancedb
         /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
         /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
         /// </param>
+        /// <param name="storageOptions">
+        /// Additional options for the storage backend. Options already set on the
+        /// connection will be inherited by the table, but can be overridden here.
+        /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
-        public async Task<Table> CreateTable(string name, IReadOnlyList<RecordBatch> data, string mode = "create")
+        public async Task<Table> CreateTable(string name, IReadOnlyList<RecordBatch> data, string mode = "create", Dictionary<string, string>? storageOptions = null)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
             byte[] ipcBytes = SerializeToIpc(data);
             byte[] modeBytes = NativeCall.ToUtf8(mode);
+            byte[]? storageJson = storageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(storageOptions))
+                : null;
 
             IntPtr tablePtr = await NativeCall.Async(callback =>
             {
@@ -174,11 +205,13 @@ namespace lancedb
                     fixed (byte* pName = nameBytes)
                     fixed (byte* pData = ipcBytes)
                     fixed (byte* pMode = modeBytes)
+                    fixed (byte* pStorage = storageJson)
                     {
                         database_create_table(
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pName,
                             (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
+                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
                             callback);
                     }
                 }
@@ -199,27 +232,48 @@ namespace lancedb
         /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
         /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
         /// </param>
+        /// <param name="storageOptions">
+        /// Additional options for the storage backend. Options already set on the
+        /// connection will be inherited by the table, but can be overridden here.
+        /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
-        public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create")
+        public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create", Dictionary<string, string>? storageOptions = null)
         {
-            return CreateTable(name, new[] { data }, mode);
+            return CreateTable(name, new[] { data }, mode, storageOptions);
         }
 
         /// <summary>
         /// Get the names of all tables in the database.
         /// </summary>
-        /// <remarks>
-        /// The names are returned in lexicographical order (ascending).
-        /// </remarks>
-        /// <returns>A list of table names.</returns>
-        public async Task<IReadOnlyList<string>> TableNames()
+        /// <param name="startAfter">
+        /// If present, only return names that come lexicographically after the supplied
+        /// value. Can be combined with <paramref name="limit"/> to implement pagination.
+        /// </param>
+        /// <param name="limit">
+        /// The maximum number of table names to return. If <c>null</c> or 0, all names
+        /// are returned.
+        /// </param>
+        /// <returns>A list of table names in lexicographical order.</returns>
+        public async Task<IReadOnlyList<string>> TableNames(string? startAfter = null, uint limit = 0)
         {
+            byte[]? startAfterBytes = startAfter != null ? NativeCall.ToUtf8(startAfter) : null;
+
             IntPtr ptr = await NativeCall.Async(callback =>
             {
-                database_table_names(_handle!.DangerousGetHandle(), callback);
+                unsafe
+                {
+                    fixed (byte* pStartAfter = startAfterBytes)
+                    {
+                        database_table_names(
+                            _handle!.DangerousGetHandle(),
+                            startAfterBytes != null ? new IntPtr(pStartAfter) : IntPtr.Zero,
+                            limit,
+                            callback);
+                    }
+                }
             });
             string joined = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(joined))

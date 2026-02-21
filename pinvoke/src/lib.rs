@@ -3,6 +3,7 @@ use lancedb::database::CreateTableMode;
 use lazy_static::lazy_static;
 use libc::c_char;
 use std::ffi::CString;
+use std::time::Duration;
 use tokio::runtime::Runtime;
 
 #[macro_use]
@@ -49,11 +50,33 @@ fn callback_error(completion: FfiCallback, err: impl std::fmt::Display) {
 #[unsafe(no_mangle)]
 pub extern "C" fn database_connect(
     uri: *const c_char,
+    read_consistency_interval_secs: f64,
+    storage_options_json: *const c_char,
     completion: FfiCallback,
 ) {
     let dataset_uri = ffi::to_string(uri);
-    ffi_async!(completion, async {
-        lancedb::connection::connect(&dataset_uri).execute().await
+    let storage_opts = ffi::parse_optional_json_map(storage_options_json);
+    let rci_secs = if read_consistency_interval_secs.is_nan() {
+        None
+    } else {
+        Some(read_consistency_interval_secs)
+    };
+
+    RUNTIME.spawn(async move {
+        let mut builder = lancedb::connection::connect(&dataset_uri);
+        if let Some(opts) = storage_opts {
+            builder = builder.storage_options(opts);
+        }
+        if let Some(secs) = rci_secs {
+            builder = builder.read_consistency_interval(Duration::from_secs_f64(secs));
+        }
+        match builder.execute().await {
+            Ok(conn) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(conn));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
     });
 }
 
@@ -61,12 +84,28 @@ pub extern "C" fn database_connect(
 pub extern "C" fn database_open_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
+    storage_options_json: *const c_char,
+    index_cache_size: u32,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
+    let storage_opts = ffi::parse_optional_json_map(storage_options_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
-    ffi_async!(completion, async {
-        connection.open_table(table_name).execute().await
+    RUNTIME.spawn(async move {
+        let mut builder = connection.open_table(table_name);
+        if let Some(opts) = storage_opts {
+            builder = builder.storage_options(opts);
+        }
+        if index_cache_size > 0 {
+            builder = builder.index_cache_size(index_cache_size);
+        }
+        match builder.execute().await {
+            Ok(table) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
     });
 }
 
@@ -95,10 +134,12 @@ pub extern "C" fn database_create_table(
     ipc_data: *const u8,
     ipc_len: usize,
     mode: *const c_char,
+    storage_options_json: *const c_char,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
+    let storage_opts = ffi::parse_optional_json_map(storage_options_json);
 
     let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
 
@@ -120,12 +161,15 @@ pub extern "C" fn database_create_table(
             }
         };
 
-        match connection
+        let mut builder = connection
             .create_table(table_name, reader)
-            .mode(create_mode)
-            .execute()
-            .await
-        {
+            .mode(create_mode);
+
+        if let Some(opts) = storage_opts {
+            builder = builder.storage_options(opts);
+        }
+
+        match builder.execute().await {
             Ok(table) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
                 completion(ptr as *const std::ffi::c_void, std::ptr::null());
@@ -143,11 +187,25 @@ pub extern "C" fn database_close(connection_ptr: *const Connection) {
 #[unsafe(no_mangle)]
 pub extern "C" fn database_table_names(
     connection_ptr: *const Connection,
+    start_after: *const c_char,
+    limit: u32,
     completion: FfiCallback,
 ) {
     let connection = ffi_clone_arc!(connection_ptr, Connection);
+    let start_after_str = if start_after.is_null() {
+        None
+    } else {
+        Some(ffi::to_string(start_after))
+    };
     RUNTIME.spawn(async move {
-        match connection.table_names().execute().await {
+        let mut builder = connection.table_names();
+        if let Some(sa) = start_after_str {
+            builder = builder.start_after(sa);
+        }
+        if limit > 0 {
+            builder = builder.limit(limit);
+        }
+        match builder.execute().await {
             Ok(names) => {
                 let joined = names.join("\n");
                 let c_str = CString::new(joined).unwrap_or_default();

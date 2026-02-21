@@ -1,14 +1,19 @@
 namespace lancedb
 {
+    using System.Collections.Generic;
+
+    /// <summary>
+    /// Options to control the behavior when opening a table.
+    /// </summary>
     public class OpenTableOptions
     {
         /// <summary>
-        /// Configuration for object storage.
+        /// Additional options for the storage backend.
         ///
         /// Options already set on the connection will be inherited by the table,
         /// but can be overridden here.
         ///
-        /// The available options are described at https://lancedb.github.io/lancedb/guides/storage/
+        /// See available options at https://lancedb.github.io/lancedb/guides/storage/
         /// </summary>
         public Dictionary<string, string>? StorageOptions { get; set; }
 
@@ -23,6 +28,6 @@ namespace lancedb
         /// Setting this value higher will increase performance on larger datasets
         /// at the expense of more RAM.
         /// </summary>
-        public int? IndexCacheSize { get; set; }
+        public uint? IndexCacheSize { get; set; }
     }
 }

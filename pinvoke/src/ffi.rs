@@ -1,5 +1,6 @@
 use arrow_schema::{DataType, Schema};
 use libc::c_char;
+use std::collections::HashMap;
 use std::ffi::CStr;
 use std::sync::Arc;
 
@@ -26,4 +27,14 @@ pub fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
         "dot" => Ok(lancedb::DistanceType::Dot),
         _ => Err(format!("Unknown distance type: {}", s)),
     }
+}
+
+/// Parses an optional JSON-encoded map from a nullable C string.
+/// Returns None if the pointer is null.
+pub fn parse_optional_json_map(json_ptr: *const c_char) -> Option<HashMap<String, String>> {
+    if json_ptr.is_null() {
+        return None;
+    }
+    let json_str = to_string(json_ptr);
+    serde_json::from_str(&json_str).ok()
 }
