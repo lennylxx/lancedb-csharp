@@ -1233,4 +1233,90 @@ public class TableTests
             }
         }
     }
+
+    /// <summary>
+    /// DropIndex should remove the index from the table.
+    /// </summary>
+    [Fact]
+    public async Task DropIndex_RemovesIndex()
+    {
+        using var fixture = await TestFixture.CreateWithTable("drop_idx");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+        var indices = await fixture.Table.ListIndices();
+        Assert.NotEmpty(indices);
+        string indexName = indices[0].Name;
+
+        await fixture.Table.DropIndex(indexName);
+
+        indices = await fixture.Table.ListIndices();
+        Assert.DoesNotContain(indices, i => i.Name == indexName);
+    }
+
+    /// <summary>
+    /// IndexStats should return statistics for an existing index.
+    /// </summary>
+    [Fact]
+    public async Task IndexStats_ExistingIndex_ReturnsStatistics()
+    {
+        using var fixture = await TestFixture.CreateWithTable("idx_stats");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+        var indices = await fixture.Table.ListIndices();
+        string indexName = indices[0].Name;
+
+        var stats = await fixture.Table.IndexStats(indexName);
+
+        Assert.NotNull(stats);
+        Assert.Equal(100, (int)stats!.NumIndexedRows);
+        Assert.Equal("BTREE", stats.IndexType);
+    }
+
+    /// <summary>
+    /// IndexStats should return null for a non-existent index.
+    /// </summary>
+    [Fact]
+    public async Task IndexStats_NonExistent_ReturnsNull()
+    {
+        using var fixture = await TestFixture.CreateWithTable("idx_stats_none");
+
+        var stats = await fixture.Table.IndexStats("nonexistent");
+
+        Assert.Null(stats);
+    }
+
+    /// <summary>
+    /// PrewarmIndex should not throw for an existing index.
+    /// </summary>
+    [Fact]
+    public async Task PrewarmIndex_ExistingIndex_DoesNotThrow()
+    {
+        using var fixture = await TestFixture.CreateWithTable("prewarm_idx");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+        var indices = await fixture.Table.ListIndices();
+        string indexName = indices[0].Name;
+
+        await fixture.Table.PrewarmIndex(indexName);
+    }
+
+    /// <summary>
+    /// WaitForIndex should return successfully when index is already complete.
+    /// </summary>
+    [Fact]
+    public async Task WaitForIndex_AlreadyIndexed_ReturnsSuccessfully()
+    {
+        using var fixture = await TestFixture.CreateWithTable("wait_idx");
+        await fixture.Table.Add(CreateTestBatch(100));
+
+        await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+        var indices = await fixture.Table.ListIndices();
+        string indexName = indices[0].Name;
+
+        await fixture.Table.WaitForIndex(
+            new[] { indexName }, TimeSpan.FromSeconds(30));
+    }
 }

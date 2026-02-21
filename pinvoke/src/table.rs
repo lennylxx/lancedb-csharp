@@ -830,6 +830,96 @@ pub extern "C" fn table_tags_get_version(
     });
 }
 
+/// Drop an index from the table by name.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_drop_index(
+    table_ptr: *const Table,
+    name: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let index_name = crate::ffi::to_string(name);
+    crate::RUNTIME.spawn(async move {
+        match table.drop_index(&index_name).await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Prewarm an index in the table.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_prewarm_index(
+    table_ptr: *const Table,
+    name: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let index_name = crate::ffi::to_string(name);
+    crate::RUNTIME.spawn(async move {
+        match table.prewarm_index(&index_name).await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Wait for indexing to complete for the given index names.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_wait_for_index(
+    table_ptr: *const Table,
+    index_names_json: *const c_char,
+    timeout_ms: i64,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let json_str = crate::ffi::to_string(index_names_json);
+    let names: Vec<String> = serde_json::from_str(&json_str).unwrap_or_default();
+    let timeout = if timeout_ms > 0 {
+        std::time::Duration::from_millis(timeout_ms as u64)
+    } else {
+        std::time::Duration::from_secs(300)
+    };
+    crate::RUNTIME.spawn(async move {
+        let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+        match table.wait_for_index(&name_refs, timeout).await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Get statistics about an index. Returns a JSON string or null if the index doesn't exist.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_index_stats(
+    table_ptr: *const Table,
+    index_name: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let name = crate::ffi::to_string(index_name);
+    crate::RUNTIME.spawn(async move {
+        match table.index_stats(&name).await {
+            Ok(Some(stats)) => {
+                let json = serde_json::json!({
+                    "num_indexed_rows": stats.num_indexed_rows,
+                    "num_unindexed_rows": stats.num_unindexed_rows,
+                    "index_type": format!("{}", stats.index_type),
+                    "distance_type": stats.distance_type.map(|d| format!("{}", d)),
+                    "num_indices": stats.num_indices,
+                });
+                let json_str = serde_json::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Ok(None) => {
+                completion(std::ptr::null(), std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
 /// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
 #[repr(C)]
 pub struct FfiBytes {

@@ -95,6 +95,23 @@ namespace lancedb
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_drop_index(
+            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_prewarm_index(
+            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_wait_for_index(
+            IntPtr table_ptr, IntPtr index_names_json, long timeout_ms,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_index_stats(
+            IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_add_columns(
             IntPtr table_ptr, IntPtr transforms_json, NativeCall.FfiCallback completion);
 
@@ -734,6 +751,141 @@ namespace lancedb
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<List<IndexInfo>>(json)
                 ?? new List<IndexInfo>();
+        }
+
+        /// <summary>
+        /// Drop an index from the table.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This does not delete the index from disk, it just removes it from the table.
+        /// To delete the index, run <see cref="Optimize"/> after dropping the index.
+        /// </para>
+        /// <para>
+        /// Use <see cref="ListIndices"/> to find the names of the indices.
+        /// </para>
+        /// </remarks>
+        /// <param name="name">The name of the index to drop.</param>
+        public async Task DropIndex(string name)
+        {
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = nameBytes)
+                    {
+                        table_drop_index(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Prewarm an index in the table.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a hint to fully load the index into memory. It can be used to
+        /// avoid cold starts.
+        /// </para>
+        /// <para>
+        /// It is generally wasteful to call this if the index does not fit into the
+        /// available cache.
+        /// </para>
+        /// <para>
+        /// This function is not yet supported on all index types, in which case it
+        /// may do nothing.
+        /// </para>
+        /// <para>
+        /// Use <see cref="ListIndices"/> to find the names of the indices.
+        /// </para>
+        /// </remarks>
+        /// <param name="name">The name of the index to prewarm.</param>
+        public async Task PrewarmIndex(string name)
+        {
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = nameBytes)
+                    {
+                        table_prewarm_index(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Wait for indexing to complete for the given index names.
+        /// </summary>
+        /// <remarks>
+        /// This will poll the table until all the indices are fully indexed,
+        /// or throw if the timeout is reached.
+        /// </remarks>
+        /// <param name="indexNames">The names of the indices to wait for.</param>
+        /// <param name="timeout">
+        /// Maximum time to wait for indexing to complete. Defaults to 5 minutes
+        /// if not specified.
+        /// </param>
+        /// <exception cref="LanceDbException">
+        /// Thrown if the indices are not fully indexed within the timeout.
+        /// </exception>
+        public async Task WaitForIndex(
+            IEnumerable<string> indexNames, TimeSpan? timeout = null)
+        {
+            long timeoutMs = timeout.HasValue
+                ? (long)timeout.Value.TotalMilliseconds
+                : -1;
+            byte[] namesJson = NativeCall.ToUtf8(
+                JsonSerializer.Serialize(indexNames));
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = namesJson)
+                    {
+                        table_wait_for_index(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, timeoutMs,
+                            completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Retrieve statistics about an index.
+        /// </summary>
+        /// <param name="indexName">The name of the index to retrieve statistics for.</param>
+        /// <returns>
+        /// An <see cref="IndexStatistics"/> object, or <c>null</c> if the index does not exist.
+        /// </returns>
+        public async Task<IndexStatistics?> IndexStats(string indexName)
+        {
+            byte[] nameBytes = NativeCall.ToUtf8(indexName);
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = nameBytes)
+                    {
+                        table_index_stats(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+
+            if (result == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<IndexStatistics>(json);
         }
 
         /// <summary>
