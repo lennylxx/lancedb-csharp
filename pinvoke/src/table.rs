@@ -808,6 +808,28 @@ pub extern "C" fn table_tags_update(
     });
 }
 
+/// Get the version number that a tag points to.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_tags_get_version(
+    table_ptr: *const Table,
+    tag: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let tag_name = crate::ffi::to_string(tag);
+    crate::RUNTIME.spawn(async move {
+        match table.tags().await {
+            Ok(tags) => match tags.get_version(&tag_name).await {
+                Ok(version) => {
+                    completion(version as *const std::ffi::c_void, std::ptr::null());
+                }
+                Err(e) => crate::callback_error(completion, e),
+            },
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
 /// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
 #[repr(C)]
 pub struct FfiBytes {

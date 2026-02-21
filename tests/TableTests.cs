@@ -1201,4 +1201,36 @@ public class TableTests
             }
         }
     }
+
+    /// <summary>
+    /// GetTagVersion should return the version number a tag points to.
+    /// </summary>
+    [Fact]
+    public async Task GetTagVersion_ReturnsCorrectVersion()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("tag_getver", CreateTestBatch(3));
+
+            var version = await table.Version();
+            await table.CreateTag("my_tag", version);
+
+            var tagVersion = await table.GetTagVersion("my_tag");
+
+            Assert.Equal(version, tagVersion);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }

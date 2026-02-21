@@ -128,6 +128,10 @@ namespace lancedb
             IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_tags_get_version(
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_merge_insert(
             IntPtr table_ptr, IntPtr on_columns_json,
             bool when_matched_update_all, IntPtr when_matched_update_all_filter,
@@ -1145,6 +1149,29 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Get the version number that a tag points to.
+        /// </summary>
+        /// <param name="tag">The name of the tag.</param>
+        /// <returns>The version number associated with the tag.</returns>
+        /// <exception cref="LanceDbException">Thrown if the tag does not exist.</exception>
+        public async Task<ulong> GetTagVersion(string tag)
+        {
+            byte[] utf8Tag = NativeCall.ToUtf8(tag);
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Tag)
+                    {
+                        table_tags_get_version(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+            return (ulong)result.ToInt64();
         }
     }
 }
