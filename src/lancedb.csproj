@@ -2,11 +2,28 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <LangVersion>12</LangVersion>
   </PropertyGroup>
+
+  <!-- Build the Rust native library before the C# build -->
+  <PropertyGroup>
+    <CargoProfile Condition="'$(Configuration)' == 'Release'">release</CargoProfile>
+    <CargoProfile Condition="'$(CargoProfile)' == ''">debug</CargoProfile>
+    <CargoFlags Condition="'$(CargoProfile)' == 'release'">--release</CargoFlags>
+  </PropertyGroup>
+
+  <Target Name="BuildRustNativeLibrary" BeforeTargets="Build">
+    <Exec Command="cargo build $(CargoFlags)" WorkingDirectory="$(MSBuildProjectDirectory)/../pinvoke" />
+  </Target>
+
+  <ItemGroup>
+    <None Include="..\pinvoke\target\$(CargoProfile)\liblancedb_pinvoke.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_pinvoke.so')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>liblancedb_pinvoke.so</Link>
+    </None>
+  </ItemGroup>
 
 </Project>
