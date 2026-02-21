@@ -3,7 +3,7 @@
 
 mod common;
 
-use lancedb_pinvoke::*;
+use lancedb_ffi::*;
 use std::ptr;
 use tempfile::TempDir;
 

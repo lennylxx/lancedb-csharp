@@ -1,6 +1,6 @@
 //! Tests for low-level FFI utility functions (string conversion, etc.).
 
-use lancedb_pinvoke::ffi;
+use lancedb_ffi::ffi;
 use std::ptr;
 
 #[test]

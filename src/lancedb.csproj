@@ -24,9 +24,9 @@
   </Target>
 
   <ItemGroup>
-    <None Include="..\pinvoke\target\$(CargoProfile)\liblancedb_pinvoke.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_pinvoke.so')">
+    <None Include="..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.so')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      <Link>liblancedb_pinvoke.so</Link>
+      <Link>liblancedb_ffi.so</Link>
     </None>
   </ItemGroup>
 

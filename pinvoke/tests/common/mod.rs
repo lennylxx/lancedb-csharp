@@ -2,7 +2,7 @@
 
 use lancedb::connection::Connection;
 use lancedb::table::Table;
-use lancedb_pinvoke::ffi;
+use lancedb_ffi::ffi;
 use std::sync::Arc;
 
 /// Connects to a local database and returns a raw Connection pointer

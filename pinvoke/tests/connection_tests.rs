@@ -2,7 +2,7 @@
 
 mod common;
 
-use lancedb_pinvoke::*;
+use lancedb_ffi::*;
 use tempfile::TempDir;
 
 #[test]
