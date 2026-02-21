@@ -1,11 +1,11 @@
 use lancedb::connection::Connection;
-use lancedb::table::Table;
 use lazy_static::lazy_static;
 use libc::c_char;
 use std::ffi::CString;
-use std::sync::Arc;
 use tokio::runtime::Runtime;
 
+#[macro_use]
+mod macros;
 pub mod ffi;
 mod query;
 mod table;
@@ -35,14 +35,8 @@ pub extern "C" fn database_connect(
     completion: FfiCallback,
 ) {
     let dataset_uri = ffi::to_string(uri);
-    RUNTIME.spawn(async move {
-        match lancedb::connection::connect(&dataset_uri).execute().await {
-            Ok(connection) => {
-                let ptr = Arc::into_raw(Arc::new(connection));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
-            }
-            Err(e) => callback_error(completion, e),
-        }
+    ffi_async!(completion, async {
+        lancedb::connection::connect(&dataset_uri).execute().await
     });
 }
 
@@ -53,24 +47,12 @@ pub extern "C" fn database_open_table(
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
-    // Borrow the connection without consuming it
-    unsafe {
-        assert!(!connection_ptr.is_null(), "Connection pointer is null");
-        Arc::increment_strong_count(connection_ptr);
-    }
-    let connection = unsafe { Arc::from_raw(connection_ptr) };
-    RUNTIME.spawn(async move {
-        match connection.open_table(table_name).execute().await {
-            Ok(table) => {
-                let ptr = Arc::into_raw(Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
-            }
-            Err(e) => callback_error(completion, e),
-        }
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    ffi_async!(completion, async {
+        connection.open_table(table_name).execute().await
     });
 }
 
-/// Create an empty table with the given name and a minimal schema (single "id" int32 column).
 #[no_mangle]
 pub extern "C" fn database_create_empty_table(
     connection_ptr: *const Connection,
@@ -79,33 +61,17 @@ pub extern "C" fn database_create_empty_table(
 ) {
     let table_name = ffi::to_string(table_name);
     let schema = ffi::minimal_schema();
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
 
-    // Borrow the connection without consuming it
-    unsafe {
-        assert!(!connection_ptr.is_null(), "Connection pointer is null");
-        Arc::increment_strong_count(connection_ptr);
-    }
-    let connection = unsafe { Arc::from_raw(connection_ptr) };
-
-    RUNTIME.spawn(async move {
-        match connection
+    ffi_async!(completion, async {
+        connection
             .create_empty_table(table_name, schema)
             .execute()
             .await
-        {
-            Ok(table) => {
-                let ptr = Arc::into_raw(Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
-            }
-            Err(e) => callback_error(completion, e),
-        }
     });
 }
 
 #[no_mangle]
 pub extern "C" fn database_close(connection_ptr: *const Connection) {
-    unsafe {
-        assert!(!connection_ptr.is_null(), "Connection pointer is null");
-        drop(Arc::from_raw(connection_ptr));
-    }
+    ffi_free!(connection_ptr, Connection);
 }

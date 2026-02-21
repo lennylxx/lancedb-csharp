@@ -5,12 +5,9 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
-/// Borrows the table pointer without consuming it.
 #[no_mangle]
 pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
-    assert!(!table_ptr.is_null(), "Table pointer is null");
-    let table = unsafe { &*table_ptr };
-
+    let table = ffi_borrow!(table_ptr, Table);
     let name = table.name();
     let c_str_name = CString::new(name).unwrap();
     c_str_name.into_raw()
@@ -21,23 +18,18 @@ pub extern "C" fn table_is_open(table_ptr: *const Table) -> bool {
     !table_ptr.is_null()
 }
 
-/// Creates a new Query from the table. Borrows the table pointer without consuming it.
+/// Creates a new Query from the table.
 #[no_mangle]
 pub extern "C" fn table_create_query(table_ptr: *const Table) -> *const Query {
-    assert!(!table_ptr.is_null(), "Table pointer is null");
-    let table = unsafe { &*table_ptr };
-
+    let table = ffi_borrow!(table_ptr, Table);
     let query = table.query().clone();
-    let arc_query = Arc::new(query);
-    Arc::into_raw(arc_query)
+    Arc::into_raw(Arc::new(query))
 }
 
 /// Closes the table and frees the underlying Arc.
 #[no_mangle]
 pub extern "C" fn table_close(table_ptr: *const Table) {
-    if !table_ptr.is_null() {
-        unsafe { drop(Arc::from_raw(table_ptr)) };
-    }
+    ffi_free!(table_ptr, Table);
 }
 
 #[no_mangle]

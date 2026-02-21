@@ -6,15 +6,13 @@ use std::sync::Arc;
 use crate::ffi;
 
 /// Creates a VectorQuery from a Query by finding nearest vectors.
-/// Borrows the query pointer without consuming it.
 #[no_mangle]
 pub extern "C" fn query_nearest_to(
     query_ptr: *const Query,
     vector_ptr: *const c_double,
     len: size_t,
 ) -> *const VectorQuery {
-    assert!(!query_ptr.is_null(), "Query pointer is null");
-    let query = unsafe { &*query_ptr };
+    let query = ffi_borrow!(query_ptr, Query);
 
     let vector = unsafe {
         assert!(!vector_ptr.is_null());
@@ -22,18 +20,16 @@ pub extern "C" fn query_nearest_to(
     };
 
     let vector_query = <Query as Clone>::clone(query).nearest_to(vector).unwrap().clone();
-    let arc_vector_query = Arc::new(vector_query);
-    Arc::into_raw(arc_vector_query)
+    Arc::into_raw(Arc::new(vector_query))
 }
 
-/// Sets the column for a VectorQuery. Borrows the pointer without consuming it.
+/// Sets the column for a VectorQuery.
 #[no_mangle]
 pub extern "C" fn vector_query_column(
     vector_query_ptr: *const VectorQuery,
     column_name: *const c_char,
 ) -> *const VectorQuery {
-    assert!(!vector_query_ptr.is_null(), "VectorQuery pointer is null");
-    let vector_query = unsafe { &*vector_query_ptr };
+    let vector_query = ffi_borrow!(vector_query_ptr, VectorQuery);
 
     let column_name = ffi::to_string(column_name);
     <VectorQuery as Clone>::clone(vector_query).column(&column_name);
@@ -44,15 +40,11 @@ pub extern "C" fn vector_query_column(
 /// Frees a Query pointer.
 #[no_mangle]
 pub extern "C" fn query_free(query_ptr: *const Query) {
-    if !query_ptr.is_null() {
-        unsafe { drop(Arc::from_raw(query_ptr)) };
-    }
+    ffi_free!(query_ptr, Query);
 }
 
 /// Frees a VectorQuery pointer.
 #[no_mangle]
 pub extern "C" fn vector_query_free(vector_query_ptr: *const VectorQuery) {
-    if !vector_query_ptr.is_null() {
-        unsafe { drop(Arc::from_raw(vector_query_ptr)) };
-    }
+    ffi_free!(vector_query_ptr, VectorQuery);
 }
