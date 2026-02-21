@@ -5,6 +5,7 @@
 mod common;
 
 use lancedb_ffi::*;
+use lancedb_ffi::ffi;
 use std::ffi::CString;
 use std::ptr;
 use tempfile::TempDir;
@@ -587,4 +588,252 @@ fn create_vector_ipc_data(num_rows: usize, dim: usize) -> Vec<u8> {
     )
     .unwrap();
     lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+}
+
+// ----- Error handling tests -----
+
+#[test]
+fn test_query_select_invalid_json_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "select_err");
+
+    let query = table_create_query(table_ptr);
+    let bad_json = CString::new("not valid json").unwrap();
+    let result = query_select(query, bad_json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(err_str.contains("Invalid select JSON"), "got: {}", err_str);
+    free_string(err_ptr);
+
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_select_invalid_json_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_select_err");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let bad_json = CString::new("{{{bad}}}").unwrap();
+    let result = vector_query_select(vq, bad_json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(err_str.contains("Invalid select JSON"), "got: {}", err_str);
+    free_string(err_ptr);
+
+    query_free(query);
+    vector_query_free(vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_nearest_to_null_vector_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "nearest_null");
+
+    let query = table_create_query(table_ptr);
+    let result = query_nearest_to(query, ptr::null(), 3);
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(err_str.contains("null"), "got: {}", err_str);
+    free_string(err_ptr);
+
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_select_json_number_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "select_num");
+
+    let query = table_create_query(table_ptr);
+    let json = CString::new("42").unwrap();
+    let result = query_select(query, json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(
+        err_str.contains("must be a JSON array or object"),
+        "got: {}",
+        err_str
+    );
+    free_string(err_ptr);
+
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_select_array_with_non_string_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "select_nonstr");
+
+    let query = table_create_query(table_ptr);
+    let json = CString::new(r#"["id", 123]"#).unwrap();
+    let result = query_select(query, json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(
+        err_str.contains("must be strings"),
+        "got: {}",
+        err_str
+    );
+    free_string(err_ptr);
+
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_select_object_with_non_string_value_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "select_objval");
+
+    let query = table_create_query(table_ptr);
+    let json = CString::new(r#"{"alias": 42}"#).unwrap();
+    let result = query_select(query, json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(
+        err_str.contains("must be strings"),
+        "got: {}",
+        err_str
+    );
+    free_string(err_ptr);
+
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_select_json_number_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_sel_num");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let json = CString::new("true").unwrap();
+    let result = vector_query_select(vq, json.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(
+        err_str.contains("must be a JSON array or object"),
+        "got: {}",
+        err_str
+    );
+    free_string(err_ptr);
+
+    query_free(query);
+    vector_query_free(vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_nearest_to_empty_vector_succeeds_at_build_time() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "nearest_empty");
+
+    let query = table_create_query(table_ptr);
+    let empty: [f64; 0] = [];
+    let result = query_nearest_to(query, empty.as_ptr(), 0);
+
+    // lancedb accepts empty vectors at build time (fails at execution)
+    assert!(!result.is_null());
+
+    query_free(query);
+    vector_query_free(result);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_distance_type_invalid_returns_null_and_sets_error() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_dt_err");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let bad_dt = CString::new("manhattan").unwrap();
+    let result = vector_query_distance_type(vq, bad_dt.as_ptr());
+
+    assert!(result.is_null());
+
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert!(err_str.contains("manhattan"), "got: {}", err_str);
+    free_string(err_ptr);
+
+    query_free(query);
+    vector_query_free(vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
 }

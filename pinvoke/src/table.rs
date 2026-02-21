@@ -6,13 +6,20 @@ use std::ffi::CString;
 use std::sync::Arc;
 
 use crate::FfiCallback;
+use crate::ffi;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
 #[unsafe(no_mangle)]
 pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
     let table = ffi_borrow!(table_ptr, Table);
     let name = table.name();
-    let c_str_name = CString::new(name).unwrap();
+    let c_str_name = match CString::new(name) {
+        Ok(s) => s,
+        Err(e) => {
+            ffi::set_last_error(e);
+            return std::ptr::null_mut();
+        }
+    };
     c_str_name.into_raw()
 }
 

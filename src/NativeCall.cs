@@ -25,6 +25,9 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         internal static extern void free_ffi_bytes(IntPtr ptr);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr ffi_get_last_error();
+
         /// <summary>
         /// Calls an async FFI function that uses the unified (result, error) callback pattern.
         /// Returns the result IntPtr on success, or throws LanceDbException on error.
@@ -108,6 +111,27 @@ namespace lancedb
             byte[] nullTerminated = new byte[utf8.Length + 1];
             utf8.CopyTo(nullTerminated, 0);
             return nullTerminated;
+        }
+
+        /// <summary>
+        /// Checks if a synchronous FFI call returned null due to an error.
+        /// If a thread-local error was set by the Rust FFI, throws LanceDbException.
+        /// </summary>
+        internal static void ThrowIfNullWithError(IntPtr ptr, string fallbackMessage)
+        {
+            if (ptr != IntPtr.Zero)
+            {
+                return;
+            }
+
+            IntPtr errorPtr = ffi_get_last_error();
+            if (errorPtr != IntPtr.Zero)
+            {
+                string message = ReadStringAndFree(errorPtr);
+                throw new LanceDbException(message);
+            }
+
+            throw new LanceDbException(fallbackMessage);
         }
     }
 }

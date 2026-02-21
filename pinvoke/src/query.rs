@@ -56,7 +56,13 @@ pub extern "C" fn query_select(
 ) -> *const Query {
     let query = ffi_borrow!(query_ptr, Query);
     let json = ffi::to_string(columns_json);
-    let select = parse_select(&json).expect("Invalid select JSON");
+    let select = match parse_select(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            ffi::set_last_error(e);
+            return std::ptr::null();
+        }
+    };
     let new_query = query.clone().select(select);
     Arc::into_raw(Arc::new(new_query))
 }
@@ -137,11 +143,20 @@ pub extern "C" fn query_nearest_to(
     let query = ffi_borrow!(query_ptr, Query);
 
     let vector = unsafe {
-        assert!(!vector_ptr.is_null());
+        if vector_ptr.is_null() {
+            ffi::set_last_error("Vector pointer is null");
+            return std::ptr::null();
+        }
         slice::from_raw_parts(vector_ptr, len as usize)
     };
 
-    let vector_query = query.clone().nearest_to(vector).unwrap().clone();
+    let vector_query = match query.clone().nearest_to(vector) {
+        Ok(vq) => vq.clone(),
+        Err(e) => {
+            ffi::set_last_error(e);
+            return std::ptr::null();
+        }
+    };
     Arc::into_raw(Arc::new(vector_query))
 }
 
@@ -204,7 +219,13 @@ pub extern "C" fn vector_query_select(
 ) -> *const VectorQuery {
     let vq = ffi_borrow!(vq_ptr, VectorQuery);
     let json = ffi::to_string(columns_json);
-    let select = parse_select(&json).expect("Invalid select JSON");
+    let select = match parse_select(&json) {
+        Ok(s) => s,
+        Err(e) => {
+            ffi::set_last_error(e);
+            return std::ptr::null();
+        }
+    };
     let new_vq = vq.clone().select(select);
     Arc::into_raw(Arc::new(new_vq))
 }
@@ -269,7 +290,13 @@ pub extern "C" fn vector_query_distance_type(
 ) -> *const VectorQuery {
     let vq = ffi_borrow!(vq_ptr, VectorQuery);
     let dt_str = ffi::to_string(distance_type);
-    let dt = ffi::parse_distance_type(&dt_str).expect("Invalid distance type");
+    let dt = match ffi::parse_distance_type(&dt_str) {
+        Ok(d) => d,
+        Err(e) => {
+            ffi::set_last_error(e);
+            return std::ptr::null();
+        }
+    };
     let new_vq = vq.clone().distance_type(dt);
     Arc::into_raw(Arc::new(new_vq))
 }

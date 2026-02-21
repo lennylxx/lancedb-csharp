@@ -839,5 +839,130 @@ namespace lancedb.tests
             Assert.NotNull(batch);
             Assert.True(batch.Length > 0);
         }
+
+        // ----- FFI Error Surfacing Tests -----
+
+        /// <summary>
+        /// VectorQuery.DistanceType with an invalid type should throw LanceDbException.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_InvalidDistanceType_ThrowsLanceDbException()
+        {
+            using var fixture = await CreateVectorTextFixture("vq_bad_distance");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+
+            var ex = Assert.Throws<LanceDbException>(() => query.DistanceType("invalid_type"));
+            Assert.Contains("Unknown distance type", ex.Message);
+        }
+
+        /// <summary>
+        /// VectorQuery.DistanceType error message should contain the invalid type name.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_InvalidDistanceType_ErrorMessageContainsTypeName()
+        {
+            using var fixture = await CreateVectorTextFixture("vq_bad_distance_msg");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+
+            var ex = Assert.Throws<LanceDbException>(() => query.DistanceType("manhattan"));
+            Assert.Contains("manhattan", ex.Message);
+        }
+
+        /// <summary>
+        /// Executing a query with an invalid WHERE filter should throw LanceDbException.
+        /// The error is raised asynchronously during query execution on the Rust side.
+        /// </summary>
+        [Fact]
+        public async Task Query_InvalidWhereFilter_ThrowsLanceDbExceptionOnExecute()
+        {
+            using var fixture = await TestFixture.CreateWithTable("q_bad_where");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            using var query = fixture.Table.Query()
+                .Where("INVALID %%% SYNTAX");
+
+            await Assert.ThrowsAsync<LanceDbException>(() => query.ToArrow());
+        }
+
+        /// <summary>
+        /// CountRows with an invalid SQL filter should throw LanceDbException.
+        /// </summary>
+        [Fact]
+        public async Task Table_CountRows_InvalidFilter_ThrowsLanceDbException()
+        {
+            using var fixture = await TestFixture.CreateWithTable("count_bad_filter");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => fixture.Table.CountRows("INVALID %%% SQL"));
+        }
+
+        /// <summary>
+        /// Delete with an invalid SQL predicate should throw LanceDbException.
+        /// </summary>
+        [Fact]
+        public async Task Table_Delete_InvalidPredicate_ThrowsLanceDbException()
+        {
+            using var fixture = await TestFixture.CreateWithTable("delete_bad_pred");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => fixture.Table.Delete("INVALID %%% SYNTAX"));
+        }
+
+        /// <summary>
+        /// NearestTo on a table that has no vector column should throw LanceDbException
+        /// when executed (at query execution time, not at build time).
+        /// </summary>
+        [Fact]
+        public async Task NearestTo_NoVectorColumn_ThrowsLanceDbExceptionOnExecute()
+        {
+            using var fixture = await TestFixture.CreateWithTable("nearest_novector");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 2.0, 3.0 });
+
+            await Assert.ThrowsAsync<LanceDbException>(() => query.ToArrow());
+        }
+
+        /// <summary>
+        /// VectorQuery.Select with valid columns but invalid expression should throw
+        /// LanceDbException on execute.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_InvalidSelectExpression_ThrowsLanceDbExceptionOnExecute()
+        {
+            using var fixture = await CreateVectorTextFixture("vq_bad_select_exec");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Select(new Dictionary<string, string>
+                {
+                    { "bad_col", "INVALID_FUNCTION(nonexistent)" }
+                });
+
+            await Assert.ThrowsAsync<LanceDbException>(() => query.ToArrow());
+        }
+
+        /// <summary>
+        /// Update with an invalid column expression should throw LanceDbException.
+        /// </summary>
+        [Fact]
+        public async Task Table_Update_InvalidExpression_ThrowsLanceDbException()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_bad_expr");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            var ex = await Assert.ThrowsAsync<LanceDbException>(
+                () => fixture.Table.Update(
+                    new Dictionary<string, string> { { "id", "abc()" } }));
+            Assert.Contains("lance error: Invalid user input", ex.Message);
+            Assert.Contains("Error during planning: Invalid function 'abc'", ex.Message);
+        }
     }
 }

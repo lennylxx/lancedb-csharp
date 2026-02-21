@@ -109,9 +109,11 @@ namespace lancedb
 
         /// <summary>
         /// Replaces the current native pointer with a new one, freeing the old one.
+        /// Throws LanceDbException if the new pointer is null due to an FFI error.
         /// </summary>
         protected void ReplacePtr(IntPtr newPtr)
         {
+            NativeCall.ThrowIfNullWithError(newPtr, "Native FFI call returned null");
             IntPtr old = _ptr;
             _ptr = newPtr;
             if (old != IntPtr.Zero && old != newPtr)

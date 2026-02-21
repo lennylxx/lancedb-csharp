@@ -168,6 +168,7 @@ namespace lancedb
         public VectorQuery NearestTo(double[] vector)
         {
             IntPtr vectorQueryPtr = query_nearest_to(NativePtr, vector, (UIntPtr)vector.Length);
+            NativeCall.ThrowIfNullWithError(vectorQueryPtr, "Failed to create vector query");
             return new VectorQuery(vectorQueryPtr);
         }
 

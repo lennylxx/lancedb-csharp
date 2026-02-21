@@ -1,17 +1,44 @@
 use arrow_ipc::reader::FileReader;
 use arrow_schema::{DataType, Schema, SchemaRef};
 use libc::c_char;
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::ffi::CStr;
+use std::ffi::{CStr, CString};
 use std::io::Cursor;
 use std::sync::Arc;
 
+thread_local! {
+    static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
+}
+
+/// Stores an error message in thread-local storage for retrieval by the caller.
+pub fn set_last_error(msg: impl std::fmt::Display) {
+    LAST_ERROR.with(|e| {
+        *e.borrow_mut() = CString::new(msg.to_string()).ok();
+    });
+}
+
+/// Returns the last error message as a C string, or null if no error.
+/// The caller must free the returned string with free_string().
+#[unsafe(no_mangle)]
+pub extern "C" fn ffi_get_last_error() -> *mut c_char {
+    LAST_ERROR.with(|e| {
+        match e.borrow_mut().take() {
+            Some(s) => s.into_raw(),
+            None => std::ptr::null_mut(),
+        }
+    })
+}
+
 /// Converts a C string pointer to an owned Rust String.
 /// The caller retains ownership of the original C string.
+/// Returns an empty string if the pointer is null or the data is not valid UTF-8.
 pub fn to_string(c_string: *const c_char) -> String {
-    assert!(!c_string.is_null(), "Received null pointer");
+    if c_string.is_null() {
+        return String::new();
+    }
     let c_str = unsafe { CStr::from_ptr(c_string) };
-    c_str.to_str().expect("Invalid UTF-8 data").to_owned()
+    c_str.to_str().unwrap_or_default().to_owned()
 }
 
 /// Create a minimal Arrow schema with a single "id" integer field.

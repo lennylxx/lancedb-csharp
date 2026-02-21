@@ -187,8 +187,9 @@ namespace lancedb
         {
             get
             {
-                return NativeCall.ReadStringAndFree(
-                    table_get_name(_handle!.DangerousGetHandle()));
+                IntPtr ptr = table_get_name(_handle!.DangerousGetHandle());
+                NativeCall.ThrowIfNullWithError(ptr, "Failed to get table name");
+                return NativeCall.ReadStringAndFree(ptr);
             }
         }
 

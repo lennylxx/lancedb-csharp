@@ -20,9 +20,8 @@ fn test_to_string_utf8() {
 }
 
 #[test]
-#[should_panic(expected = "Received null pointer")]
-fn test_to_string_null_panics() {
-    ffi::to_string(ptr::null());
+fn test_to_string_null_returns_empty() {
+    assert_eq!(ffi::to_string(ptr::null()), "");
 }
 
 #[test]
@@ -97,4 +96,35 @@ fn test_ipc_to_schema_valid_ipc() {
     assert_eq!(result.fields().len(), 2);
     assert_eq!(result.field(0).name(), "name");
     assert_eq!(result.field(1).name(), "age");
+}
+
+#[test]
+fn test_set_last_error_and_get_returns_message() {
+    ffi::set_last_error("something went wrong");
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    let err_str = unsafe { std::ffi::CStr::from_ptr(err_ptr) }
+        .to_str()
+        .unwrap();
+    assert_eq!(err_str, "something went wrong");
+    lancedb_ffi::free_string(err_ptr);
+}
+
+#[test]
+fn test_get_last_error_returns_null_when_no_error() {
+    // Clear any prior error
+    let _ = ffi::ffi_get_last_error();
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(err_ptr.is_null());
+}
+
+#[test]
+fn test_get_last_error_clears_after_read() {
+    ffi::set_last_error("first error");
+    let err_ptr = ffi::ffi_get_last_error();
+    assert!(!err_ptr.is_null());
+    lancedb_ffi::free_string(err_ptr);
+
+    let err_ptr2 = ffi::ffi_get_last_error();
+    assert!(err_ptr2.is_null());
 }
