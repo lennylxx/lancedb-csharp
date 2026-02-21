@@ -201,3 +201,131 @@ fn test_list_indices_empty_table() {
     table_close(table_ptr);
     database_close(conn_ptr);
 }
+
+#[test]
+fn test_add_columns_with_sql_expression() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "add_cols", ipc_bytes);
+
+    common::add_columns_sync(
+        table_ptr,
+        vec![("doubled".to_string(), "id * 2".to_string())],
+    );
+
+    let schema_bytes = common::schema_ipc_sync(table_ptr);
+    assert!(schema_bytes.len() > 0);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_alter_columns_rename() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use lancedb::table::ColumnAlteration;
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("old_name", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "alter_cols", ipc_bytes);
+
+    let mut alt = ColumnAlteration::new("old_name".to_string());
+    alt.rename = Some("new_name".to_string());
+    common::alter_columns_sync(table_ptr, vec![alt]);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_drop_columns() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("keep", DataType::Int32, false),
+        Field::new("remove", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![
+            Arc::new(Int32Array::from(vec![1, 2, 3])),
+            Arc::new(Int32Array::from(vec![4, 5, 6])),
+        ],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "drop_cols", ipc_bytes);
+
+    common::drop_columns_sync(table_ptr, &["remove"]);
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_optimize_after_modifications() {
+    use arrow_array::{Int32Array, RecordBatch};
+    use arrow_schema::{DataType, Field, Schema};
+    use std::sync::Arc;
+
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![
+        Field::new("id", DataType::Int32, false),
+    ]));
+    let batch = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
+    ).unwrap();
+
+    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "optimize_test", ipc_bytes);
+
+    let batch2 = RecordBatch::try_new(
+        schema.clone(),
+        vec![Arc::new(Int32Array::from(vec![4, 5, 6]))],
+    ).unwrap();
+    let ipc_bytes2 = lancedb::ipc::batches_to_ipc_file(&[batch2]).unwrap();
+    common::add_ipc_sync(table_ptr, ipc_bytes2);
+
+    common::optimize_sync(table_ptr);
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 6);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}

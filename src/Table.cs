@@ -90,6 +90,22 @@ namespace lancedb
         private static extern void table_list_indices(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_add_columns(
+            IntPtr table_ptr, IntPtr transforms_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_alter_columns(
+            IntPtr table_ptr, IntPtr alterations_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_drop_columns(
+            IntPtr table_ptr, IntPtr columns_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_optimize(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
         private TableHandle? _handle;
 
         internal Table(IntPtr tablePtr)
@@ -544,6 +560,123 @@ namespace lancedb
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<List<IndexInfo>>(json)
                 ?? new List<IndexInfo>();
+        }
+
+        /// <summary>
+        /// Add new columns with defined values.
+        /// </summary>
+        /// <remarks>
+        /// A map of column name to a SQL expression to use to calculate the
+        /// value of the new column. These expressions will be evaluated for
+        /// each row in the table, and can reference existing columns.
+        /// </remarks>
+        /// <param name="transforms">
+        /// A dictionary mapping new column names to SQL expressions.
+        /// For example, <c>new Dictionary&lt;string, string&gt; { { "doubled", "id * 2" } }</c>.
+        /// </param>
+        public async Task AddColumns(Dictionary<string, string> transforms)
+        {
+            var pairs = transforms.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
+            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(pairs));
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Json)
+                    {
+                        table_add_columns(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Alter column names and nullability.
+        /// </summary>
+        /// <remarks>
+        /// Each alteration specifies a column path and optional changes:
+        /// - <c>path</c>: The column name to alter. For nested columns, use dot-separated paths.
+        /// - <c>rename</c>: The new name of the column.
+        /// - <c>nullable</c>: Whether the column should be nullable. Only non-nullable columns
+        ///   can be changed to nullable.
+        /// </remarks>
+        /// <param name="alterations">
+        /// A list of alterations, each as a dictionary with keys: <c>"path"</c> (required),
+        /// <c>"rename"</c> (optional), <c>"nullable"</c> (optional).
+        /// </param>
+        public async Task AlterColumns(IReadOnlyList<Dictionary<string, object>> alterations)
+        {
+            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(alterations));
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Json)
+                    {
+                        table_alter_columns(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Drop columns from the table.
+        /// </summary>
+        /// <param name="columns">The names of the columns to drop.</param>
+        public async Task DropColumns(IReadOnlyList<string> columns)
+        {
+            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
+
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = utf8Json)
+                    {
+                        table_drop_columns(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Optimize the on-disk data and indices for better performance.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Modeled after <c>VACUUM</c> in PostgreSQL. Optimization covers three operations:
+        /// </para>
+        /// <para>
+        /// - Compaction: Merges small files into larger ones
+        /// </para>
+        /// <para>
+        /// - Prune: Removes old versions of the dataset
+        /// </para>
+        /// <para>
+        /// - Index: Optimizes the indices, adding new data to existing indices
+        /// </para>
+        /// <para>
+        /// The frequency an application should call optimize is based on the frequency of
+        /// data modifications. If data is frequently added, deleted, or updated then
+        /// optimize should be run frequently. A good rule of thumb is to run optimize if
+        /// you have added or modified 100,000 or more records or run more than 20 data
+        /// modification operations.
+        /// </para>
+        /// </remarks>
+        /// <returns>Statistics about the optimization operation.</returns>
+        public async Task<OptimizeStats> Optimize()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_optimize(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<OptimizeStats>(json) ?? new OptimizeStats();
         }
     }
 }

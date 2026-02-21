@@ -195,3 +195,56 @@ pub fn list_indices_sync(table_ptr: *const Table) -> Vec<lancedb::index::IndexCo
     let rt = tokio::runtime::Runtime::new().unwrap();
     rt.block_on(async { table.list_indices().await.unwrap() })
 }
+
+/// Adds new columns to the table using SQL expressions.
+pub fn add_columns_sync(
+    table_ptr: *const Table,
+    transforms: Vec<(String, String)>,
+) {
+    use lancedb::table::NewColumnTransform;
+
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table
+            .add_columns(NewColumnTransform::SqlExpressions(transforms), None)
+            .await
+            .unwrap()
+    });
+}
+
+/// Alters columns (rename, set nullable).
+pub fn alter_columns_sync(
+    table_ptr: *const Table,
+    alterations: Vec<lancedb::table::ColumnAlteration>,
+) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.alter_columns(&alterations).await.unwrap()
+    });
+}
+
+/// Drops columns from the table.
+pub fn drop_columns_sync(table_ptr: *const Table, columns: &[&str]) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.drop_columns(columns).await.unwrap()
+    });
+}
+
+/// Runs optimize with default settings.
+pub fn optimize_sync(table_ptr: *const Table) {
+    use lancedb::table::OptimizeAction;
+
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        table.optimize(OptimizeAction::All).await.unwrap()
+    });
+}

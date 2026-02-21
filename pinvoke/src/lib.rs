@@ -14,9 +14,10 @@ mod table;
 // Re-export FFI functions for integration tests
 pub use query::{query_free, query_nearest_to, vector_query_column, vector_query_free};
 pub use table::{
-    free_ffi_bytes, free_string, table_add, table_checkout, table_checkout_latest, table_close,
-    table_count_rows, table_create_index, table_create_query, table_delete, table_get_name,
-    table_is_open, table_list_indices, table_list_versions, table_restore, table_schema,
+    free_ffi_bytes, free_string, table_add, table_add_columns, table_alter_columns,
+    table_checkout, table_checkout_latest, table_close, table_count_rows, table_create_index,
+    table_create_query, table_delete, table_drop_columns, table_get_name, table_is_open,
+    table_list_indices, table_list_versions, table_optimize, table_restore, table_schema,
     table_update, table_uri, table_version, FfiBytes,
 };
 

@@ -1,6 +1,6 @@
 use lancedb::index::Index as LanceIndex;
 use lancedb::query::Query;
-use lancedb::table::Table;
+use lancedb::table::{ColumnAlteration, NewColumnTransform, OptimizeAction, Table};
 use libc::c_char;
 use std::ffi::CString;
 use std::sync::Arc;
@@ -518,6 +518,116 @@ pub extern "C" fn table_list_indices(
                     .collect();
                 let json = serde_json::to_string(&json_indices).unwrap_or_default();
                 let c_str = CString::new(json).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Add new columns to the table using SQL expressions.
+/// transforms_json is a JSON array of [name, expression] pairs, e.g. [["doubled","id * 2"]].
+#[no_mangle]
+pub extern "C" fn table_add_columns(
+    table_ptr: *const Table,
+    transforms_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let transforms_str = crate::ffi::to_string(transforms_json);
+    let pairs: Vec<(String, String)> = serde_json::from_str(&transforms_str).unwrap_or_default();
+
+    crate::RUNTIME.spawn(async move {
+        let transform = NewColumnTransform::SqlExpressions(pairs);
+        match table.add_columns(transform, None).await {
+            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Alter existing columns (rename, set nullable, cast type).
+/// alterations_json is a JSON array of objects with "path", optional "rename",
+/// optional "nullable", optional "data_type" (as Arrow DataType string).
+#[no_mangle]
+pub extern "C" fn table_alter_columns(
+    table_ptr: *const Table,
+    alterations_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let json_str = crate::ffi::to_string(alterations_json);
+    let raw: Vec<serde_json::Value> = serde_json::from_str(&json_str).unwrap_or_default();
+
+    let alterations: Vec<ColumnAlteration> = raw
+        .iter()
+        .map(|v| {
+            let path = v["path"].as_str().unwrap_or_default().to_string();
+            let mut alt = ColumnAlteration::new(path);
+            if let Some(name) = v.get("rename").and_then(|n| n.as_str()) {
+                alt.rename = Some(name.to_string());
+            }
+            if let Some(nullable) = v.get("nullable").and_then(|n| n.as_bool()) {
+                alt.nullable = Some(nullable);
+            }
+            alt
+        })
+        .collect();
+
+    crate::RUNTIME.spawn(async move {
+        match table.alter_columns(&alterations).await {
+            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Drop columns from the table.
+/// columns_json is a JSON array of column names, e.g. ["col1","col2"].
+#[no_mangle]
+pub extern "C" fn table_drop_columns(
+    table_ptr: *const Table,
+    columns_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let json_str = crate::ffi::to_string(columns_json);
+    let columns: Vec<String> = serde_json::from_str(&json_str).unwrap_or_default();
+
+    crate::RUNTIME.spawn(async move {
+        let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
+        match table.drop_columns(&col_refs).await {
+            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Optimize the on-disk data and indices for better performance.
+/// Runs compaction, pruning, and index optimization with default settings.
+#[no_mangle]
+pub extern "C" fn table_optimize(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+
+    crate::RUNTIME.spawn(async move {
+        match table.optimize(OptimizeAction::All).await {
+            Ok(stats) => {
+                let json = serde_json::json!({
+                    "compaction": stats.compaction.as_ref().map(|c| serde_json::json!({
+                        "fragments_removed": c.fragments_removed,
+                        "fragments_added": c.fragments_added,
+                        "files_removed": c.files_removed,
+                        "files_added": c.files_added,
+                    })),
+                    "prune": stats.prune.as_ref().map(|p| serde_json::json!({
+                        "bytes_removed": p.bytes_removed,
+                        "old_versions": p.old_versions,
+                    })),
+                });
+                let c_str = CString::new(json.to_string()).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => crate::callback_error(completion, e),

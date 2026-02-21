@@ -349,4 +349,174 @@ public class TableTests
 
         Assert.Empty(indices);
     }
+
+    /// <summary>
+    /// AddColumns should add a new computed column to the table.
+    /// </summary>
+    [Fact]
+    public async Task AddColumns_SqlExpression_AddsColumn()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch = CreateTestBatch(3);
+            var table = await connection.CreateTable("add_cols", batch);
+
+            await table.AddColumns(new Dictionary<string, string>
+            {
+                { "doubled", "id * 2" }
+            });
+
+            var schema = await table.Schema();
+            Assert.Equal(2, schema.FieldsList.Count);
+            Assert.Equal("id", schema.FieldsList[0].Name);
+            Assert.Equal("doubled", schema.FieldsList[1].Name);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// AlterColumns should rename a column.
+    /// </summary>
+    [Fact]
+    public async Task AlterColumns_Rename_ChangesColumnName()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch = CreateTestBatch(3);
+            var table = await connection.CreateTable("alter_cols", batch);
+
+            await table.AlterColumns(new List<Dictionary<string, object>>
+            {
+                new Dictionary<string, object>
+                {
+                    { "path", "id" },
+                    { "rename", "identifier" }
+                }
+            });
+
+            var schema = await table.Schema();
+            Assert.Equal("identifier", schema.FieldsList[0].Name);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// DropColumns should remove a column from the table.
+    /// </summary>
+    [Fact]
+    public async Task DropColumns_RemovesColumn()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var idBuilder = new Apache.Arrow.Int32Array.Builder();
+            var nameBuilder = new Apache.Arrow.StringArray.Builder();
+            for (int i = 0; i < 3; i++)
+            {
+                idBuilder.Append(i);
+                nameBuilder.Append($"name_{i}");
+            }
+            var schema = new Apache.Arrow.Schema.Builder()
+                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+                .Field(new Apache.Arrow.Field("name", Apache.Arrow.Types.StringType.Default, nullable: false))
+                .Build();
+            var batch = new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idBuilder.Build(), nameBuilder.Build() }, 3);
+
+            var table = await connection.CreateTable("drop_cols", batch);
+            var schemaBefore = await table.Schema();
+            Assert.Equal(2, schemaBefore.FieldsList.Count);
+
+            await table.DropColumns(new[] { "name" });
+
+            var schemaAfter = await table.Schema();
+            Assert.Single(schemaAfter.FieldsList);
+            Assert.Equal("id", schemaAfter.FieldsList[0].Name);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Optimize should complete without error after data modifications.
+    /// </summary>
+    [Fact]
+    public async Task Optimize_AfterModifications_Succeeds()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var batch = CreateTestBatch(3);
+            var table = await connection.CreateTable("optimize_test", batch);
+
+            await table.Add(CreateTestBatch(3, startId: 3));
+
+            var stats = await table.Optimize();
+
+            Assert.NotNull(stats);
+            long count = await table.CountRows();
+            Assert.Equal(6, count);
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows, int startId = 0)
+    {
+        var idArray = new Apache.Arrow.Int32Array.Builder();
+        for (int i = startId; i < startId + numRows; i++)
+        {
+            idArray.Append(i);
+        }
+
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
+    }
 }
