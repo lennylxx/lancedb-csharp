@@ -1,8 +1,8 @@
 use lancedb::connection::Connection;
 use lancedb::database::CreateTableMode;
-use lazy_static::lazy_static;
 use libc::c_char;
 use std::ffi::CString;
+use std::sync::LazyLock;
 use std::time::Duration;
 use tokio::runtime::Runtime;
 
@@ -35,9 +35,8 @@ pub use table::{
     table_take_offsets, table_take_row_ids, table_update, table_uri, table_version, FfiBytes,
 };
 
-lazy_static! {
-    static ref RUNTIME: Runtime = Runtime::new().expect("Failed to create tokio runtime");
-}
+static RUNTIME: LazyLock<Runtime> =
+    LazyLock::new(|| Runtime::new().expect("Failed to create tokio runtime"));
 
 /// Callback type for async FFI operations.
 /// On success: result is non-null, error is null.
