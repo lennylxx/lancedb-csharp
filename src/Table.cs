@@ -24,7 +24,7 @@ namespace lancedb
     public class Table : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern RustStringHandle table_get_name(IntPtr table_ptr);
+        private static extern IntPtr table_get_name(IntPtr table_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern bool table_is_open(IntPtr table_ptr);
@@ -156,8 +156,8 @@ namespace lancedb
         {
             get
             {
-                using var nameHandle = table_get_name(_handle!.DangerousGetHandle());
-                return nameHandle.AsString();
+                return NativeCall.ReadStringAndFree(
+                    table_get_name(_handle!.DangerousGetHandle()));
             }
         }
 
