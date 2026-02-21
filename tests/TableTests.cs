@@ -57,4 +57,56 @@ public class TableTests
         Assert.NotNull(query2);
         Assert.Equal("test_table", name);
     }
+
+    /// <summary>
+    /// Table.Dispose should release the Rust handle without crashing.
+    /// </summary>
+    [Fact]
+    public async Task Dispose_ReleasesRustHandle()
+    {
+        using var fixture = await TestFixture.CreateWithTable("dispose_table");
+
+        var name = fixture.Table.Name;
+        Assert.Equal("dispose_table", name);
+
+        fixture.Table.Dispose();
+        // Calling Dispose again should be safe (idempotent)
+        fixture.Table.Dispose();
+    }
+
+    /// <summary>
+    /// Connection.Dispose should release the Rust handle without crashing.
+    /// </summary>
+    [Fact]
+    public async Task Connection_Dispose_ReleasesRustHandle()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            connection.Dispose();
+            // Calling Dispose again should be safe (idempotent)
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
+
+    /// <summary>
+    /// Query.Dispose should release the Rust handle without crashing.
+    /// </summary>
+    [Fact]
+    public async Task Query_Dispose_ReleasesRustHandle()
+    {
+        using var fixture = await TestFixture.CreateWithTable("query_dispose_table");
+
+        var query = fixture.Table.Query();
+        query.Dispose();
+        // Calling Dispose again should be safe (idempotent)
+        query.Dispose();
+    }
 }

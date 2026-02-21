@@ -4,13 +4,22 @@ namespace lancedb
     using System.Runtime.InteropServices;
     using System.Text;
 
-    public class Connection
+    /// <summary>
+    /// A connection to a LanceDB database.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Implements <see cref="IDisposable"/> to release the underlying native connection handle.
+    /// </para>
+    /// <para>
+    /// Closing a connection is optional. If not closed, it will be closed when the object
+    /// is garbage collected.
+    /// </para>
+    /// </remarks>
+    public class Connection : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_connect(IntPtr uri, NativeCall.FfiCallback completion);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_close(IntPtr connection_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
@@ -18,27 +27,27 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
-        private IntPtr _connectionPtr;
+        private ConnectionHandle? _handle;
 
         public Connection()
         {
         }
 
         /// <summary>
-        /// Connect to a LanceDB instance at the given URI.
-        ///
-        /// Accepted formats:
-        ///
-        /// - `/path/to/database` - local database
-        /// - `s3://bucket/path/to/database` or `gs://bucket/path/to/database` - database on cloud storage
-        /// - `db://host:port` - remote database (LanceDB cloud)
+        /// Connect to a LanceDB database.
         /// </summary>
-        /// <param name="uri">The uri of the database. If the database uri starts with db:// then it connects to a remote database.</param>
-        /// <param name="opts">The <see cref="ConnectionOptions"/> to use when connecting to the database.</param>
+        /// <param name="uri">
+        /// The uri of the database. Accepted formats:
+        /// - /path/to/database — local database on file system
+        /// - s3://bucket/path or gs://bucket/path — database on cloud storage
+        /// - db://host:port — remote database (LanceDB Cloud)
+        /// </param>
+        /// <param name="opts">Options to control the connection behavior.</param>
+        /// <returns>A task that completes when the connection is established.</returns>
         public async Task Connect(string uri, ConnectionOptions? opts = null)
         {
             byte[] uriBytes = NativeCall.ToUtf8(uri);
-            _connectionPtr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async(callback =>
             {
                 unsafe
                 {
@@ -48,17 +57,35 @@ namespace lancedb
                     }
                 }
             });
-        }
-
-        public void Close()
-        {
-            database_close(_connectionPtr);
+            _handle = new ConnectionHandle(ptr);
         }
 
         /// <summary>
-        /// Open a table in the database.
+        /// Close the connection, releasing any underlying resources.
         /// </summary>
-        /// <param name="name">The name of the table</param>
+        /// <remarks>
+        /// It is safe to call this method multiple times.
+        /// Any attempt to use the connection after it is closed will result in an error.
+        /// </remarks>
+        public void Close()
+        {
+            Dispose();
+        }
+
+        public void Dispose()
+        {
+            _handle?.Dispose();
+            _handle = null;
+            GC.SuppressFinalize(this);
+        }
+
+        /// <summary>
+        /// Open a Lance Table in the database.
+        /// </summary>
+        /// <param name="name">The name of the table.</param>
+        /// <param name="options">Options to control the open behavior.</param>
+        /// <returns>A <see cref="Table"/> representing the opened table.</returns>
+        /// <exception cref="LanceDbException">Thrown if the table does not exist.</exception>
         public async Task<Table> OpenTable(string name, OpenTableOptions? options = null)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
@@ -68,7 +95,7 @@ namespace lancedb
                 {
                     fixed (byte* p = nameBytes)
                     {
-                        database_open_table(_connectionPtr, new IntPtr(p), callback);
+                        database_open_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
                     }
                 }
             });
@@ -78,7 +105,13 @@ namespace lancedb
         /// <summary>
         /// Create an empty table with the given name and a minimal schema.
         /// </summary>
-        /// <param name="name">The name of the table</param>
+        /// <param name="name">The name of the table.</param>
+        /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
+        /// <exception cref="LanceDbException">Thrown if a table with the same name already exists.</exception>
+        /// <remarks>
+        /// The vector index is not created by default.
+        /// To create the index, call the <c>CreateIndex</c> method on the table.
+        /// </remarks>
         public async Task<Table> CreateEmptyTable(string name)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
@@ -88,7 +121,7 @@ namespace lancedb
                 {
                     fixed (byte* p = nameBytes)
                     {
-                        database_create_empty_table(_connectionPtr, new IntPtr(p), callback);
+                        database_create_empty_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
                     }
                 }
             });

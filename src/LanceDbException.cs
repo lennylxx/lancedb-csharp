@@ -3,7 +3,7 @@ namespace lancedb
     using System;
 
     /// <summary>
-    /// Exception thrown when a LanceDB operation fails on the Rust side.
+    /// Exception thrown when a LanceDB native operation fails.
     /// </summary>
     public class LanceDbException : Exception
     {
