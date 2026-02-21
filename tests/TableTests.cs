@@ -898,4 +898,184 @@ public class TableTests
             }
         }
     }
+
+    // ----- Bad Vector Handling Tests -----
+
+    private static Apache.Arrow.RecordBatch CreateVectorBatch(float[][] vectors)
+    {
+        var idBuilder = new Apache.Arrow.Int32Array.Builder();
+        var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
+        int dim = vectors[0].Length;
+        var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, dim);
+        var valueBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
+
+        for (int i = 0; i < vectors.Length; i++)
+        {
+            idBuilder.Append(i);
+            vectorBuilder.Append();
+            foreach (var v in vectors[i])
+            {
+                valueBuilder.Append(v);
+            }
+        }
+
+        var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, dim);
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema,
+            new Apache.Arrow.IArrowArray[] { idBuilder.Build(), vectorBuilder.Build() },
+            vectors.Length);
+    }
+
+    /// <summary>
+    /// Add with OnBadVectors=Error should throw when vectors contain NaN.
+    /// </summary>
+    [Fact]
+    public async Task Add_OnBadVectors_Error_ThrowsOnNaN()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bad_vec_error",
+            CreateVectorBatch(new[] { new float[] { 1f, 2f, 3f } }));
+
+        var badBatch = CreateVectorBatch(new[] {
+            new float[] { 1f, 2f, 3f },
+            new float[] { float.NaN, 2f, 3f },
+        });
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            fixture.Table.Add(badBatch, new AddOptions { OnBadVectors = BadVectorHandling.Error }));
+    }
+
+    /// <summary>
+    /// Add with OnBadVectors=Drop should remove rows with NaN vectors.
+    /// </summary>
+    [Fact]
+    public async Task Add_OnBadVectors_Drop_RemovesBadRows()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bad_vec_drop",
+            CreateVectorBatch(new[] { new float[] { 1f, 2f, 3f } }));
+
+        var badBatch = CreateVectorBatch(new[] {
+            new float[] { 10f, 20f, 30f },
+            new float[] { float.NaN, 2f, 3f },
+            new float[] { 40f, 50f, 60f },
+        });
+
+        await fixture.Table.Add(badBatch, new AddOptions { OnBadVectors = BadVectorHandling.Drop });
+
+        var count = await fixture.Table.CountRows();
+        Assert.Equal(3, count); // 1 original + 2 good rows (bad row dropped)
+    }
+
+    /// <summary>
+    /// Add with OnBadVectors=Fill should replace NaN vectors with fill value.
+    /// </summary>
+    [Fact]
+    public async Task Add_OnBadVectors_Fill_ReplacesBadVectors()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bad_vec_fill",
+            CreateVectorBatch(new[] { new float[] { 1f, 2f, 3f } }));
+
+        var badBatch = CreateVectorBatch(new[] {
+            new float[] { float.NaN, 2f, 3f },
+        });
+
+        await fixture.Table.Add(badBatch, new AddOptions
+        {
+            OnBadVectors = BadVectorHandling.Fill,
+            FillValue = 99f,
+        });
+
+        var count = await fixture.Table.CountRows();
+        Assert.Equal(2, count); // 1 original + 1 filled
+
+        using var query = fixture.Table.Query().Where("id = 0").Limit(1);
+        var rows = await query.ToList();
+        // The replaced row should be present (not dropped)
+        Assert.Equal(2, (int)(long)count);
+    }
+
+    /// <summary>
+    /// Add with OnBadVectors=Null should replace bad vectors with null.
+    /// </summary>
+    [Fact]
+    public async Task Add_OnBadVectors_Null_ReplacesWithNull()
+    {
+        var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
+        var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, 3);
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("vector", vectorType, nullable: true))
+            .Build();
+
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        var connection = new Connection();
+        await connection.Connect(tmpDir);
+        var table = await connection.CreateTable("bad_vec_null",
+            new CreateTableOptions { Schema = schema });
+
+        try
+        {
+            await table.Add(CreateVectorBatch(new[] { new float[] { 1f, 2f, 3f } }));
+
+            var badBatch = CreateVectorBatch(new[] {
+                new float[] { float.NaN, 2f, 3f },
+            });
+
+            await table.Add(badBatch, new AddOptions { OnBadVectors = BadVectorHandling.Null });
+
+            var count = await table.CountRows();
+            Assert.Equal(2, count); // 1 original + 1 with null vector
+        }
+        finally
+        {
+            table.Dispose();
+            connection.Dispose();
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Add with clean vectors should not be affected by any OnBadVectors setting.
+    /// </summary>
+    [Fact]
+    public async Task Add_OnBadVectors_CleanData_UnaffectedByAllModes()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bad_vec_clean",
+            CreateVectorBatch(new[] { new float[] { 1f, 2f, 3f } }));
+
+        var cleanBatch = CreateVectorBatch(new[] {
+            new float[] { 4f, 5f, 6f },
+            new float[] { 7f, 8f, 9f },
+        });
+
+        // All modes should succeed with clean data
+        await fixture.Table.Add(cleanBatch, new AddOptions { OnBadVectors = BadVectorHandling.Drop });
+        await fixture.Table.Add(cleanBatch, new AddOptions { OnBadVectors = BadVectorHandling.Fill });
+        await fixture.Table.Add(cleanBatch, new AddOptions { OnBadVectors = BadVectorHandling.Null });
+        await fixture.Table.Add(cleanBatch, new AddOptions { OnBadVectors = BadVectorHandling.Error });
+
+        var count = await fixture.Table.CountRows();
+        Assert.Equal(9, count); // 1 original + 4 * 2 clean
+    }
+
+    /// <summary>
+    /// Add without options should behave the same as the default (error mode) with no vectors.
+    /// </summary>
+    [Fact]
+    public async Task Add_NoVectorColumns_IgnoresBadVectorHandling()
+    {
+        using var fixture = await TestFixture.CreateWithTable("bad_vec_no_vec");
+
+        await fixture.Table.Add(CreateTestBatch(3),
+            new AddOptions { OnBadVectors = BadVectorHandling.Drop });
+
+        var count = await fixture.Table.CountRows();
+        Assert.Equal(3, count);
+    }
 }

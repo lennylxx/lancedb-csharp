@@ -29,6 +29,19 @@ public class TestFixture : IDisposable
         return new TestFixture(connection, table, tmpDir);
     }
 
+    /// <summary>
+    /// Creates a fixture with a connected database and a table pre-populated with data.
+    /// </summary>
+    public static async Task<TestFixture> CreateWithTable(
+        string tableName, Apache.Arrow.RecordBatch initialData)
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        var connection = new Connection();
+        await connection.Connect(tmpDir);
+        var table = await connection.CreateTable(tableName, initialData);
+        return new TestFixture(connection, table, tmpDir);
+    }
+
     public void Dispose()
     {
         Table.Dispose();

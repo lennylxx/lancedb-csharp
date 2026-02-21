@@ -377,10 +377,29 @@ namespace lancedb
         /// - <c>"append"</c> - Append the new data to the table.
         /// - <c>"overwrite"</c> - Replace the existing data with the new data.
         /// </param>
-        public async Task Add(IReadOnlyList<RecordBatch> data, string mode = "append")
+        public Task Add(IReadOnlyList<RecordBatch> data, string mode = "append")
         {
-            byte[] ipcBytes = SerializeToIpc(data);
-            byte[] utf8Mode = NativeCall.ToUtf8(mode);
+            return Add(data, new AddOptions { Mode = mode });
+        }
+
+        /// <summary>
+        /// Add more data to the Table with options for handling bad vectors.
+        /// </summary>
+        /// <param name="data">
+        /// The data to add, as one or more Arrow <see cref="RecordBatch"/> objects.
+        /// </param>
+        /// <param name="options">Options controlling add mode and bad vector handling.</param>
+        public async Task Add(IReadOnlyList<RecordBatch> data, AddOptions options)
+        {
+            var processed = new RecordBatch[data.Count];
+            for (int i = 0; i < data.Count; i++)
+            {
+                processed[i] = VectorValidator.HandleBadVectors(
+                    data[i], options.OnBadVectors, options.FillValue);
+            }
+
+            byte[] ipcBytes = SerializeToIpc(processed);
+            byte[] utf8Mode = NativeCall.ToUtf8(options.Mode);
 
             await NativeCall.Async(completion =>
             {
@@ -410,6 +429,16 @@ namespace lancedb
         public Task Add(RecordBatch data, string mode = "append")
         {
             return Add(new[] { data }, mode);
+        }
+
+        /// <summary>
+        /// Add a single <see cref="RecordBatch"/> to the Table with options.
+        /// </summary>
+        /// <param name="data">The data to add.</param>
+        /// <param name="options">Options controlling add mode and bad vector handling.</param>
+        public Task Add(RecordBatch data, AddOptions options)
+        {
+            return Add(new[] { data }, options);
         }
 
         private static byte[] SerializeToIpc(IReadOnlyList<RecordBatch> batches)
