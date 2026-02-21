@@ -118,3 +118,35 @@ pub fn add_ipc_sync(table_ptr: *const Table, ipc_bytes: Vec<u8>) {
         table.add(reader).execute().await.unwrap();
     });
 }
+
+/// Returns the current version of the table.
+pub fn version_sync(table_ptr: *const Table) -> u64 {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.version().await.unwrap() })
+}
+
+/// Checks out a specific version of the table.
+pub fn checkout_sync(table_ptr: *const Table, version: u64) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.checkout(version).await.unwrap() });
+}
+
+/// Checks out the latest version of the table.
+pub fn checkout_latest_sync(table_ptr: *const Table) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.checkout_latest().await.unwrap() });
+}
+
+/// Restores the table to the currently checked out version.
+pub fn restore_sync(table_ptr: *const Table) {
+    unsafe { Arc::increment_strong_count(table_ptr) };
+    let table = unsafe { Arc::from_raw(table_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async { table.restore().await.unwrap() });
+}

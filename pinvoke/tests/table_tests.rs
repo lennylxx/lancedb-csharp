@@ -134,3 +134,40 @@ fn create_test_ipc_data(num_rows: usize) -> Vec<u8> {
     let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(ids))]).unwrap();
     lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
 }
+
+#[test]
+fn test_version_increments_on_add() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "version_test");
+
+    let v1 = common::version_sync(table_ptr);
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(3));
+    let v2 = common::version_sync(table_ptr);
+
+    assert!(v2 > v1);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_checkout_and_restore() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "checkout_test");
+
+    let v1 = common::version_sync(table_ptr);
+    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+    let v2 = common::version_sync(table_ptr);
+    assert!(v2 > v1);
+
+    common::checkout_sync(table_ptr, v1);
+    assert_eq!(common::count_rows_sync(table_ptr, None), 0);
+
+    common::checkout_latest_sync(table_ptr);
+    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
+
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}

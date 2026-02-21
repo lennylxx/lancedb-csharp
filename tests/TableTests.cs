@@ -231,4 +231,79 @@ public class TableTests
 
         return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
     }
+
+    /// <summary>
+    /// Version should return a positive value for a new table.
+    /// </summary>
+    [Fact]
+    public async Task Version_NewTable_ReturnsPositiveValue()
+    {
+        using var fixture = await TestFixture.CreateWithTable("version_test");
+
+        ulong version = await fixture.Table.Version();
+
+        Assert.True(version > 0);
+    }
+
+    /// <summary>
+    /// Version should increment after adding data.
+    /// </summary>
+    [Fact]
+    public async Task Version_IncrementsAfterAdd()
+    {
+        using var fixture = await TestFixture.CreateWithTable("version_inc");
+
+        ulong v1 = await fixture.Table.Version();
+        await fixture.Table.Add(CreateTestBatch(3));
+        ulong v2 = await fixture.Table.Version();
+
+        Assert.True(v2 > v1);
+    }
+
+    /// <summary>
+    /// ListVersions should return at least one version for a new table.
+    /// </summary>
+    [Fact]
+    public async Task ListVersions_ReturnsAtLeastOne()
+    {
+        using var fixture = await TestFixture.CreateWithTable("list_versions");
+
+        var versions = await fixture.Table.ListVersions();
+
+        Assert.NotEmpty(versions);
+        Assert.True(versions[0].Version > 0);
+        Assert.NotEmpty(versions[0].Timestamp);
+    }
+
+    /// <summary>
+    /// Checkout a previous version and verify row count matches that version.
+    /// </summary>
+    [Fact]
+    public async Task Checkout_PreviousVersion_ChangesVisibleData()
+    {
+        using var fixture = await TestFixture.CreateWithTable("checkout_test");
+
+        ulong v1 = await fixture.Table.Version();
+        await fixture.Table.Add(CreateTestBatch(5));
+        Assert.Equal(5, await fixture.Table.CountRows());
+
+        await fixture.Table.Checkout(v1);
+        Assert.Equal(0, await fixture.Table.CountRows());
+
+        await fixture.Table.CheckoutLatest();
+        Assert.Equal(5, await fixture.Table.CountRows());
+    }
+
+    /// <summary>
+    /// Uri should return a non-empty string.
+    /// </summary>
+    [Fact]
+    public async Task Uri_ReturnsNonEmptyString()
+    {
+        using var fixture = await TestFixture.CreateWithTable("uri_test");
+
+        string uri = await fixture.Table.Uri();
+
+        Assert.False(string.IsNullOrEmpty(uri));
+    }
 }

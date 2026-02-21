@@ -57,6 +57,30 @@ namespace lancedb
             IntPtr table_ptr, IntPtr ipc_data, nuint ipc_len, IntPtr mode,
             NativeCall.FfiCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_version(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_list_versions(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_checkout(
+            IntPtr table_ptr, ulong version, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_checkout_latest(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_restore(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_uri(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
         private TableHandle? _handle;
 
         internal Table(IntPtr tablePtr)
@@ -344,6 +368,118 @@ namespace lancedb
                 writer.WriteEnd();
             }
             return stream.ToArray();
+        }
+
+        /// <summary>
+        /// The version of this table.
+        /// </summary>
+        /// <returns>The current version number.</returns>
+        public async Task<ulong> Version()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_version(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            return (ulong)result.ToInt64();
+        }
+
+        /// <summary>
+        /// List all versions of the table.
+        /// </summary>
+        /// <returns>A list of <see cref="VersionInfo"/> describing each version.</returns>
+        public async Task<IReadOnlyList<VersionInfo>> ListVersions()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_list_versions(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<List<VersionInfo>>(json)
+                ?? new List<VersionInfo>();
+        }
+
+        /// <summary>
+        /// Checks out a specific version of the table.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Any read operation on the table will now access the data at the checked out
+        /// version. As a consequence, calling this method will disable any read consistency
+        /// interval that was previously set.
+        /// </para>
+        /// <para>
+        /// This is a read-only operation that turns the table into a sort of "view"
+        /// or "detached head". Other table instances will not be affected. To make the
+        /// change permanent you can use the <see cref="Restore"/> method.
+        /// </para>
+        /// <para>
+        /// Any operation that modifies the table will fail while the table is in a checked
+        /// out state.
+        /// </para>
+        /// <para>
+        /// To return the table to a normal state use <see cref="CheckoutLatest"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="version">The version number to check out.</param>
+        public async Task Checkout(ulong version)
+        {
+            await NativeCall.Async(completion =>
+            {
+                table_checkout(_handle!.DangerousGetHandle(), version, completion);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Ensures the table is pointing at the latest version.
+        /// </summary>
+        /// <remarks>
+        /// This can be used to manually update a table when the read consistency interval
+        /// is not set. It can also be used to undo a <see cref="Checkout"/> operation.
+        /// </remarks>
+        public async Task CheckoutLatest()
+        {
+            await NativeCall.Async(completion =>
+            {
+                table_checkout_latest(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Restore the table to the currently checked out version.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This operation will fail if <see cref="Checkout"/> has not been called previously.
+        /// </para>
+        /// <para>
+        /// This operation will overwrite the latest version of the table with a
+        /// previous version. Any changes made since the checked out version will
+        /// no longer be visible.
+        /// </para>
+        /// <para>
+        /// Once the operation concludes the table will no longer be in a checked
+        /// out state and the read consistency interval, if any, will apply.
+        /// </para>
+        /// </remarks>
+        public async Task Restore()
+        {
+            await NativeCall.Async(completion =>
+            {
+                table_restore(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Get the table's storage URI.
+        /// </summary>
+        /// <returns>The URI of the table's storage location.</returns>
+        public async Task<string> Uri()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_uri(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            return NativeCall.ReadStringAndFree(result);
         }
     }
 }

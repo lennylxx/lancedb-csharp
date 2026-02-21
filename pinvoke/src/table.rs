@@ -183,6 +183,124 @@ pub extern "C" fn table_add(
     });
 }
 
+/// Returns the current version of the table as a u64 via the callback.
+#[no_mangle]
+pub extern "C" fn table_version(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.version().await {
+            Ok(version) => {
+                completion(version as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Returns the table versions as a JSON string.
+/// Caller must free the returned string with free_string().
+#[no_mangle]
+pub extern "C" fn table_list_versions(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.list_versions().await {
+            Ok(versions) => {
+                let json_versions: Vec<serde_json::Value> = versions
+                    .iter()
+                    .map(|v| {
+                        serde_json::json!({
+                            "version": v.version,
+                            "timestamp": v.timestamp.to_rfc3339(),
+                            "metadata": v.metadata,
+                        })
+                    })
+                    .collect();
+                let json = serde_json::to_string(&json_versions).unwrap_or_default();
+                let c_str = CString::new(json).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Checks out a specific version of the table.
+#[no_mangle]
+pub extern "C" fn table_checkout(
+    table_ptr: *const Table,
+    version: u64,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.checkout(version).await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Checks out the latest version of the table.
+#[no_mangle]
+pub extern "C" fn table_checkout_latest(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.checkout_latest().await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Restores the table to the currently checked out version.
+#[no_mangle]
+pub extern "C" fn table_restore(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.restore().await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
+/// Returns the table's storage URI as a C string.
+/// Caller must free the returned string with free_string().
+#[no_mangle]
+pub extern "C" fn table_uri(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::RUNTIME.spawn(async move {
+        match table.uri().await {
+            Ok(uri) => {
+                let c_str = CString::new(uri).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
 /// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
 #[repr(C)]
 pub struct FfiBytes {
