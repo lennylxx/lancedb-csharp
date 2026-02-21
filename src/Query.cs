@@ -138,5 +138,46 @@ namespace lancedb
             IntPtr vectorQueryPtr = query_nearest_to(NativePtr, vector, (UIntPtr)vector.Length);
             return new VectorQuery(vectorQueryPtr);
         }
+
+        /// <summary>
+        /// Find the nearest rows to the given text query using full-text search.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is equivalent to calling <see cref="QueryBase{T}.FullTextSearch"/>
+        /// but returns a new <see cref="Query"/> instead of mutating the current one,
+        /// leaving the original query unchanged.
+        /// </para>
+        /// <para>
+        /// The results will be returned in order of relevance (BM25 scores).
+        /// </para>
+        /// <para>
+        /// This method is only valid on tables that have a full-text search index.
+        /// Use <see cref="Table.CreateIndex"/> with <see cref="FtsIndex"/> to create one.
+        /// </para>
+        /// <para>
+        /// Full-text search always has a limit. If <see cref="QueryBase{T}.Limit"/> has not
+        /// been called then a default limit of 10 will be used.
+        /// </para>
+        /// <para>
+        /// To combine full-text search with vector search (hybrid search), chain
+        /// with <see cref="NearestTo"/>:
+        /// <c>table.Query().NearestToText("search terms").NearestTo(vector)</c>
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The search query string.</param>
+        /// <returns>A new <see cref="Query"/> with full-text search applied.</returns>
+        public Query NearestToText(string query)
+        {
+            byte[] textBytes = NativeCall.ToUtf8(query);
+            unsafe
+            {
+                fixed (byte* p = textBytes)
+                {
+                    IntPtr newPtr = query_full_text_search(NativePtr, new IntPtr(p));
+                    return new Query(newPtr);
+                }
+            }
+        }
     }
 }

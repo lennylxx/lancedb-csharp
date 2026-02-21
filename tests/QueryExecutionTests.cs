@@ -296,6 +296,156 @@ public class QueryExecutionTests
     }
 
     // -----------------------------------------------------------------------
+    // NearestToText Tests
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// NearestToText should return matching rows from an FTS-indexed table.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_WithIndex_ReturnsMatchingRows()
+    {
+        using var fixture = await CreateTextFixture("ntt_basic");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query().NearestToText("apple");
+        var rows = await query.ToList();
+
+        Assert.Single(rows);
+        Assert.Equal("apple banana", rows[0]["content"]);
+    }
+
+    /// <summary>
+    /// NearestToText should be chainable with other builder methods.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_WithChaining_Works()
+    {
+        using var fixture = await CreateTextFixture("ntt_chain");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .NearestToText("cherry")
+            .Select(new[] { "content" })
+            .Limit(5);
+        var batch = await query.ToArrow();
+
+        Assert.Equal(1, batch.Length);
+        Assert.Contains(batch.Schema.FieldsList, f => f.Name == "content");
+    }
+
+    /// <summary>
+    /// NearestToText with no matching term should return empty results.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_NoMatch_ReturnsEmpty()
+    {
+        using var fixture = await CreateTextFixture("ntt_empty");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query().NearestToText("zzzznotfound");
+        var batch = await query.ToArrow();
+
+        Assert.Equal(0, batch.Length);
+    }
+
+    /// <summary>
+    /// NearestToText should support FastSearch chaining.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_FastSearch_IsChainable()
+    {
+        using var fixture = await CreateTextFixture("ntt_fast");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .NearestToText("apple")
+            .FastSearch();
+        var rows = await query.ToList();
+
+        Assert.Single(rows);
+    }
+
+    /// <summary>
+    /// NearestToText should be safe to dispose after execution.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_Dispose_IsSafe()
+    {
+        using var fixture = await CreateTextFixture("ntt_dispose");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        var query = fixture.Table.Query().NearestToText("apple");
+        var rows = await query.ToList();
+        query.Dispose();
+        query.Dispose();
+
+        Assert.Single(rows);
+    }
+
+    /// <summary>
+    /// The original Query should remain usable after calling NearestToText.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_DoesNotConsumeOriginalQuery()
+    {
+        using var fixture = await CreateTextFixture("ntt_noconsume");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var baseQuery = fixture.Table.Query();
+        using var ftsQuery = baseQuery.NearestToText("apple");
+        var ftsRows = await ftsQuery.ToList();
+
+        var allRows = await baseQuery.ToList();
+
+        Assert.Single(ftsRows);
+        Assert.Equal(3, allRows.Count);
+    }
+
+    /// <summary>
+    /// NearestToText chained with NearestTo should produce hybrid search results.
+    /// </summary>
+    [Fact]
+    public async Task NearestToText_NearestTo_ReturnsHybridResults()
+    {
+        using var fixture = await CreateVectorTextFixture("hybrid_exec");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .NearestToText("apple")
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+        var rows = await query.ToList();
+
+        Assert.NotEmpty(rows);
+    }
+
+    /// <summary>
+    /// Hybrid search via vector-first path (NearestTo then FullTextSearch)
+    /// should also work.
+    /// </summary>
+    [Fact]
+    public async Task HybridSearch_VectorFirst_ReturnsResults()
+    {
+        using var fixture = await CreateVectorTextFixture("hybrid_vecfirst");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+            .FullTextSearch("apple");
+        var rows = await query.ToList();
+
+        Assert.NotEmpty(rows);
+    }
+
+    // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
 
@@ -387,5 +537,55 @@ public class QueryExecutionTests
             : base(connection, table, tmpDir)
         {
         }
+    }
+
+    private static Apache.Arrow.RecordBatch CreateVectorTextBatch()
+    {
+        var idBuilder = new Apache.Arrow.Int32Array.Builder();
+        var contentBuilder = new Apache.Arrow.StringArray.Builder();
+
+        string[] texts = new[] { "apple banana", "cherry date", "elderberry fig" };
+        float[][] vectors = new[]
+        {
+            new float[] { 1.0f, 0.0f, 0.0f },
+            new float[] { 0.0f, 1.0f, 0.0f },
+            new float[] { 0.0f, 0.0f, 1.0f },
+        };
+
+        var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
+        var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, 3);
+        var valueBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
+
+        for (int i = 0; i < texts.Length; i++)
+        {
+            idBuilder.Append(i);
+            contentBuilder.Append(texts[i]);
+            vectorBuilder.Append();
+            foreach (var v in vectors[i])
+            {
+                valueBuilder.Append(v);
+            }
+        }
+
+        var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, 3);
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("content", Apache.Arrow.Types.StringType.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema,
+            new Apache.Arrow.IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), vectorBuilder.Build() },
+            texts.Length);
+    }
+
+    private static async Task<TestFixture> CreateVectorTextFixture(string tableName)
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        var connection = new Connection();
+        await connection.Connect(tmpDir);
+        var batch = CreateVectorTextBatch();
+        var table = await connection.CreateTable(tableName, batch);
+        return new TestFixture(connection, table, tmpDir);
     }
 }
