@@ -866,7 +866,7 @@ public class TableTests
 
             var result = await table.TakeOffsets(new ulong[] { 0, 1 }, new[] { "id" });
             Assert.Equal(2, result.Length);
-            Assert.Equal(1, result.Schema.FieldsList.Count);
+            Assert.Single(result.Schema.FieldsList);
             Assert.Equal("id", result.Schema.FieldsList[0].Name);
 
             table.Dispose();

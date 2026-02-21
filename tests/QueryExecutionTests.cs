@@ -669,7 +669,7 @@ public class QueryExecutionTests
         var schema = await query.OutputSchema();
 
         Assert.NotNull(schema);
-        Assert.Equal(1, schema.FieldsList.Count);
+        Assert.Single(schema.FieldsList);
         Assert.Equal("id", schema.FieldsList[0].Name);
     }
 

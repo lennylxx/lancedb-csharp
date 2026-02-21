@@ -1,4 +1,5 @@
 //! Shared test helpers for creating database connections and tables.
+#![allow(dead_code)]
 
 use lancedb::connection::Connection;
 use lancedb::table::Table;

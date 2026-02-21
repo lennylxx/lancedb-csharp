@@ -1,29 +1,3 @@
-/// Spawns an async FFI operation on the global Tokio runtime.
-///
-/// Converts the result to a raw pointer via `Arc::into_raw` on success,
-/// or invokes the callback with an error string on failure.
-///
-/// # Usage
-/// ```ignore
-/// ffi_async!(completion, async {
-///     some_async_operation().await
-/// });
-/// ```
-macro_rules! ffi_async {
-    ($completion:expr, $body:expr) => {{
-        let completion = $completion;
-        crate::RUNTIME.spawn(async move {
-            match $body.await {
-                Ok(value) => {
-                    let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(value));
-                    completion(ptr as *const std::ffi::c_void, std::ptr::null());
-                }
-                Err(e) => crate::callback_error(completion, e),
-            }
-        });
-    }};
-}
-
 /// Borrows an opaque pointer without consuming it.
 ///
 /// Asserts the pointer is non-null, then returns a reference with the given lifetime.
