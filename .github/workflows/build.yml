@@ -41,6 +41,9 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Install Protobuf compiler
+        uses: arduino/setup-protoc@v3
+
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
