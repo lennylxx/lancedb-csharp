@@ -70,6 +70,15 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Reads a UTF-8 C string from an IntPtr and frees it via free_string.
+        /// For use by callers outside NativeCall that receive string results from FFI.
+        /// </summary>
+        internal static string ReadStringAndFree(IntPtr ptr)
+        {
+            return ReadUtf8AndFree(ptr);
+        }
+
+        /// <summary>
         /// Encodes a string as null-terminated UTF-8 bytes for passing to Rust FFI.
         /// </summary>
         internal static byte[] ToUtf8(string s)

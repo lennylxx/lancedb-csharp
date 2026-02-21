@@ -75,3 +75,55 @@ pub extern "C" fn database_create_empty_table(
 pub extern "C" fn database_close(connection_ptr: *const Connection) {
     ffi_free!(connection_ptr, Connection);
 }
+
+#[no_mangle]
+pub extern "C" fn database_table_names(
+    connection_ptr: *const Connection,
+    completion: FfiCallback,
+) {
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    RUNTIME.spawn(async move {
+        match connection.table_names().execute().await {
+            Ok(names) => {
+                let joined = names.join("\n");
+                let c_str = CString::new(joined).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn database_drop_table(
+    connection_ptr: *const Connection,
+    table_name: *const c_char,
+    completion: FfiCallback,
+) {
+    let table_name = ffi::to_string(table_name);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    RUNTIME.spawn(async move {
+        match connection.drop_table(&table_name, &[]).await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[no_mangle]
+pub extern "C" fn database_drop_all_tables(
+    connection_ptr: *const Connection,
+    completion: FfiCallback,
+) {
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    RUNTIME.spawn(async move {
+        match connection.drop_all_tables(&[]).await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}

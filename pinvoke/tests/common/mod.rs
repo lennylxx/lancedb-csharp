@@ -31,3 +31,33 @@ pub fn create_table_sync(connection_ptr: *const Connection, name: &str) -> *cons
     });
     Arc::into_raw(Arc::new(table))
 }
+
+/// Returns the list of table names for the connection.
+pub fn table_names_sync(connection_ptr: *const Connection) -> Vec<String> {
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        connection.table_names().execute().await.unwrap()
+    })
+}
+
+/// Drops a table by name.
+pub fn drop_table_sync(connection_ptr: *const Connection, name: &str) {
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        connection.drop_table(name, &[]).await.unwrap()
+    });
+}
+
+/// Drops all tables in the database.
+pub fn drop_all_tables_sync(connection_ptr: *const Connection) {
+    unsafe { Arc::increment_strong_count(connection_ptr) };
+    let connection = unsafe { Arc::from_raw(connection_ptr) };
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        connection.drop_all_tables(&[]).await.unwrap()
+    });
+}

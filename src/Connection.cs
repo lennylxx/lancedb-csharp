@@ -27,6 +27,15 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_table_names(IntPtr connection_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_drop_all_tables(IntPtr connection_ptr, NativeCall.FfiCallback completion);
+
         private ConnectionHandle? _handle;
 
         public Connection()
@@ -126,6 +135,56 @@ namespace lancedb
                 }
             });
             return new Table(tablePtr);
+        }
+
+        /// <summary>
+        /// Get the names of all tables in the database.
+        /// </summary>
+        /// <remarks>
+        /// The names are returned in lexicographical order (ascending).
+        /// </remarks>
+        /// <returns>A list of table names.</returns>
+        public async Task<IReadOnlyList<string>> TableNames()
+        {
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                database_table_names(_handle!.DangerousGetHandle(), callback);
+            });
+            string joined = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(joined))
+                return Array.Empty<string>();
+            return joined.Split('\n');
+        }
+
+        /// <summary>
+        /// Drop a table from the database.
+        /// </summary>
+        /// <param name="name">The name of the table to drop.</param>
+        /// <exception cref="LanceDbException">Thrown if the table does not exist.</exception>
+        public async Task DropTable(string name)
+        {
+            byte[] nameBytes = NativeCall.ToUtf8(name);
+            await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = nameBytes)
+                    {
+                        database_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                    }
+                }
+            });
+        }
+
+        /// <summary>
+        /// Drop all tables from the database.
+        /// </summary>
+        public async Task DropAllTables()
+        {
+            await NativeCall.Async(callback =>
+            {
+                database_drop_all_tables(_handle!.DangerousGetHandle(), callback);
+            });
         }
     }
 }

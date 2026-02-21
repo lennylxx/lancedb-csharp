@@ -99,4 +99,120 @@ public class ConnectionTests
                 Directory.Delete(tmpDir, true);
         }
     }
+
+    [Fact]
+    public async Task TableNames_EmptyDatabase_ReturnsEmptyList()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var names = await connection.TableNames();
+            Assert.Empty(names);
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task TableNames_WithTables_ReturnsNamesInOrder()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            await connection.CreateEmptyTable("zebra");
+            await connection.CreateEmptyTable("alpha");
+
+            var names = await connection.TableNames();
+            Assert.Equal(2, names.Count);
+            Assert.Equal("alpha", names[0]);
+            Assert.Equal("zebra", names[1]);
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task DropTable_ExistingTable_RemovesIt()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            await connection.CreateEmptyTable("to_drop");
+
+            await connection.DropTable("to_drop");
+
+            var names = await connection.TableNames();
+            Assert.Empty(names);
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task DropTable_NonExistentTable_ThrowsLanceDbException()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => connection.DropTable("nonexistent"));
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task DropAllTables_RemovesAllTables()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            await connection.CreateEmptyTable("table_a");
+            await connection.CreateEmptyTable("table_b");
+
+            await connection.DropAllTables();
+
+            var names = await connection.TableNames();
+            Assert.Empty(names);
+
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+                Directory.Delete(tmpDir, true);
+        }
+    }
 }
