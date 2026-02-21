@@ -521,6 +521,66 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
             }
             Ok(LanceIndex::IvfHnswSq(builder))
         }
+        "IvfFlat" => {
+            let mut builder = IvfFlatIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
+            Ok(LanceIndex::IvfFlat(builder))
+        }
+        "IvfSq" => {
+            let mut builder = IvfSqIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
+            Ok(LanceIndex::IvfSq(builder))
+        }
+        "IvfRq" => {
+            let mut builder = IvfRqIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
+                builder = builder.distance_type(parse_distance_type(v)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("num_bits").and_then(|v| v.as_u64()) {
+                builder = builder.num_bits(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
+            Ok(LanceIndex::IvfRq(builder))
+        }
         _ => Err(format!("Unknown index type: {}", index_type)),
     }
 }

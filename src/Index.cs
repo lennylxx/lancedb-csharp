@@ -276,6 +276,175 @@ namespace lancedb
     }
 
     /// <summary>
+    /// An IVF-Flat vector index with no quantization.
+    /// </summary>
+    /// <remarks>
+    /// This index stores raw vectors grouped into IVF partitions of similar vectors.
+    /// Each partition keeps track of a centroid which is the average value of all
+    /// vectors in the group. During a query, the centroids are compared with the
+    /// query vector to find the closest partitions, then the raw vectors within
+    /// those partitions are searched.
+    ///
+    /// Because vectors are not compressed, this index provides exact distances
+    /// within each partition at the cost of higher storage and memory usage
+    /// compared to quantized indexes.
+    /// </remarks>
+    public class IvfFlatIndex : Index
+    {
+        /// <summary>
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// Default is <c>"l2"</c>.
+        /// </summary>
+        public string DistanceType { get; set; } = "l2";
+
+        /// <summary>
+        /// The number of IVF partitions. Default is the square root of the number of rows.
+        /// </summary>
+        public int? NumPartitions { get; set; }
+
+        /// <summary>
+        /// Max iterations to train kmeans. Default is 50.
+        /// </summary>
+        public int MaxIterations { get; set; } = 50;
+
+        /// <summary>
+        /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
+        /// </summary>
+        public int SampleRate { get; set; } = 256;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
+
+        internal override string IndexType => "IvfFlat";
+
+        internal override string ToConfigJson()
+        {
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+            };
+            if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
+            return JsonSerializer.Serialize(dict);
+        }
+    }
+
+    /// <summary>
+    /// An IVF-SQ (Scalar Quantization) vector index.
+    /// </summary>
+    /// <remarks>
+    /// This index applies scalar quantization to compress vectors and organizes the
+    /// quantized vectors into IVF partitions. It offers a balance between search
+    /// speed and storage efficiency while keeping good recall.
+    /// </remarks>
+    public class IvfSqIndex : Index
+    {
+        /// <summary>
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// Default is <c>"l2"</c>.
+        /// </summary>
+        public string DistanceType { get; set; } = "l2";
+
+        /// <summary>
+        /// The number of IVF partitions. Default is the square root of the number of rows.
+        /// </summary>
+        public int? NumPartitions { get; set; }
+
+        /// <summary>
+        /// Max iterations to train kmeans. Default is 50.
+        /// </summary>
+        public int MaxIterations { get; set; } = 50;
+
+        /// <summary>
+        /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
+        /// </summary>
+        public int SampleRate { get; set; } = 256;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
+
+        internal override string IndexType => "IvfSq";
+
+        internal override string ToConfigJson()
+        {
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+            };
+            if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
+            return JsonSerializer.Serialize(dict);
+        }
+    }
+
+    /// <summary>
+    /// An IVF-RQ (RabitQ Quantization) vector index.
+    /// </summary>
+    /// <remarks>
+    /// IVF-RQ compresses vectors using RabitQ quantization and organizes them into
+    /// IVF partitions. Each dimension is quantized into a small number of bits.
+    /// The <c>NumBits</c> and <c>NumPartitions</c> parameters control the tradeoff
+    /// between index size (and thus search speed) and index accuracy.
+    /// </remarks>
+    public class IvfRqIndex : Index
+    {
+        /// <summary>
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// Default is <c>"l2"</c>.
+        /// </summary>
+        public string DistanceType { get; set; } = "l2";
+
+        /// <summary>
+        /// The number of IVF partitions. Default is the square root of the number of rows.
+        /// </summary>
+        public int? NumPartitions { get; set; }
+
+        /// <summary>
+        /// Number of bits to encode each dimension in the RabitQ codebook. Default is 1.
+        /// </summary>
+        public int NumBits { get; set; } = 1;
+
+        /// <summary>
+        /// Max iterations to train kmeans. Default is 50.
+        /// </summary>
+        public int MaxIterations { get; set; } = 50;
+
+        /// <summary>
+        /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
+        /// </summary>
+        public int SampleRate { get; set; } = 256;
+
+        /// <summary>
+        /// The target size of each partition.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
+
+        internal override string IndexType => "IvfRq";
+
+        internal override string ToConfigJson()
+        {
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = DistanceType,
+                ["num_bits"] = NumBits,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+            };
+            if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
+            return JsonSerializer.Serialize(dict);
+        }
+    }
+
+    /// <summary>
     /// An IVF-HNSW-SQ (Hierarchical Navigable Small World with Scalar Quantization) vector index.
     /// </summary>
     public class HnswSqIndex : Index

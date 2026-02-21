@@ -1355,4 +1355,141 @@ public class TableTests
 
         Assert.Equal(5, await fixture.Table.CountRows());
     }
+
+    private static Apache.Arrow.RecordBatch CreateVectorBatch(int numRows, int dimension = 8)
+    {
+        var idBuilder = new Apache.Arrow.Int32Array.Builder();
+        var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
+        var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, dimension);
+        var floatBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
+        var rng = new Random(42);
+
+        for (int i = 0; i < numRows; i++)
+        {
+            idBuilder.Append(i);
+            vectorBuilder.Append();
+            for (int d = 0; d < dimension; d++)
+            {
+                floatBuilder.Append((float)rng.NextDouble());
+            }
+        }
+
+        var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, dimension);
+        var schema = new Apache.Arrow.Schema.Builder()
+            .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+            .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
+            .Build();
+
+        return new Apache.Arrow.RecordBatch(schema,
+            new Apache.Arrow.IArrowArray[] { idBuilder.Build(), vectorBuilder.Build() }, numRows);
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfFlat on a vector column should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfFlat_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_flat_idx",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfFlatIndex());
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_FLAT");
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfFlat using custom parameters should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfFlat_WithParams_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_flat_params",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfFlatIndex
+        {
+            DistanceType = "cosine",
+            NumPartitions = 2,
+            MaxIterations = 10,
+            SampleRate = 128,
+        });
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_FLAT");
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfSq on a vector column should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfSq_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_sq_idx",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfSqIndex());
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_SQ");
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfSq using custom parameters should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfSq_WithParams_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_sq_params",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfSqIndex
+        {
+            DistanceType = "dot",
+            NumPartitions = 2,
+            MaxIterations = 10,
+            SampleRate = 128,
+        });
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_SQ");
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfRq on a vector column should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfRq_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_rq_idx",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfRqIndex());
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_RQ");
+    }
+
+    /// <summary>
+    /// CreateIndex with IvfRq using custom parameters should succeed.
+    /// </summary>
+    [Fact]
+    public async Task CreateIndex_IvfRq_WithParams_Succeeds()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ivf_rq_params",
+            CreateVectorBatch(256));
+
+        await fixture.Table.CreateIndex(new[] { "vector" }, new IvfRqIndex
+        {
+            DistanceType = "cosine",
+            NumPartitions = 2,
+            NumBits = 1,
+            MaxIterations = 10,
+            SampleRate = 128,
+        });
+
+        var indices = await fixture.Table.ListIndices();
+        Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_RQ");
+    }
 }
