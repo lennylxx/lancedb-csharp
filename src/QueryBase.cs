@@ -69,6 +69,21 @@ namespace lancedb
         protected abstract IntPtr NativeWithRowId(IntPtr ptr);
 
         /// <summary>
+        /// Calls the native full_text_search FFI function.
+        /// </summary>
+        protected abstract IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText);
+
+        /// <summary>
+        /// Calls the native fast_search FFI function.
+        /// </summary>
+        protected abstract IntPtr NativeFastSearch(IntPtr ptr);
+
+        /// <summary>
+        /// Calls the native postfilter FFI function.
+        /// </summary>
+        protected abstract IntPtr NativePostfilter(IntPtr ptr);
+
+        /// <summary>
         /// Calls the native execute FFI function.
         /// </summary>
         private protected abstract void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback);
@@ -197,6 +212,86 @@ namespace lancedb
         public T WithRowId()
         {
             IntPtr newPtr = NativeWithRowId(_ptr);
+            ReplacePtr(newPtr);
+            return (T)this;
+        }
+
+        /// <summary>
+        /// Perform a full-text search on the table.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The results will be returned in order of relevance (BM25 scores).
+        /// </para>
+        /// <para>
+        /// This method is only valid on tables that have a full-text search index.
+        /// Use <see cref="Table.CreateIndex"/> with <see cref="FtsIndex"/> to create one.
+        /// </para>
+        /// <para>
+        /// Full-text search always has a limit. If <see cref="Limit"/> has not
+        /// been called then a default limit of 10 will be used.
+        /// </para>
+        /// <para>
+        /// When called on a <see cref="VectorQuery"/>, this creates a hybrid query
+        /// that combines vector search with full-text search.
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The search query string.</param>
+        /// <returns>This query instance for method chaining.</returns>
+        public T FullTextSearch(string query)
+        {
+            byte[] textBytes = NativeCall.ToUtf8(query);
+            unsafe
+            {
+                fixed (byte* p = textBytes)
+                {
+                    IntPtr newPtr = NativeFullTextSearch(_ptr, new IntPtr(p));
+                    ReplacePtr(newPtr);
+                }
+            }
+
+            return (T)this;
+        }
+
+        /// <summary>
+        /// Skip searching unindexed data.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// When this is called, any data that has not been indexed will be skipped
+        /// during the search. This can make queries faster but results may be incomplete
+        /// if the index is not up to date.
+        /// </para>
+        /// <para>
+        /// This is primarily useful for full-text search queries where you want to
+        /// skip unindexed fragments for better performance.
+        /// </para>
+        /// </remarks>
+        /// <returns>This query instance for method chaining.</returns>
+        public T FastSearch()
+        {
+            IntPtr newPtr = NativeFastSearch(_ptr);
+            ReplacePtr(newPtr);
+            return (T)this;
+        }
+
+        /// <summary>
+        /// Apply filtering after the search instead of before.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// By default, filters are applied before the search (prefiltering).
+        /// This can sometimes reduce the number of results below the requested limit.
+        /// </para>
+        /// <para>
+        /// Postfiltering applies the filter after the search, which guarantees
+        /// the requested number of results but may be slower and less accurate.
+        /// </para>
+        /// </remarks>
+        /// <returns>This query instance for method chaining.</returns>
+        public T Postfilter()
+        {
+            IntPtr newPtr = NativePostfilter(_ptr);
             ReplacePtr(newPtr);
             return (T)this;
         }

@@ -258,6 +258,43 @@ public class QueryExecutionTests
         Assert.Equal(0, batch.Length);
     }
 
+    /// <summary>
+    /// FastSearch should be chainable with FullTextSearch.
+    /// </summary>
+    [Fact]
+    public async Task FastSearch_WithFts_IsChainable()
+    {
+        using var fixture = await CreateTextFixture("fts_fast");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .FullTextSearch("apple")
+            .FastSearch();
+        var rows = await query.ToList();
+
+        Assert.Single(rows);
+    }
+
+    /// <summary>
+    /// Postfilter should be chainable on a regular Query with FTS.
+    /// </summary>
+    [Fact]
+    public async Task Postfilter_OnQuery_IsChainable()
+    {
+        using var fixture = await CreateTextFixture("fts_postfilter");
+
+        await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+        using var query = fixture.Table.Query()
+            .FullTextSearch("apple")
+            .Postfilter()
+            .Limit(10);
+        var rows = await query.ToList();
+
+        Assert.Single(rows);
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------

@@ -1,6 +1,6 @@
 use lancedb::index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, Query, QueryBase, Select, VectorQuery};
-use libc::{c_char, c_double, size_t};
+use libc::{c_char, c_double, c_float, size_t};
 use std::slice;
 use std::sync::Arc;
 
@@ -108,6 +108,22 @@ pub extern "C" fn query_full_text_search(
     let text = ffi::to_string(query_text);
     let fts_query = FullTextSearchQuery::new(text);
     let new_query = query.clone().full_text_search(fts_query);
+    Arc::into_raw(Arc::new(new_query))
+}
+
+/// Enables fast search on a Query, skipping unindexed data. Returns a new Query pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_fast_search(query_ptr: *const Query) -> *const Query {
+    let query = ffi_borrow!(query_ptr, Query);
+    let new_query = query.clone().fast_search();
+    Arc::into_raw(Arc::new(new_query))
+}
+
+/// Applies filters after the search instead of before. Returns a new Query pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_postfilter(query_ptr: *const Query) -> *const Query {
+    let query = ffi_borrow!(query_ptr, Query);
+    let new_query = query.clone().postfilter();
     Arc::into_raw(Arc::new(new_query))
 }
 
@@ -264,6 +280,52 @@ pub extern "C" fn vector_query_bypass_vector_index(
 pub extern "C" fn vector_query_postfilter(vq_ptr: *const VectorQuery) -> *const VectorQuery {
     let vq = ffi_borrow!(vq_ptr, VectorQuery);
     let new_vq = vq.clone().postfilter();
+    Arc::into_raw(Arc::new(new_vq))
+}
+
+/// Applies a full-text search to a VectorQuery for hybrid (vector + FTS) search.
+/// Returns a new VectorQuery pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_full_text_search(
+    vq_ptr: *const VectorQuery,
+    query_text: *const c_char,
+) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let text = ffi::to_string(query_text);
+    let fts_query = FullTextSearchQuery::new(text);
+    let new_vq = vq.clone().full_text_search(fts_query);
+    Arc::into_raw(Arc::new(new_vq))
+}
+
+/// Enables fast search on a VectorQuery, skipping unindexed data.
+/// Returns a new VectorQuery pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_fast_search(vq_ptr: *const VectorQuery) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let new_vq = vq.clone().fast_search();
+    Arc::into_raw(Arc::new(new_vq))
+}
+
+/// Sets the HNSW ef search parameter. Returns a new VectorQuery pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_ef(vq_ptr: *const VectorQuery, ef: u64) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let new_vq = vq.clone().ef(ef as usize);
+    Arc::into_raw(Arc::new(new_vq))
+}
+
+/// Sets a distance range filter. NaN values indicate no bound.
+/// Returns a new VectorQuery pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_distance_range(
+    vq_ptr: *const VectorQuery,
+    lower: c_float,
+    upper: c_float,
+) -> *const VectorQuery {
+    let vq = ffi_borrow!(vq_ptr, VectorQuery);
+    let lower_bound = if lower.is_nan() { None } else { Some(lower) };
+    let upper_bound = if upper.is_nan() { None } else { Some(upper) };
+    let new_vq = vq.clone().distance_range(lower_bound, upper_bound);
     Arc::into_raw(Arc::new(new_vq))
 }
 

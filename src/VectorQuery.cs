@@ -54,6 +54,18 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr vector_query_postfilter(IntPtr vq_ptr);
 
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_full_text_search(IntPtr vq_ptr, IntPtr query_text);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_fast_search(IntPtr vq_ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_ef(IntPtr vq_ptr, ulong ef);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr vector_query_distance_range(IntPtr vq_ptr, float lower, float upper);
+
         internal VectorQuery(IntPtr vectorQueryPtr)
             : base(vectorQueryPtr)
         {
@@ -85,6 +97,18 @@ namespace lancedb
         /// <inheritdoc/>
         private protected override void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback)
             => vector_query_execute(ptr, callback);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText)
+            => vector_query_full_text_search(ptr, queryText);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeFastSearch(IntPtr ptr)
+            => vector_query_fast_search(ptr);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativePostfilter(IntPtr ptr)
+            => vector_query_postfilter(ptr);
 
         /// <summary>
         /// Set the vector column to query.
@@ -181,18 +205,45 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Apply filtering after the vector search, instead of before.
+        /// Set the HNSW ef search parameter.
         /// </summary>
         /// <remarks>
-        /// By default, filters are applied before the vector search (prefiltering).
-        /// This can sometimes reduce the number of results below the requested limit.
-        /// Postfiltering applies the filter after the vector search, which guarantees
-        /// the requested number of results but may be slower and less accurate.
+        /// <para>
+        /// This controls the size of the dynamic candidate list during HNSW search.
+        /// Higher values improve recall at the cost of search speed.
+        /// </para>
+        /// <para>
+        /// This parameter is only used when the vector index is an HNSW-based index
+        /// (HnswPq or HnswSq).
+        /// </para>
         /// </remarks>
+        /// <param name="ef">The ef search parameter.</param>
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
-        public VectorQuery Postfilter()
+        public VectorQuery Ef(int ef)
         {
-            IntPtr newPtr = vector_query_postfilter(NativePtr);
+            IntPtr newPtr = vector_query_ef(NativePtr, (ulong)ef);
+            ReplacePtr(newPtr);
+            return this;
+        }
+
+        /// <summary>
+        /// Filter results to only include vectors within a distance range.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The bounds are inclusive. Pass <c>null</c> for either bound to leave it open.
+        /// The distance values depend on the distance metric being used (L2, cosine, dot).
+        /// </para>
+        /// </remarks>
+        /// <param name="lowerBound">The minimum distance (inclusive), or <c>null</c> for no lower bound.</param>
+        /// <param name="upperBound">The maximum distance (inclusive), or <c>null</c> for no upper bound.</param>
+        /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
+        public VectorQuery DistanceRange(float? lowerBound = null, float? upperBound = null)
+        {
+            IntPtr newPtr = vector_query_distance_range(
+                NativePtr,
+                lowerBound ?? float.NaN,
+                upperBound ?? float.NaN);
             ReplacePtr(newPtr);
             return this;
         }

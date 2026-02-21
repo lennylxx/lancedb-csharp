@@ -20,9 +20,6 @@ namespace lancedb
     public class Query : QueryBase<Query>
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_full_text_search(IntPtr query_ptr, IntPtr query_text);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr query_nearest_to(IntPtr query_ptr, double[] vector, UIntPtr len);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -42,6 +39,15 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr query_with_row_id(IntPtr query_ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_full_text_search(IntPtr query_ptr, IntPtr query_text);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_fast_search(IntPtr query_ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern IntPtr query_postfilter(IntPtr query_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_execute(IntPtr query_ptr, NativeCall.FfiCallback completion);
@@ -75,41 +81,20 @@ namespace lancedb
             => query_with_row_id(ptr);
 
         /// <inheritdoc/>
+        protected override IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText)
+            => query_full_text_search(ptr, queryText);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativeFastSearch(IntPtr ptr)
+            => query_fast_search(ptr);
+
+        /// <inheritdoc/>
+        protected override IntPtr NativePostfilter(IntPtr ptr)
+            => query_postfilter(ptr);
+
+        /// <inheritdoc/>
         private protected override void NativeExecute(IntPtr ptr, NativeCall.FfiCallback callback)
             => query_execute(ptr, callback);
-
-        /// <summary>
-        /// Perform a full-text search on the table.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// The results will be returned in order of relevance (BM25 scores).
-        /// </para>
-        /// <para>
-        /// This method is only valid on tables that have a full-text search index.
-        /// Use <see cref="Table.CreateIndex"/> with <see cref="FtsIndex"/> to create one.
-        /// </para>
-        /// <para>
-        /// Full-text search always has a limit. If <see cref="QueryBase{T}.Limit"/> has not
-        /// been called then a default limit of 10 will be used.
-        /// </para>
-        /// </remarks>
-        /// <param name="query">The search query string.</param>
-        /// <returns>This query instance for method chaining.</returns>
-        public Query FullTextSearch(string query)
-        {
-            byte[] textBytes = NativeCall.ToUtf8(query);
-            unsafe
-            {
-                fixed (byte* p = textBytes)
-                {
-                    IntPtr newPtr = query_full_text_search(NativePtr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
-            return this;
-        }
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.

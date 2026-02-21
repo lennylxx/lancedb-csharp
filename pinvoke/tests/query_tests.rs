@@ -177,6 +177,128 @@ fn test_query_full_text_search_returns_new_pointer() {
 }
 
 #[test]
+fn test_query_fast_search_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "fast_search_test");
+
+    let query = table_create_query(table_ptr);
+    let new_query = query_fast_search(query);
+
+    assert!(!new_query.is_null());
+    assert_ne!(query as usize, new_query as usize);
+
+    query_free(query);
+    query_free(new_query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_postfilter_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "postfilter_test");
+
+    let query = table_create_query(table_ptr);
+    let new_query = query_postfilter(query);
+
+    assert!(!new_query.is_null());
+    assert_ne!(query as usize, new_query as usize);
+
+    query_free(query);
+    query_free(new_query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_full_text_search_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_fts_test");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let text = CString::new("search text").unwrap();
+    let new_vq = vector_query_full_text_search(vq, text.as_ptr());
+
+    assert!(!new_vq.is_null());
+    assert_ne!(vq as usize, new_vq as usize);
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_fast_search_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_fast_test");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let new_vq = vector_query_fast_search(vq);
+
+    assert!(!new_vq.is_null());
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_ef_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_ef_test");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let new_vq = vector_query_ef(vq, 128);
+
+    assert!(!new_vq.is_null());
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_distance_range_returns_new_pointer() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "vq_dist_test");
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 3] = [1.0, 2.0, 3.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 3);
+
+    let new_vq = vector_query_distance_range(vq, 0.0, 1.0);
+
+    assert!(!new_vq.is_null());
+
+    query_free(query);
+    vector_query_free(vq);
+    vector_query_free(new_vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
 fn test_vector_query_column_returns_new_pointer() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
