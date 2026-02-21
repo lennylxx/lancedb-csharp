@@ -70,6 +70,10 @@ namespace lancedb
             IntPtr table_ptr, ulong version, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_checkout_tag(
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_checkout_latest(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
@@ -520,6 +524,45 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Checks out a specific version of the table by tag name.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Any read operation on the table will now access the data at the version
+        /// referenced by the tag. As a consequence, calling this method will disable
+        /// any read consistency interval that was previously set.
+        /// </para>
+        /// <para>
+        /// This is a read-only operation that turns the table into a sort of "view"
+        /// or "detached head". Other table instances will not be affected. To make the
+        /// change permanent you can use the <see cref="Restore()"/> method.
+        /// </para>
+        /// <para>
+        /// Any operation that modifies the table will fail while the table is in a checked
+        /// out state.
+        /// </para>
+        /// <para>
+        /// To return the table to a normal state use <see cref="CheckoutLatest"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="tag">The tag name to check out.</param>
+        public async Task Checkout(string tag)
+        {
+            byte[] tagBytes = NativeCall.ToUtf8(tag);
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = tagBytes)
+                    {
+                        table_checkout_tag(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Ensures the table is pointing at the latest version.
         /// </summary>
         /// <remarks>
@@ -557,6 +600,56 @@ namespace lancedb
             {
                 table_restore(_handle!.DangerousGetHandle(), completion);
             }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Restore the table to a specific version.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method that checks out the specified version and
+        /// then restores it, making it the latest version.
+        /// </para>
+        /// <para>
+        /// This operation will overwrite the latest version of the table with the
+        /// specified version. Any changes made since that version will no longer
+        /// be visible.
+        /// </para>
+        /// <para>
+        /// Once the operation concludes the table will no longer be in a checked
+        /// out state and the read consistency interval, if any, will apply.
+        /// </para>
+        /// </remarks>
+        /// <param name="version">The version number to restore to.</param>
+        public async Task Restore(ulong version)
+        {
+            await Checkout(version).ConfigureAwait(false);
+            await Restore().ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Restore the table to the version referenced by a tag.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method that checks out the tagged version and
+        /// then restores it, making it the latest version.
+        /// </para>
+        /// <para>
+        /// This operation will overwrite the latest version of the table with the
+        /// tagged version. Any changes made since that version will no longer
+        /// be visible.
+        /// </para>
+        /// <para>
+        /// Once the operation concludes the table will no longer be in a checked
+        /// out state and the read consistency interval, if any, will apply.
+        /// </para>
+        /// </remarks>
+        /// <param name="tag">The tag name of the version to restore to.</param>
+        public async Task Restore(string tag)
+        {
+            await Checkout(tag).ConfigureAwait(false);
+            await Restore().ConfigureAwait(false);
         }
 
         /// <summary>

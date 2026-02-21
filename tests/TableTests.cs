@@ -1097,4 +1097,108 @@ public class TableTests
         var count = await fixture.Table.CountRows();
         Assert.Equal(3, count);
     }
+
+    /// <summary>
+    /// Checkout by tag name should switch the table to the tagged version.
+    /// </summary>
+    [Fact]
+    public async Task Checkout_ByTag_ChangesVisibleData()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("checkout_tag", CreateTestBatch(3));
+
+            var v1 = await table.Version();
+            await table.CreateTag("v1", v1);
+
+            await table.Add(CreateTestBatch(5, startId: 10));
+            Assert.Equal(8, await table.CountRows());
+
+            await table.Checkout("v1");
+            Assert.Equal(3, await table.CountRows());
+
+            await table.CheckoutLatest();
+            Assert.Equal(8, await table.CountRows());
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Restore with an explicit version should restore the table to that version.
+    /// </summary>
+    [Fact]
+    public async Task Restore_WithVersion_RestoresToSpecifiedVersion()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("restore_ver", CreateTestBatch(3));
+
+            var v1 = await table.Version();
+
+            await table.Add(CreateTestBatch(5, startId: 10));
+            Assert.Equal(8, await table.CountRows());
+
+            await table.Restore(v1);
+            Assert.Equal(3, await table.CountRows());
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Restore with a tag name should restore the table to the tagged version.
+    /// </summary>
+    [Fact]
+    public async Task Restore_WithTag_RestoresToTaggedVersion()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            var table = await connection.CreateTable("restore_tag", CreateTestBatch(3));
+
+            var v1 = await table.Version();
+            await table.CreateTag("baseline", v1);
+
+            await table.Add(CreateTestBatch(5, startId: 10));
+            Assert.Equal(8, await table.CountRows());
+
+            await table.Restore("baseline");
+            Assert.Equal(3, await table.CountRows());
+
+            table.Dispose();
+            connection.Dispose();
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
 }

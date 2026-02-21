@@ -249,6 +249,25 @@ pub extern "C" fn table_checkout(
     });
 }
 
+/// Checks out a specific version of the table by tag name.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_checkout_tag(
+    table_ptr: *const Table,
+    tag: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let tag = crate::ffi::to_string(tag);
+    crate::RUNTIME.spawn(async move {
+        match table.checkout_tag(&tag).await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => crate::callback_error(completion, e),
+        }
+    });
+}
+
 /// Checks out the latest version of the table.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_checkout_latest(
