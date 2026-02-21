@@ -1,0 +1,45 @@
+# Contributing to this project
+
+## Architecture
+
+```
+lancedb-csharp/
+├── src/           C# class library (net10.0, namespace: lancedb)
+├── pinvoke/       Rust cdylib (lancedb-ffi) exposing C-compatible FFI
+└── tests/         C# xUnit tests
+```
+
+The SDK has two layers:
+
+- **`pinvoke/`** — A Rust `cdylib` that exposes C-compatible FFI functions. Uses a global Tokio runtime to bridge Rust async operations into synchronous FFI calls with C function pointer callbacks.
+- **`src/`** — A C# class library that declares `[DllImport]` extern methods matching the Rust FFI surface, and wraps them in idiomatic async APIs using `TaskCompletionSource`.
+
+Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup. Data crosses the FFI boundary as Arrow IPC byte buffers.
+
+## Ownership model
+
+Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as raw `IntPtr` pointers to C#. C# classes hold these pointers and are responsible for calling the corresponding Rust free/drop functions. `RustStringHandle` extends `SafeHandle` to automatically free Rust-allocated strings via `free_string`.
+
+Query and VectorQuery builder methods use a borrow-clone-return pattern: the Rust FFI function borrows the existing pointer (`ffi_borrow!`), clones the inner value, applies the builder method (which consumes self), and returns a new `Arc` pointer. The C# side frees the old pointer and stores the new one. This avoids consuming the original and keeps each pointer independently freeable.
+
+## Adding a new FFI function
+
+1. Add the `#[unsafe(no_mangle)] pub extern "C" fn` in the appropriate Rust file under `pinvoke/src/` (edition 2024 requires `unsafe(...)` for `no_mangle`).
+2. Add a matching `[DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]` declaration in the corresponding C# class.
+3. For async Rust operations: use `RUNTIME.spawn` with a completion callback on the Rust side, and `TaskCompletionSource<IntPtr>` with a pinned `GCHandle` delegate on the C# side.
+
+## Conventions
+
+- All C# types are in the `lancedb` namespace (no sub-namespaces).
+- Options/config classes go in `src/Options/`.
+- Strings crossing the FFI boundary are UTF-8 encoded byte arrays passed as `IntPtr`. On the Rust side, `ffi::to_string` converts `*const c_char` to an owned `String`. On the C# side, `Encoding.UTF8.GetBytes` is used before passing via `fixed` pointer.
+- C# uses `unsafe` blocks with `fixed` for pinning byte arrays during FFI calls.
+- Rust FFI functions that return heap objects use `Arc::into_raw`; the caller is responsible for eventually calling the matching free function to avoid leaks.
+
+## Test Projects
+
+- **C# tests** live in `tests/` as an xUnit project (`lancedb.tests.csproj`).
+  - Test naming convention: `MethodName_Scenario_ExpectedResult` (e.g., `Connect_ValidUri_ReturnsConnection`).
+- **Rust tests** live in `pinvoke/tests/` as Cargo integration tests.
+  - Test the FFI functions directly using raw pointers to verify ownership and memory safety.
+  - Async FFI functions are tested by calling the underlying lancedb API directly (extern "C" callbacks can't capture state).
