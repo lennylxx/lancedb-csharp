@@ -1,6 +1,6 @@
 [package]
 name = "lancedb-ffi"
-version = "0.0.1"
+version = "0.0.0" # dummy version
 description = "C-compatible FFI bindings for the LanceDB Rust crate"
 rust-version = "1.93.1"
 edition = "2024"

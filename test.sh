@@ -1,13 +1,17 @@
 #!/bin/bash
 set -e
 
-./build.sh
+CONFIGURATION="Debug"
+
+if [[ "$1" == "--release" ]]; then
+    CONFIGURATION="Release"
+fi
 
 echo "=== Running Rust tests ==="
 cd pinvoke && cargo test
 cd ..
 
-echo "=== Running C# tests ==="
-dotnet test --no-build --verbosity normal --logger "console;verbosity=detailed"
+echo "=== Running C# tests ($CONFIGURATION) ==="
+dotnet test --no-build --configuration $CONFIGURATION --verbosity normal --logger "console;verbosity=detailed"
 
 echo "=== All tests passed ==="

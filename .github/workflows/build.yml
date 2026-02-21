@@ -1,0 +1,119 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+    inputs:
+      configuration:
+        description: 'Build configuration (Debug or Release)'
+        type: string
+        default: 'Debug'
+      publish:
+        description: 'Whether to upload the NuGet package artifact'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            lib: liblancedb_ffi.so
+          - os: windows-latest
+            rid: win-x64
+            lib: lancedb_ffi.dll
+    runs-on: ${{ matrix.os }}
+
+    env:
+      BUILD_FLAG: ${{ inputs.configuration == 'Release' && '--release' || '' }}
+      CARGO_PROFILE: ${{ inputs.configuration == 'Release' && 'release' || 'debug' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: '1.93.1'
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            pinvoke/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('pinvoke/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Build (Linux)
+        if: runner.os == 'Linux'
+        run: ./build.sh ${{ env.BUILD_FLAG }}
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: build.cmd ${{ env.BUILD_FLAG }}
+        shell: cmd
+
+      - name: Run tests (Linux)
+        if: runner.os == 'Linux'
+        run: ./test.sh ${{ env.BUILD_FLAG }}
+
+      - name: Run tests (Windows)
+        if: runner.os == 'Windows'
+        run: test.cmd ${{ env.BUILD_FLAG }}
+        shell: cmd
+
+      - name: Upload native library
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-${{ matrix.rid }}
+          path: pinvoke/target/${{ env.CARGO_PROFILE }}/${{ matrix.lib }}
+
+  pack:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Linux native library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-linux-x64
+          path: pinvoke/target/${{ inputs.configuration == 'Release' && 'release' || 'debug' }}/
+
+      - name: Download Windows native library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x64
+          path: pinvoke/target/${{ inputs.configuration == 'Release' && 'release' || 'debug' }}/
+
+      - name: Pack NuGet package
+        run: |
+          CONFIGURATION=${{ inputs.configuration || 'Debug' }}
+          dotnet build --configuration $CONFIGURATION
+          dotnet pack src/lancedb.csproj --configuration $CONFIGURATION --no-build -o ./artifacts
+
+      - name: Upload NuGet package
+        if: inputs.publish
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-package
+          path: ./artifacts/*.nupkg
