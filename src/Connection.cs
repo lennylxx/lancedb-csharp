@@ -101,6 +101,18 @@ namespace lancedb
             Dispose();
         }
 
+        /// <summary>
+        /// Check whether the connection is open.
+        /// </summary>
+        /// <returns>
+        /// <c>true</c> if the connection is open and usable; <c>false</c> if
+        /// it has been closed, disposed, or was never connected.
+        /// </returns>
+        public bool IsOpen()
+        {
+            return _handle != null && !_handle.IsInvalid && !_handle.IsClosed;
+        }
+
         public void Dispose()
         {
             _handle?.Dispose();
@@ -343,23 +355,56 @@ namespace lancedb
         }
 
         /// <summary>
+        /// List the names of all tables in the database.
+        /// </summary>
+        /// <remarks>
+        /// This is a convenience method equivalent to <see cref="TableNames"/>
+        /// with a different parameter name for pagination. Use <paramref name="pageToken"/>
+        /// (the last table name from the previous page) to paginate through results.
+        /// </remarks>
+        /// <param name="pageToken">
+        /// If present, only return names that come lexicographically after this value.
+        /// Pass the last name from the previous page to get the next page.
+        /// </param>
+        /// <param name="limit">
+        /// The maximum number of table names to return. If 0, all names are returned.
+        /// </param>
+        /// <returns>A list of table names in lexicographical order.</returns>
+        public Task<IReadOnlyList<string>> ListTables(string? pageToken = null, uint limit = 0)
+        {
+            return TableNames(startAfter: pageToken, limit: limit);
+        }
+
+        /// <summary>
         /// Drop a table from the database.
         /// </summary>
         /// <param name="name">The name of the table to drop.</param>
-        /// <exception cref="LanceDbException">Thrown if the table does not exist.</exception>
-        public async Task DropTable(string name)
+        /// <param name="ignoreMissing">
+        /// If <c>true</c>, no error is raised if the table does not exist.
+        /// If <c>false</c> (default), a <see cref="LanceDbException"/> is thrown.
+        /// </param>
+        /// <exception cref="LanceDbException">
+        /// Thrown if the table does not exist and <paramref name="ignoreMissing"/> is <c>false</c>.
+        /// </exception>
+        public async Task DropTable(string name, bool ignoreMissing = false)
         {
-            byte[] nameBytes = NativeCall.ToUtf8(name);
-            await NativeCall.Async(callback =>
+            try
             {
-                unsafe
+                byte[] nameBytes = NativeCall.ToUtf8(name);
+                await NativeCall.Async(callback =>
                 {
-                    fixed (byte* p = nameBytes)
+                    unsafe
                     {
-                        database_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                        fixed (byte* p = nameBytes)
+                        {
+                            database_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                        }
                     }
-                }
-            });
+                });
+            }
+            catch (LanceDbException) when (ignoreMissing)
+            {
+            }
         }
 
         /// <summary>

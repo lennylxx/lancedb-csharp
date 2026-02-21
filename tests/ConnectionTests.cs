@@ -685,4 +685,145 @@ public class ConnectionTests
             }
         }
     }
+
+    // -----------------------------------------------------------------------
+    // DropTable ignoreMissing
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// DropTable with ignoreMissing=true should not throw for a non-existent table.
+    /// </summary>
+    [Fact]
+    public async Task DropTable_IgnoreMissing_DoesNotThrow()
+    {
+        using var fixture = await TestFixture.CreateWithTable("drop_ignore");
+        await fixture.Connection.DropTable("nonexistent", ignoreMissing: true);
+    }
+
+    /// <summary>
+    /// DropTable with ignoreMissing=false should throw for a non-existent table.
+    /// </summary>
+    [Fact]
+    public async Task DropTable_IgnoreMissingFalse_Throws()
+    {
+        using var fixture = await TestFixture.CreateWithTable("drop_nignore");
+        await Assert.ThrowsAsync<LanceDbException>(
+            () => fixture.Connection.DropTable("nonexistent", ignoreMissing: false));
+    }
+
+    /// <summary>
+    /// DropTable with ignoreMissing=true should still drop an existing table.
+    /// </summary>
+    [Fact]
+    public async Task DropTable_IgnoreMissing_StillDropsExisting()
+    {
+        using var fixture = await TestFixture.CreateWithTable("drop_ignore_exist");
+        await fixture.Connection.CreateEmptyTable("extra_table");
+        await fixture.Connection.DropTable("extra_table", ignoreMissing: true);
+
+        var names = await fixture.Connection.TableNames();
+        Assert.DoesNotContain("extra_table", names);
+    }
+
+    // -----------------------------------------------------------------------
+    // IsOpen
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// IsOpen should return true after connecting.
+    /// </summary>
+    [Fact]
+    public async Task IsOpen_AfterConnect_ReturnsTrue()
+    {
+        using var fixture = await TestFixture.CreateWithTable("isopen_true");
+        Assert.True(fixture.Connection.IsOpen());
+    }
+
+    /// <summary>
+    /// IsOpen should return false after disposing.
+    /// </summary>
+    [Fact]
+    public async Task IsOpen_AfterDispose_ReturnsFalse()
+    {
+        var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+            Assert.True(connection.IsOpen());
+            connection.Dispose();
+            Assert.False(connection.IsOpen());
+        }
+        finally
+        {
+            if (Directory.Exists(tmpDir))
+            {
+                Directory.Delete(tmpDir, true);
+            }
+        }
+    }
+
+    /// <summary>
+    /// IsOpen should return false before connecting.
+    /// </summary>
+    [Fact]
+    public void IsOpen_BeforeConnect_ReturnsFalse()
+    {
+        var connection = new Connection();
+        Assert.False(connection.IsOpen());
+        connection.Dispose();
+    }
+
+    // -----------------------------------------------------------------------
+    // ListTables
+    // -----------------------------------------------------------------------
+
+    /// <summary>
+    /// ListTables should return all table names.
+    /// </summary>
+    [Fact]
+    public async Task ListTables_WithTables_ReturnsNames()
+    {
+        using var fixture = await TestFixture.CreateWithTable("lt_main");
+        await fixture.Connection.CreateEmptyTable("lt_extra");
+
+        var names = await fixture.Connection.ListTables();
+
+        Assert.Equal(2, names.Count);
+        Assert.Contains("lt_main", names);
+        Assert.Contains("lt_extra", names);
+    }
+
+    /// <summary>
+    /// ListTables with limit should restrict results.
+    /// </summary>
+    [Fact]
+    public async Task ListTables_WithLimit_RestrictsResults()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ltl_a");
+        await fixture.Connection.CreateEmptyTable("ltl_b");
+        await fixture.Connection.CreateEmptyTable("ltl_c");
+
+        var names = await fixture.Connection.ListTables(limit: 2);
+
+        Assert.Equal(2, names.Count);
+    }
+
+    /// <summary>
+    /// ListTables with pageToken should paginate.
+    /// </summary>
+    [Fact]
+    public async Task ListTables_WithPageToken_Paginates()
+    {
+        using var fixture = await TestFixture.CreateWithTable("ltp_a");
+        await fixture.Connection.CreateEmptyTable("ltp_b");
+        await fixture.Connection.CreateEmptyTable("ltp_c");
+
+        var firstPage = await fixture.Connection.ListTables(limit: 2);
+        Assert.Equal(2, firstPage.Count);
+
+        var secondPage = await fixture.Connection.ListTables(
+            pageToken: firstPage[firstPage.Count - 1], limit: 10);
+        Assert.Single(secondPage);
+    }
 }
