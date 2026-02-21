@@ -34,6 +34,8 @@ public class TestFixture : IDisposable
         Table.Dispose();
         Connection.Dispose();
         if (Directory.Exists(_tmpDir))
+        {
             Directory.Delete(_tmpDir, true);
+        }
     }
 }

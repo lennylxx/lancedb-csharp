@@ -152,7 +152,9 @@ namespace lancedb
             });
             string joined = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(joined))
+            {
                 return Array.Empty<string>();
+            }
             return joined.Split('\n');
         }
 

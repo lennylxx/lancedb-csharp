@@ -2,6 +2,9 @@
 **/bin/*
 **/obj/*
 
-## Rust
+# Rust
 target
 Cargo.lock
+
+# GitHub
+.github/

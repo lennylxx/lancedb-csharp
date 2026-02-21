@@ -92,7 +92,9 @@ public class TableTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 

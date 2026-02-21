@@ -19,7 +19,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -47,7 +49,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -71,7 +75,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -96,7 +102,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -117,7 +125,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -142,7 +152,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -166,7 +178,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -187,7 +201,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 
@@ -212,7 +228,9 @@ public class ConnectionTests
         finally
         {
             if (Directory.Exists(tmpDir))
+            {
                 Directory.Delete(tmpDir, true);
+            }
         }
     }
 }
