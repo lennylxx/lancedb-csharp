@@ -250,6 +250,21 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Rename a table in the database.
+        /// </summary>
+        /// <param name="currentName">The current name of the table.</param>
+        /// <param name="newName">The new name for the table.</param>
+        /// <remarks>
+        /// This operation is only supported in LanceDB Cloud. Calling this method
+        /// on a local (OSS) database will throw <see cref="NotImplementedException"/>.
+        /// </remarks>
+        /// <exception cref="NotImplementedException">Always thrown. LanceDB OSS does not support this operation.</exception>
+        public Task RenameTable(string currentName, string newName)
+        {
+            return Task.FromException(new NotImplementedException("RenameTable is only supported in LanceDB Cloud."));
+        }
+
+        /// <summary>
         /// Drop all tables from the database.
         /// </summary>
         public async Task DropAllTables()

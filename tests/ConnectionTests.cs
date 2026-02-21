@@ -324,6 +324,17 @@ public class ConnectionTests
         }
     }
 
+    /// <summary>
+    /// RenameTable should throw NotImplementedException since it's Cloud-only.
+    /// </summary>
+    [Fact]
+    public async Task RenameTable_ThrowsNotImplementedException()
+    {
+        var connection = new Connection();
+        await Assert.ThrowsAsync<NotImplementedException>(
+            () => connection.RenameTable("old", "new"));
+    }
+
     private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
     {
         var idArray = new Apache.Arrow.Int32Array.Builder();
