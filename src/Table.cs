@@ -155,6 +155,7 @@ namespace lancedb
             bool when_not_matched_insert_all,
             bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
             IntPtr ipc_data, nuint ipc_len,
+            [MarshalAs(UnmanagedType.U1)] bool use_index, long timeout_ms,
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -1069,7 +1070,8 @@ namespace lancedb
             bool whenMatchedUpdateAll, string? whenMatchedUpdateAllFilter,
             bool whenNotMatchedInsertAll,
             bool whenNotMatchedBySourceDelete, string? whenNotMatchedBySourceDeleteFilter,
-            IReadOnlyList<RecordBatch> data)
+            IReadOnlyList<RecordBatch> data,
+            bool useIndex = true, TimeSpan? timeout = null)
         {
             byte[] ipcBytes = SerializeToIpc(data);
             string onColumnsJson = JsonSerializer.Serialize(onColumns);
@@ -1078,6 +1080,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(whenMatchedUpdateAllFilter) : null;
             byte[]? sourceDeleteFilterBytes = whenNotMatchedBySourceDeleteFilter != null
                 ? NativeCall.ToUtf8(whenNotMatchedBySourceDeleteFilter) : null;
+            long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
 
             await NativeCall.Async(completion =>
             {
@@ -1095,6 +1098,7 @@ namespace lancedb
                             whenNotMatchedInsertAll,
                             whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
                             (IntPtr)pIpc, (nuint)ipcBytes.Length,
+                            useIndex, timeoutMs,
                             completion);
                     }
                 }

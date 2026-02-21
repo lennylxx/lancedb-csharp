@@ -961,6 +961,8 @@ pub extern "C" fn table_merge_insert(
     when_not_matched_by_source_delete_filter: *const c_char,
     ipc_data: *const u8,
     ipc_len: usize,
+    use_index: bool,
+    timeout_ms: i64,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -1000,6 +1002,11 @@ pub extern "C" fn table_merge_insert(
         }
         if when_not_matched_by_source_delete {
             builder.when_not_matched_by_source_delete(source_delete_filter);
+        }
+
+        builder.use_index(use_index);
+        if timeout_ms >= 0 {
+            builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
         }
 
         let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {

@@ -1319,4 +1319,40 @@ public class TableTests
         await fixture.Table.WaitForIndex(
             new[] { indexName }, TimeSpan.FromSeconds(30));
     }
+
+    /// <summary>
+    /// MergeInsert with UseIndex(false) should still work correctly.
+    /// </summary>
+    [Fact]
+    public async Task MergeInsert_UseIndexFalse_StillWorks()
+    {
+        using var fixture = await TestFixture.CreateWithTable("merge_noidx");
+        await fixture.Table.Add(CreateTestBatch(3));
+
+        var newData = CreateTestBatch(2, startId: 10);
+        await fixture.Table.MergeInsert("id")
+            .WhenNotMatchedInsertAll()
+            .UseIndex(false)
+            .Execute(newData);
+
+        Assert.Equal(5, await fixture.Table.CountRows());
+    }
+
+    /// <summary>
+    /// MergeInsert with Timeout should still complete normally.
+    /// </summary>
+    [Fact]
+    public async Task MergeInsert_WithTimeout_CompletesNormally()
+    {
+        using var fixture = await TestFixture.CreateWithTable("merge_timeout");
+        await fixture.Table.Add(CreateTestBatch(3));
+
+        var newData = CreateTestBatch(2, startId: 10);
+        await fixture.Table.MergeInsert("id")
+            .WhenNotMatchedInsertAll()
+            .Timeout(TimeSpan.FromSeconds(60))
+            .Execute(newData);
+
+        Assert.Equal(5, await fixture.Table.CountRows());
+    }
 }

@@ -31,6 +31,8 @@ public class MergeInsertBuilder
     private bool _whenNotMatchedInsertAll;
     private bool _whenNotMatchedBySourceDelete;
     private string? _whenNotMatchedBySourceDeleteFilter;
+    private bool _useIndex = true;
+    private TimeSpan? _timeout;
 
     internal MergeInsertBuilder(Table table, IReadOnlyList<string> onColumns)
     {
@@ -90,6 +92,39 @@ public class MergeInsertBuilder
     }
 
     /// <summary>
+    /// Controls whether to use indexes for the merge operation.
+    /// </summary>
+    /// <remarks>
+    /// When set to <c>true</c> (the default), the operation will use an index if
+    /// available on the join key for improved performance. When set to <c>false</c>,
+    /// it forces a full table scan even if an index exists. This can be useful for
+    /// benchmarking or when the query optimizer chooses a suboptimal path.
+    /// </remarks>
+    /// <param name="useIndex">Whether to use indices for the merge operation.</param>
+    /// <returns>This builder for chaining.</returns>
+    public MergeInsertBuilder UseIndex(bool useIndex)
+    {
+        _useIndex = useIndex;
+        return this;
+    }
+
+    /// <summary>
+    /// Set a timeout for the merge operation.
+    /// </summary>
+    /// <remarks>
+    /// If there is a concurrent write that conflicts with the merge, it will be
+    /// retried. The timeout is applied across all retry attempts. If the timeout
+    /// is reached, the operation will fail.
+    /// </remarks>
+    /// <param name="timeout">The maximum time to allow for the merge operation.</param>
+    /// <returns>This builder for chaining.</returns>
+    public MergeInsertBuilder Timeout(TimeSpan timeout)
+    {
+        _timeout = timeout;
+        return this;
+    }
+
+    /// <summary>
     /// Execute the merge insert operation with the provided data.
     /// </summary>
     /// <param name="data">
@@ -102,7 +137,7 @@ public class MergeInsertBuilder
             _whenMatchedUpdateAll, _whenMatchedUpdateAllFilter,
             _whenNotMatchedInsertAll,
             _whenNotMatchedBySourceDelete, _whenNotMatchedBySourceDeleteFilter,
-            data).ConfigureAwait(false);
+            data, _useIndex, _timeout).ConfigureAwait(false);
     }
 
     /// <summary>

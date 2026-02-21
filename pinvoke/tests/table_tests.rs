@@ -545,6 +545,8 @@ fn test_merge_insert_upsert_ffi() {
         ptr::null(),   // no delete filter
         new_data.as_ptr(),
         new_data.len(),
+        true,          // use_index
+        -1,            // timeout_ms (no timeout)
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();
@@ -578,6 +580,8 @@ fn test_merge_insert_insert_only_ffi() {
         ptr::null(),
         new_data.as_ptr(),
         new_data.len(),
+        true,          // use_index
+        -1,            // timeout_ms
         common::ffi_callback,
     );
     common::ffi_wait_success();
@@ -610,6 +614,8 @@ fn test_merge_insert_delete_not_in_source_ffi() {
         ptr::null(),
         new_data.as_ptr(),
         new_data.len(),
+        true,          // use_index
+        -1,            // timeout_ms
         common::ffi_callback,
     );
     common::ffi_wait_success();
