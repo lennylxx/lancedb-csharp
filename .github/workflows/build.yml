@@ -114,6 +114,43 @@ jobs:
           dotnet build --configuration $CONFIGURATION
           dotnet pack src/lancedb.csproj --configuration $CONFIGURATION --no-build -o ./artifacts
 
+      - name: Verify NuGet package contents
+        run: |
+          NUPKG=$(ls ./artifacts/*.nupkg)
+          echo "=== Package: $NUPKG ==="
+          echo "--- Checking target frameworks and native libraries ---"
+
+          CONTENTS=$(unzip -l "$NUPKG")
+
+          MISSING=""
+          for EXPECTED in \
+            "lib/net8.0/lancedb.dll" \
+            "lib/netstandard2.0/lancedb.dll" \
+            "runtimes/linux-x64/native/liblancedb_ffi.so" \
+            "runtimes/win-x64/native/lancedb_ffi.dll"; do
+            if echo "$CONTENTS" | grep -q "$EXPECTED"; then
+              echo "  ✓ $EXPECTED"
+            else
+              echo "  ✗ $EXPECTED  MISSING"
+              MISSING="$MISSING $EXPECTED"
+            fi
+          done
+
+          if [ -n "$MISSING" ]; then
+            echo "::error::NuGet package is missing required files:$MISSING"
+            exit 1
+          fi
+
+          echo "--- All required files present ---"
+
+      - name: Smoke test nupkg
+        run: |
+          cp -r samples/ConsoleSample smoke-runner && cd smoke-runner
+          # Swap ProjectReference for PackageReference to the nupkg
+          sed -i 's|<ProjectReference Include=".*" />|<PackageReference Include="LanceDB" Version="*-*" />|' ConsoleSample.csproj
+          dotnet nuget add source "${{ github.workspace }}/artifacts" -n local
+          dotnet run
+
       - name: Upload NuGet package
         if: inputs.publish
         uses: actions/upload-artifact@v4
