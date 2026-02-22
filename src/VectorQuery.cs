@@ -181,9 +181,9 @@ namespace lancedb
         /// Set the distance metric to use for the vector search.
         /// </summary>
         /// <remarks>
-        /// Supported values are "l2", "cosine", and "dot".
+        /// Supported values are <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, and <c>"hamming"</c>.
         /// If not specified, the distance type is inferred from the vector column's metadata
-        /// or defaults to "l2".
+        /// or defaults to <c>"l2"</c>.
         /// </remarks>
         /// <param name="distanceType">The distance metric to use.</param>
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>

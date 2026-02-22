@@ -26,8 +26,10 @@ namespace lancedb
 
         /// <summary>
         /// The mode to use when creating the table. Default is <c>"create"</c>.
-        /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
-        /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
+        /// <list type="bullet">
+        /// <item><description><c>"create"</c> — Create the table. An error is raised if the table already exists.</description></item>
+        /// <item><description><c>"overwrite"</c> — If a table with the same name already exists, it is replaced.</description></item>
+        /// </list>
         /// </summary>
         public string Mode { get; set; } = "create";
 
@@ -41,10 +43,12 @@ namespace lancedb
 
         /// <summary>
         /// What to do if any of the vectors are not the same size or contain NaNs.
-        /// - <c>"error"</c> (default) - raise an error
-        /// - <c>"drop"</c> - drop rows with bad vectors
-        /// - <c>"fill"</c> - fill bad vectors with <see cref="FillValue"/>
-        /// - <c>"null"</c> - set bad vectors to null
+        /// <list type="bullet">
+        /// <item><description><c>"error"</c> (default) — raise an error.</description></item>
+        /// <item><description><c>"drop"</c> — drop rows with bad vectors.</description></item>
+        /// <item><description><c>"fill"</c> — fill bad vectors with <see cref="FillValue"/>.</description></item>
+        /// <item><description><c>"null"</c> — set bad vectors to null.</description></item>
+        /// </list>
         ///
         /// Not yet implemented in this SDK. This is client-side data validation.
         /// </summary>

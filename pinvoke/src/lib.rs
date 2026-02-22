@@ -54,6 +54,8 @@ pub extern "C" fn database_connect(
     uri: *const c_char,
     read_consistency_interval_secs: f64,
     storage_options_json: *const c_char,
+    index_cache_size_bytes: i64,
+    metadata_cache_size_bytes: i64,
     completion: FfiCallback,
 ) {
     let dataset_uri = ffi::to_string(uri);
@@ -64,6 +66,8 @@ pub extern "C" fn database_connect(
         Some(read_consistency_interval_secs)
     };
 
+    let has_session = index_cache_size_bytes >= 0 || metadata_cache_size_bytes >= 0;
+
     RUNTIME.spawn(async move {
         let mut builder = lancedb::connection::connect(&dataset_uri);
         if let Some(opts) = storage_opts {
@@ -71,6 +75,24 @@ pub extern "C" fn database_connect(
         }
         if let Some(secs) = rci_secs {
             builder = builder.read_consistency_interval(Duration::from_secs_f64(secs));
+        }
+        if has_session {
+            let index_size = if index_cache_size_bytes > 0 {
+                index_cache_size_bytes as usize
+            } else {
+                6 * 1024 * 1024 * 1024 // DEFAULT_INDEX_CACHE_SIZE (6 GiB)
+            };
+            let metadata_size = if metadata_cache_size_bytes > 0 {
+                metadata_cache_size_bytes as usize
+            } else {
+                1024 * 1024 * 1024 // DEFAULT_METADATA_CACHE_SIZE (1 GiB)
+            };
+            let session = lancedb::Session::new(
+                index_size,
+                metadata_size,
+                std::sync::Arc::new(lancedb::ObjectStoreRegistry::default()),
+            );
+            builder = builder.session(std::sync::Arc::new(session));
         }
         match builder.execute().await {
             Ok(conn) => {

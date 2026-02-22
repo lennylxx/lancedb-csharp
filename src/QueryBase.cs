@@ -128,7 +128,9 @@ namespace lancedb
         /// <remarks>
         /// If this is not called then every column will be returned.
         /// </remarks>
-        /// <param name="columns">The column names to return.</param>
+        /// <param name="columns">
+        /// A list of column names to return.
+        /// </param>
         /// <returns>This query instance for method chaining.</returns>
         public T Select(IReadOnlyList<string> columns)
         {
@@ -151,7 +153,8 @@ namespace lancedb
         /// </summary>
         /// <remarks>
         /// Each key is the output column name, and each value is a SQL expression
-        /// that computes the column value.
+        /// that computes the column value. This is equivalent to the Python
+        /// <c>select({"new_col": "old_col + 1"})</c> pattern.
         /// </remarks>
         /// <param name="columns">A dictionary mapping output column names to SQL expressions.</param>
         /// <returns>This query instance for method chaining.</returns>
@@ -177,6 +180,9 @@ namespace lancedb
         /// <remarks>
         /// The filter should be supplied as a SQL filter expression. For example
         /// <c>"x &gt; 10"</c>, <c>"y &gt; 0 AND y &lt; 100"</c>, <c>"x IS NOT NULL"</c>.
+        ///
+        /// By default, filtering is applied before the search (prefiltering).
+        /// Use <see cref="Postfilter"/> to apply the filter after the search instead.
         /// </remarks>
         /// <param name="predicate">A SQL filter expression.</param>
         /// <returns>This query instance for method chaining.</returns>

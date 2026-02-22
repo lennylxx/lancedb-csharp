@@ -32,11 +32,19 @@ namespace lancedb
     }
 
     /// <summary>
-    /// A Bitmap index stores a bitmap for each distinct value in the column.
+    /// A Bitmap index stores a bitmap for each distinct value in the column
+    /// for every row.
     /// </summary>
     /// <remarks>
     /// This index works best for low-cardinality numeric or string columns,
-    /// where the number of unique values is small (less than a few thousands).
+    /// where the number of unique values is small (i.e., less than a few thousands).
+    /// Bitmap index can accelerate the following filters:
+    /// <list type="bullet">
+    /// <item><description><c>&lt;</c>, <c>&lt;=</c>, <c>=</c>, <c>&gt;</c>, <c>&gt;=</c></description></item>
+    /// <item><description><c>IN (value1, value2, ...)</c></description></item>
+    /// <item><description><c>BETWEEN (value1, value2)</c></description></item>
+    /// <item><description><c>IS NULL</c></description></item>
+    /// </list>
     /// </remarks>
     public class BitmapIndex : Index
     {
@@ -60,6 +68,11 @@ namespace lancedb
     /// <summary>
     /// A full-text search index on string columns.
     /// </summary>
+    /// <remarks>
+    /// Creates a full-text search index that enables text search capabilities using
+    /// BM25 scoring. Use with <see cref="QueryBase{T}.FullTextSearch"/> or
+    /// <see cref="Query.NearestToText"/> to search indexed columns.
+    /// </remarks>
     public class FtsIndex : Index
     {
         /// <summary>
@@ -71,9 +84,11 @@ namespace lancedb
 
         /// <summary>
         /// The base tokenizer to use.
-        /// - <c>"simple"</c>: splits text by whitespace and punctuation (default).
-        /// - <c>"whitespace"</c>: splits text by whitespace only.
-        /// - <c>"raw"</c>: no tokenization.
+        /// <list type="bullet">
+        /// <item><description><c>"simple"</c> (default): splits text by whitespace and punctuation.</description></item>
+        /// <item><description><c>"whitespace"</c>: splits text by whitespace only.</description></item>
+        /// <item><description><c>"raw"</c>: no tokenization.</description></item>
+        /// </list>
         /// </summary>
         public string BaseTokenizer { get; set; } = "simple";
 
@@ -148,42 +163,111 @@ namespace lancedb
     /// <summary>
     /// An IVF-PQ (Inverted File with Product Quantization) vector index.
     /// </summary>
+    /// <remarks>
+    /// This index stores a compressed (quantized) copy of every vector. These
+    /// vectors are grouped into partitions of similar vectors. Each partition
+    /// keeps track of a centroid which is the average value of all vectors in
+    /// the group.
+    ///
+    /// During a query the centroids are compared with the query vector to find
+    /// the closest partitions. The compressed vectors in these partitions are
+    /// then searched to find the closest vectors.
+    ///
+    /// The compression scheme is called product quantization. Each vector is
+    /// divided into subvectors and then each subvector is quantized into a small
+    /// number of bits. The parameters <see cref="NumBits"/> and
+    /// <see cref="NumSubVectors"/> control this process, providing a tradeoff
+    /// between index size (and thus search speed) and index accuracy.
+    ///
+    /// The partitioning process is called IVF and the <see cref="NumPartitions"/>
+    /// parameter controls how many groups to create.
+    ///
+    /// Note that training an IVF PQ index on a large dataset is a slow operation
+    /// and currently is also a memory intensive operation.
+    /// </remarks>
     public class IvfPqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric used to train the index.
         /// Default is <c>"l2"</c>.
         /// </summary>
+        /// <remarks>
+        /// The distance type used to train an index MUST match the distance type
+        /// used to search the index. Failure to do so will yield inaccurate results.
+        /// <list type="bullet">
+        /// <item><description><c>"l2"</c>: Euclidean distance. Accounts for both magnitude and direction.
+        /// Range is [0, ∞).</description></item>
+        /// <item><description><c>"cosine"</c>: Cosine distance. Not affected by the magnitude of the
+        /// vectors. Range is [0, 2]. Undefined when one or both vectors are all zeros.</description></item>
+        /// <item><description><c>"dot"</c>: Dot product. Range is (-∞, ∞). Equivalent to cosine distance
+        /// when vectors are normalized (l2 norm is 1).</description></item>
+        /// <item><description><c>"hamming"</c>: Hamming distance. Counts the number of differing
+        /// dimensions. Useful for binary vectors.</description></item>
+        /// </list>
+        /// </remarks>
         public string DistanceType { get; set; } = "l2";
 
         /// <summary>
-        /// The number of IVF partitions. Default is the square root of the number of rows.
+        /// The number of IVF partitions to create.
+        /// Default is the square root of the number of rows.
         /// </summary>
+        /// <remarks>
+        /// This value should generally scale with the number of rows in the dataset.
+        /// If this value is too large then the first part of the search (picking the
+        /// right partition) will be slow. If this value is too small then the second
+        /// part of the search (searching within a partition) will be slow.
+        /// </remarks>
         public int? NumPartitions { get; set; }
 
         /// <summary>
-        /// Number of sub-vectors for PQ. Default is dimension / 16.
+        /// Number of sub-vectors of PQ. Default is the vector dimension divided by 16.
         /// </summary>
+        /// <remarks>
+        /// This value controls how much the vector is compressed during the
+        /// quantization step. The more sub-vectors there are the less the vector
+        /// is compressed. If the dimension is not evenly divisible by 16, the
+        /// dimension divided by 8 is used. Having 8 or 16 values per subvector
+        /// allows the use of efficient SIMD instructions.
+        /// </remarks>
         public int? NumSubVectors { get; set; }
 
         /// <summary>
-        /// Number of bits to encode each sub-vector. Only 4 and 8 are supported. Default is 8.
+        /// Number of bits to encode each sub-vector. Only 4 and 8 are supported.
+        /// Default is 8.
         /// </summary>
+        /// <remarks>
+        /// This value controls how much the sub-vectors are compressed. The more
+        /// bits the more accurate the index but the slower the search.
+        /// </remarks>
         public int NumBits { get; set; } = 8;
 
         /// <summary>
         /// Max iterations to train kmeans. Default is 50.
         /// </summary>
+        /// <remarks>
+        /// Increasing this might improve the quality of the index but in most cases
+        /// these extra iterations have diminishing returns.
+        /// </remarks>
         public int MaxIterations { get; set; } = 50;
 
         /// <summary>
-        /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
+        /// The rate used to calculate the number of training vectors for kmeans.
+        /// Default is 256.
         /// </summary>
+        /// <remarks>
+        /// The total number of vectors used to train the index is
+        /// <c>SampleRate * NumPartitions</c>. Increasing this value might improve
+        /// the quality of the index but in most cases the default should be sufficient.
+        /// </remarks>
         public int SampleRate { get; set; } = 256;
 
         /// <summary>
-        /// The target size of each partition.
+        /// The target size of each partition. Default is 8192.
         /// </summary>
+        /// <remarks>
+        /// This value controls the tradeoff between search performance and accuracy.
+        /// Higher values yield faster search but less accurate results.
+        /// </remarks>
         public int? TargetPartitionSize { get; set; }
 
         internal override string IndexType => "IvfPq";
@@ -207,10 +291,15 @@ namespace lancedb
     /// <summary>
     /// An IVF-HNSW-PQ (Hierarchical Navigable Small World with Product Quantization) vector index.
     /// </summary>
+    /// <remarks>
+    /// This index type combines an IVF partition structure with HNSW graphs and product
+    /// quantization for efficient approximate nearest neighbor search. Multiple HNSW
+    /// graphs are created across IVF partitions.
+    /// </remarks>
     public class HnswPqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
         public string DistanceType { get; set; } = "l2";
@@ -221,7 +310,7 @@ namespace lancedb
         public int? NumPartitions { get; set; }
 
         /// <summary>
-        /// Number of sub-vectors for PQ. Default is dimension / 16.
+        /// Number of sub-vectors for PQ. Default is dimension divided by 16.
         /// </summary>
         public int? NumSubVectors { get; set; }
 
@@ -241,17 +330,19 @@ namespace lancedb
         public int SampleRate { get; set; } = 256;
 
         /// <summary>
-        /// The number of neighbors in the HNSW graph. Default is 20.
+        /// The number of neighbors per node in the HNSW graph (also known as <c>m</c>).
+        /// Default is 20.
         /// </summary>
         public int NumEdges { get; set; } = 20;
 
         /// <summary>
-        /// The number of candidates during HNSW construction. Default is 300.
+        /// The number of candidates evaluated during HNSW construction (<c>ef_construction</c>).
+        /// Default is 300.
         /// </summary>
         public int EfConstruction { get; set; } = 300;
 
         /// <summary>
-        /// The target size of each partition.
+        /// The target size of each partition. Default is 1,048,576.
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
@@ -292,7 +383,7 @@ namespace lancedb
     public class IvfFlatIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
         public string DistanceType { get; set; } = "l2";
@@ -313,7 +404,7 @@ namespace lancedb
         public int SampleRate { get; set; } = 256;
 
         /// <summary>
-        /// The target size of each partition.
+        /// The target size of each partition. Default is 8192.
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
@@ -344,7 +435,7 @@ namespace lancedb
     public class IvfSqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
         public string DistanceType { get; set; } = "l2";
@@ -397,7 +488,7 @@ namespace lancedb
     public class IvfRqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
         public string DistanceType { get; set; } = "l2";
@@ -423,7 +514,7 @@ namespace lancedb
         public int SampleRate { get; set; } = 256;
 
         /// <summary>
-        /// The target size of each partition.
+        /// The target size of each partition. Default is 8192.
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
@@ -447,10 +538,14 @@ namespace lancedb
     /// <summary>
     /// An IVF-HNSW-SQ (Hierarchical Navigable Small World with Scalar Quantization) vector index.
     /// </summary>
+    /// <remarks>
+    /// This index type combines an IVF partition structure with HNSW graphs and scalar
+    /// quantization for efficient approximate nearest neighbor search.
+    /// </remarks>
     public class HnswSqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>.
+        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
         /// Default is <c>"l2"</c>.
         /// </summary>
         public string DistanceType { get; set; } = "l2";
@@ -471,17 +566,19 @@ namespace lancedb
         public int SampleRate { get; set; } = 256;
 
         /// <summary>
-        /// The number of neighbors in the HNSW graph. Default is 20.
+        /// The number of neighbors per node in the HNSW graph (also known as <c>m</c>).
+        /// Default is 20.
         /// </summary>
         public int NumEdges { get; set; } = 20;
 
         /// <summary>
-        /// The number of candidates during HNSW construction. Default is 300.
+        /// The number of candidates evaluated during HNSW construction (<c>ef_construction</c>).
+        /// Default is 300.
         /// </summary>
         public int EfConstruction { get; set; } = 300;
 
         /// <summary>
-        /// The target size of each partition.
+        /// The target size of each partition. Default is 1,048,576.
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 

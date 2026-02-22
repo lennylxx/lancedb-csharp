@@ -601,8 +601,7 @@ namespace lancedb.tests
                     StorageOptions = new System.Collections.Generic.Dictionary<string, string>
                     {
                         { "allow_http", "true" }
-                    },
-                    IndexCacheSize = 512
+                    }
                 });
                 Assert.Equal("opts_table", table2.Name);
                 table2.Dispose();
@@ -825,6 +824,101 @@ namespace lancedb.tests
             var secondPage = await fixture.Connection.ListTables(
                 pageToken: firstPage[firstPage.Count - 1], limit: 10);
             Assert.Single(secondPage);
+        }
+
+        // -----------------------------------------------------------------------
+        // Session
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Connect with a Session that sets both cache sizes should succeed.
+        /// </summary>
+        [Fact]
+        public async Task Connect_WithSession_BothCacheSizes_Succeeds()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir, new ConnectionOptions
+                {
+                    Session = new Session
+                    {
+                        IndexCacheSizeBytes = 512 * 1024 * 1024,
+                        MetadataCacheSizeBytes = 128 * 1024 * 1024
+                    }
+                });
+                Assert.True(connection.IsOpen());
+
+                await connection.CreateEmptyTable("session_test");
+                var names = await connection.TableNames();
+                Assert.Single(names);
+                Assert.Equal("session_test", names[0]);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Connect with a Session that sets only IndexCacheSizeBytes should succeed.
+        /// </summary>
+        [Fact]
+        public async Task Connect_WithSession_OnlyIndexCache_Succeeds()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir, new ConnectionOptions
+                {
+                    Session = new Session
+                    {
+                        IndexCacheSizeBytes = 256 * 1024 * 1024
+                    }
+                });
+                Assert.True(connection.IsOpen());
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Connect with a default (empty) Session should succeed, using lance defaults.
+        /// </summary>
+        [Fact]
+        public async Task Connect_WithSession_DefaultValues_Succeeds()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir, new ConnectionOptions
+                {
+                    Session = new Session()
+                });
+                Assert.True(connection.IsOpen());
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
         }
     }
 }

@@ -69,8 +69,6 @@ namespace lancedb
         /// caches, which can significantly impact memory use and performance.
         /// They can also be re-used across multiple connections to share the
         /// same cache state.
-        ///
-        /// Not yet wired through FFI in this SDK.
         /// </summary>
         public Session? Session { get; set; }
     }
@@ -149,19 +147,18 @@ namespace lancedb
     /// Session for managing index and metadata caches.
     ///
     /// Sessions can be re-used across multiple connections to share cache state.
-    /// Not yet wired through FFI in this SDK.
     /// </summary>
     public class Session
     {
         /// <summary>
         /// Maximum size of the index cache in bytes.
-        /// If <c>null</c>, the default cache size is used.
+        /// If <c>null</c>, the default cache size 6 GiB is used.
         /// </summary>
         public long? IndexCacheSizeBytes { get; set; }
 
         /// <summary>
         /// Maximum size of the metadata cache in bytes.
-        /// If <c>null</c>, the default cache size is used.
+        /// If <c>null</c>, the default cache size 1 GiB is used.
         /// </summary>
         public long? MetadataCacheSizeBytes { get; set; }
     }

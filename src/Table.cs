@@ -245,6 +245,17 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Return the first <paramref name="n"/> rows of the table.
+        /// </summary>
+        /// <param name="n">The number of rows to return. Defaults to 5.</param>
+        /// <returns>A <see cref="Apache.Arrow.RecordBatch"/> containing the first <paramref name="n"/> rows.</returns>
+        public async Task<Apache.Arrow.RecordBatch> Head(int n = 5)
+        {
+            using var query = Query().Limit(n);
+            return await query.ToArrow();
+        }
+
+        /// <summary>
         /// Count the number of rows in the table.
         /// </summary>
         /// <param name="filter">
@@ -308,11 +319,18 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Update rows in the table.
+        /// Update rows in the table using SQL expressions.
         /// </summary>
         /// <remarks>
-        /// An update operation allows you to change the values of existing rows
-        /// in a table. The update operation is similar to a SQL UPDATE statement.
+        /// <para>
+        /// This can be used to update zero to all rows in the table.
+        /// If a filter is provided with <paramref name="where"/> then only rows matching
+        /// the filter will be updated. Otherwise all rows will be updated.
+        /// </para>
+        /// <para>
+        /// The values are expressed as SQL expression strings. Keys are column names,
+        /// values are SQL expressions or literal values (e.g., <c>"x + 1"</c> or <c>"'hello'"</c>).
+        /// </para>
         /// </remarks>
         /// <param name="values">
         /// A dictionary mapping column names to SQL expressions describing the
@@ -320,8 +338,8 @@ namespace lancedb
         /// { { "x", "x + 1" } }</c>.
         /// </param>
         /// <param name="where">
-        /// A SQL where clause to filter which rows are updated.
-        /// If <c>null</c>, all rows are updated.
+        /// An optional SQL filter that controls which rows are updated
+        /// (e.g., <c>"x = 2"</c>). If <c>null</c>, all rows are updated.
         /// </param>
         public async Task Update(Dictionary<string, string> values, string? @where = null)
         {
@@ -363,7 +381,7 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Return the schema of the table.
+        /// Return the <see cref="Apache.Arrow.Schema">Arrow Schema</see> of this table.
         /// </summary>
         /// <returns>
         /// An <see cref="Apache.Arrow.Schema"/> object describing the columns in the table.
@@ -399,15 +417,17 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Add more data to the Table.
+        /// Add more data to the <see cref="Table"/>.
         /// </summary>
         /// <param name="data">
-        /// The data to add, as one or more Arrow <see cref="RecordBatch"/> objects.
+        /// The data to insert into the table, as one or more Arrow <see cref="RecordBatch"/> objects.
         /// </param>
         /// <param name="mode">
-        /// The mode to use when adding data. Default is <c>"append"</c>.
-        /// - <c>"append"</c> - Append the new data to the table.
-        /// - <c>"overwrite"</c> - Replace the existing data with the new data.
+        /// The mode to use when writing the data. Valid values are:
+        /// <list type="bullet">
+        /// <item><description><c>"append"</c> (default) — Append the new data to the table.</description></item>
+        /// <item><description><c>"overwrite"</c> — Replace the existing data with the new data.</description></item>
+        /// </list>
         /// </param>
         public Task Add(IReadOnlyList<RecordBatch> data, string mode = "append")
         {
@@ -415,12 +435,14 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Add more data to the Table with options for handling bad vectors.
+        /// Add more data to the <see cref="Table"/> with options for handling bad vectors.
         /// </summary>
         /// <param name="data">
-        /// The data to add, as one or more Arrow <see cref="RecordBatch"/> objects.
+        /// The data to insert into the table, as one or more Arrow <see cref="RecordBatch"/> objects.
         /// </param>
-        /// <param name="options">Options controlling add mode and bad vector handling.</param>
+        /// <param name="options">Options controlling the write mode and bad vector handling.
+        /// See <see cref="AddOptions.OnBadVectors"/> for what to do if any of the vectors
+        /// are not the same size or contain NaNs.</param>
         public async Task Add(IReadOnlyList<RecordBatch> data, AddOptions options)
         {
             var processed = new RecordBatch[data.Count];
@@ -450,13 +472,15 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Add a single <see cref="RecordBatch"/> to the Table.
+        /// Add a single <see cref="RecordBatch"/> to the <see cref="Table"/>.
         /// </summary>
-        /// <param name="data">The data to add.</param>
+        /// <param name="data">The data to insert into the table.</param>
         /// <param name="mode">
-        /// The mode to use when adding data. Default is <c>"append"</c>.
-        /// - <c>"append"</c> - Append the new data to the table.
-        /// - <c>"overwrite"</c> - Replace the existing data with the new data.
+        /// The mode to use when writing the data. Valid values are:
+        /// <list type="bullet">
+        /// <item><description><c>"append"</c> (default) — Append the new data to the table.</description></item>
+        /// <item><description><c>"overwrite"</c> — Replace the existing data with the new data.</description></item>
+        /// </list>
         /// </param>
         public Task Add(RecordBatch data, string mode = "append")
         {
@@ -464,10 +488,10 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Add a single <see cref="RecordBatch"/> to the Table with options.
+        /// Add a single <see cref="RecordBatch"/> to the <see cref="Table"/> with options.
         /// </summary>
-        /// <param name="data">The data to add.</param>
-        /// <param name="options">Options controlling add mode and bad vector handling.</param>
+        /// <param name="data">The data to insert into the table.</param>
+        /// <param name="options">Options controlling the write mode and bad vector handling.</param>
         public Task Add(RecordBatch data, AddOptions options)
         {
             return Add(new[] { data }, options);
@@ -493,8 +517,15 @@ namespace lancedb
         }
 
         /// <summary>
-        /// The version of this table.
+        /// Retrieve the version of the table.
         /// </summary>
+        /// <remarks>
+        /// LanceDB supports versioning. Every operation that modifies the table increases
+        /// the version. As long as a version hasn't been deleted you can
+        /// <see cref="Checkout(ulong)"/> that version to view the data at that point.
+        /// In addition, you can <see cref="Restore(ulong)"/> to replace the current table
+        /// with a previous version.
+        /// </remarks>
         /// <returns>The current version number.</returns>
         public async Task<ulong> Version()
         {
@@ -681,9 +712,9 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Get the table's storage URI.
+        /// Get the table's storage URI (location).
         /// </summary>
-        /// <returns>The URI of the table's storage location.</returns>
+        /// <returns>The full storage location of the table (e.g., S3/GCS path or local path).</returns>
         public async Task<string> Uri()
         {
             IntPtr result = await NativeCall.Async(completion =>
@@ -794,8 +825,8 @@ namespace lancedb
         /// </summary>
         /// <remarks>
         /// <para>
-        /// This is a hint to fully load the index into memory. It can be used to
-        /// avoid cold starts.
+        /// This will load the index into memory. This may reduce cold-start time for
+        /// future queries.
         /// </para>
         /// <para>
         /// It is generally wasteful to call this if the index does not fit into the
@@ -930,10 +961,12 @@ namespace lancedb
         /// </summary>
         /// <remarks>
         /// Each alteration specifies a column path and optional changes:
-        /// - <c>path</c>: The column name to alter. For nested columns, use dot-separated paths.
-        /// - <c>rename</c>: The new name of the column.
-        /// - <c>nullable</c>: Whether the column should be nullable. Only non-nullable columns
-        ///   can be changed to nullable.
+        /// <list type="bullet">
+        /// <item><description><c>path</c>: The column name to alter. For nested columns, use dot-separated paths.</description></item>
+        /// <item><description><c>rename</c>: The new name of the column.</description></item>
+        /// <item><description><c>nullable</c>: Whether the column should be nullable. Only non-nullable columns
+        ///   can be changed to nullable.</description></item>
+        /// </list>
         /// </remarks>
         /// <param name="alterations">
         /// A list of alterations, each as a dictionary with keys: <c>"path"</c> (required),
@@ -984,15 +1017,11 @@ namespace lancedb
         /// <para>
         /// Modeled after <c>VACUUM</c> in PostgreSQL. Optimization covers three operations:
         /// </para>
-        /// <para>
-        /// - Compaction: Merges small files into larger ones
-        /// </para>
-        /// <para>
-        /// - Prune: Removes old versions of the dataset
-        /// </para>
-        /// <para>
-        /// - Index: Optimizes the indices, adding new data to existing indices
-        /// </para>
+        /// <list type="bullet">
+        /// <item><description>Compaction: Merges small files into larger ones.</description></item>
+        /// <item><description>Prune: Removes old versions of the dataset.</description></item>
+        /// <item><description>Index: Optimizes the indices, adding new data to existing indices.</description></item>
+        /// </list>
         /// <para>
         /// The frequency an application should call optimize is based on the frequency of
         /// data modifications. If data is frequently added, deleted, or updated then
@@ -1040,17 +1069,19 @@ namespace lancedb
         /// </para>
         /// <para>
         /// Use the returned <see cref="MergeInsertBuilder"/> to configure how to handle:
-        /// - Matched rows (exist in both old and new data)
-        /// - Not-matched rows (exist only in new data)
-        /// - Not-matched-by-source rows (exist only in old data)
         /// </para>
+        /// <list type="bullet">
+        /// <item><description>Matched rows (exist in both old and new data) — <see cref="MergeInsertBuilder.WhenMatchedUpdateAll"/>.</description></item>
+        /// <item><description>Not-matched rows (exist only in new data) — <see cref="MergeInsertBuilder.WhenNotMatchedInsertAll"/>.</description></item>
+        /// <item><description>Not-matched-by-source rows (exist only in old data) — <see cref="MergeInsertBuilder.WhenNotMatchedBySourceDelete"/>.</description></item>
+        /// </list>
         /// <para>
-        /// Then call <see cref="MergeInsertBuilder.Execute"/> with the new data.
+        /// Then call <see cref="MergeInsertBuilder.Execute(IReadOnlyList{RecordBatch})"/> with the new data.
         /// </para>
         /// </remarks>
         /// <param name="on">
-        /// The column name(s) to join on. Rows are considered matching if they have the
-        /// same value(s) for these column(s).
+        /// The column name to join on. Rows are considered matching if they have the
+        /// same value for this column.
         /// </param>
         /// <returns>A <see cref="MergeInsertBuilder"/> to configure and execute the operation.</returns>
         public MergeInsertBuilder MergeInsert(string on)
@@ -1112,17 +1143,24 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Returns rows at the given offset positions.
+        /// Take rows at the given offset positions from the table.
         /// </summary>
         /// <remarks>
-        /// This is a fast, direct access method useful for retrieving specific rows
-        /// by their position in the table. Offsets are 0-based positions.
+        /// <para>
+        /// Offsets are 0-indexed and relative to the current version of the table. Offsets
+        /// are not stable. A row with an offset of N may have a different offset in a
+        /// different version of the table (e.g., if an earlier row is deleted).
+        /// </para>
+        /// <para>
+        /// Offsets are mostly useful for sampling as the set of all valid offsets is easily
+        /// known in advance to be [0, <see cref="CountRows"/>).
+        /// </para>
         /// </remarks>
         /// <param name="offsets">The offset positions of the rows to retrieve.</param>
         /// <param name="columns">
         /// Optional list of column names to return. If <c>null</c>, all columns are returned.
         /// </param>
-        /// <returns>A RecordBatch containing the requested rows.</returns>
+        /// <returns>A <see cref="RecordBatch"/> containing the requested rows.</returns>
         public async Task<RecordBatch> TakeOffsets(
             IReadOnlyList<ulong> offsets, IReadOnlyList<string>? columns = null)
         {
@@ -1156,18 +1194,28 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Returns rows with the given row IDs.
+        /// Take rows with the given row IDs from the table.
         /// </summary>
         /// <remarks>
-        /// Row IDs are stable, internal identifiers assigned to each row. They can be
-        /// retrieved by using <see cref="QueryBase{T}.WithRowId"/> when executing queries.
-        /// Unlike offsets, row IDs are stable across compaction operations.
+        /// <para>
+        /// Row IDs are not stable and are relative to the current version of the table.
+        /// They can change due to compaction and updates.
+        /// </para>
+        /// <para>
+        /// Unlike offsets, row IDs are not 0-indexed and no assumptions should be made
+        /// about the possible range of row IDs. In order to use this method you must
+        /// first obtain the row IDs by scanning or searching the table using
+        /// <see cref="QueryBase{T}.WithRowId"/>.
+        /// </para>
+        /// <para>
+        /// Even so, row IDs are more stable than offsets and can be useful in some situations.
+        /// </para>
         /// </remarks>
         /// <param name="rowIds">The row IDs of the rows to retrieve.</param>
         /// <param name="columns">
         /// Optional list of column names to return. If <c>null</c>, all columns are returned.
         /// </param>
-        /// <returns>A RecordBatch containing the requested rows.</returns>
+        /// <returns>A <see cref="RecordBatch"/> containing the requested rows.</returns>
         public async Task<RecordBatch> TakeRowIds(
             IReadOnlyList<ulong> rowIds, IReadOnlyList<string>? columns = null)
         {

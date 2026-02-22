@@ -119,6 +119,28 @@ pub fn count_rows_sync(table_ptr: *const Table, filter: Option<String>) -> usize
     rt.block_on(async { table.count_rows(filter).await.unwrap() })
 }
 
+/// Connects to a local database with a custom session and returns a raw Connection pointer.
+pub fn connect_with_session_sync(
+    uri: &str,
+    index_cache_size: usize,
+    metadata_cache_size: usize,
+) -> *const Connection {
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let connection = rt.block_on(async {
+        let session = lancedb::Session::new(
+            index_cache_size,
+            metadata_cache_size,
+            Arc::new(lancedb::ObjectStoreRegistry::default()),
+        );
+        lancedb::connection::connect(uri)
+            .session(Arc::new(session))
+            .execute()
+            .await
+            .unwrap()
+    });
+    Arc::into_raw(Arc::new(connection))
+}
+
 /// Deletes rows matching the predicate.
 pub fn delete_sync(table_ptr: *const Table, predicate: &str) {
     unsafe { Arc::increment_strong_count(table_ptr) };

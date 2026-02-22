@@ -24,7 +24,7 @@ namespace lancedb
     public class Connection : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, NativeCall.FfiCallback completion);
+        private static extern void database_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
@@ -54,10 +54,12 @@ namespace lancedb
         /// Connect to a LanceDB database.
         /// </summary>
         /// <param name="uri">
-        /// The uri of the database. Accepted formats:
-        /// - /path/to/database — local database on file system
-        /// - s3://bucket/path or gs://bucket/path — database on cloud storage
-        /// - db://host:port — remote database (LanceDB Cloud)
+        /// The URI of the database. Accepted formats:
+        /// <list type="bullet">
+        /// <item><description><c>/path/to/database</c> — local database on file system.</description></item>
+        /// <item><description><c>s3://bucket/path</c> or <c>gs://bucket/path</c> — database on cloud storage.</description></item>
+        /// <item><description><c>db://host:port</c> — remote database (LanceDB Cloud).</description></item>
+        /// </list>
         /// </param>
         /// <param name="options">Options to control the connection behavior.</param>
         /// <returns>A task that completes when the connection is established.</returns>
@@ -70,6 +72,12 @@ namespace lancedb
             byte[]? storageJson = options?.StorageOptions != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
                 : null;
+            long indexCacheSizeBytes = options?.Session != null
+                ? (options.Session.IndexCacheSizeBytes ?? 0)
+                : -1;
+            long metadataCacheSizeBytes = options?.Session != null
+                ? (options.Session.MetadataCacheSizeBytes ?? 0)
+                : -1;
 
             IntPtr ptr = await NativeCall.Async(callback =>
             {
@@ -82,6 +90,8 @@ namespace lancedb
                             new IntPtr(p),
                             rciSecs,
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            indexCacheSizeBytes,
+                            metadataCacheSizeBytes,
                             callback);
                     }
                 }
@@ -124,7 +134,8 @@ namespace lancedb
         /// Open a Lance Table in the database.
         /// </summary>
         /// <param name="name">The name of the table.</param>
-        /// <param name="options">Options to control the open behavior.</param>
+        /// <param name="options">Options to control the open behavior, including storage
+        /// options and location.</param>
         /// <returns>A <see cref="Table"/> representing the opened table.</returns>
         /// <exception cref="LanceDbException">Thrown if the table does not exist.</exception>
         public async Task<Table> OpenTable(string name, OpenTableOptions? options = null)
@@ -133,7 +144,6 @@ namespace lancedb
             byte[]? storageJson = options?.StorageOptions != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
                 : null;
-            uint indexCacheSize = options?.IndexCacheSize ?? 0;
             byte[]? locationBytes = options?.Location != null
                 ? NativeCall.ToUtf8(options.Location)
                 : null;
@@ -154,7 +164,7 @@ namespace lancedb
                             _handle!.DangerousGetHandle(),
                             new IntPtr(p),
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
-                            indexCacheSize,
+                            0,
                             locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                             callback);
@@ -224,17 +234,23 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Create a table in the database.
+        /// Create an <see cref="Table"/> in the database.
         /// </summary>
         /// <param name="name">The name of the table.</param>
         /// <param name="options">
         /// Options to control the create behavior, including the initial data,
-        /// create mode, and storage options.
+        /// schema, create mode, storage options, and namespace.
+        /// User must provide at least one of <see cref="CreateTableOptions.Data"/> or
+        /// <see cref="CreateTableOptions.Schema"/>.
         /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
+        /// <remarks>
+        /// The vector index is not created by default.
+        /// To create the index, call the <c>CreateIndex</c> method on the table.
+        /// </remarks>
         public async Task<Table> CreateTable(string name, CreateTableOptions options)
         {
             if (options.Data == null || options.Data.Count == 0)
@@ -295,24 +311,31 @@ namespace lancedb
         /// </param>
         /// <param name="mode">
         /// The mode to use when creating the table. Default is <c>"create"</c>.
-        /// - <c>"create"</c> - Create the table. An error is raised if the table already exists.
-        /// - <c>"overwrite"</c> - If a table with the same name already exists, it is replaced.
+        /// <list type="bullet">
+        /// <item><description><c>"create"</c> — Create the table. An error is raised if the table already exists.</description></item>
+        /// <item><description><c>"overwrite"</c> — If a table with the same name already exists, it is replaced.</description></item>
+        /// </list>
         /// </param>
         /// <returns>A <see cref="Table"/> representing the newly created table.</returns>
         /// <exception cref="LanceDbException">
         /// Thrown if a table with the same name already exists and mode is <c>"create"</c>.
         /// </exception>
+        /// <remarks>
+        /// The vector index is not created by default.
+        /// To create the index, call the <c>CreateIndex</c> method on the table.
+        /// </remarks>
         public Task<Table> CreateTable(string name, RecordBatch data, string mode = "create")
         {
             return CreateTable(name, new CreateTableOptions { Data = new[] { data }, Mode = mode });
         }
 
         /// <summary>
-        /// Get the names of all tables in the database.
+        /// Get the names of all tables in the database, in sorted order.
         /// </summary>
         /// <param name="startAfter">
         /// If present, only return names that come lexicographically after the supplied
-        /// value. Can be combined with <paramref name="limit"/> to implement pagination.
+        /// value. This can be combined with <paramref name="limit"/> to implement pagination
+        /// by setting this to the last table name from the previous page.
         /// </param>
         /// <param name="limit">
         /// The maximum number of table names to return. If <c>null</c> or 0, all names
@@ -320,7 +343,7 @@ namespace lancedb
         /// </param>
         /// <param name="ns">
         /// The namespace to list tables from, specified as a hierarchical path.
-        /// If <c>null</c>, lists tables from the root namespace.
+        /// <c>null</c> or an empty list represents the root namespace.
         /// </param>
         /// <returns>A list of table names in lexicographical order.</returns>
         public async Task<IReadOnlyList<string>> TableNames(string? startAfter = null, uint limit = 0, IReadOnlyList<string>? ns = null)
@@ -380,7 +403,7 @@ namespace lancedb
         /// </summary>
         /// <param name="name">The name of the table to drop.</param>
         /// <param name="ignoreMissing">
-        /// If <c>true</c>, no error is raised if the table does not exist.
+        /// If <c>true</c>, ignore if the table does not exist.
         /// If <c>false</c> (default), a <see cref="LanceDbException"/> is thrown.
         /// </param>
         /// <exception cref="LanceDbException">

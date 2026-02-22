@@ -217,6 +217,48 @@ namespace lancedb.tests
             Assert.Equal(3, count);
         }
 
+        /// <summary>
+        /// Head with default n=5 returns first 5 rows.
+        /// </summary>
+        [Fact]
+        public async Task Head_Default_ReturnsFirst5Rows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("head_default");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            var result = await fixture.Table.Head();
+
+            Assert.Equal(5, result.Length);
+        }
+
+        /// <summary>
+        /// Head with explicit n returns first n rows.
+        /// </summary>
+        [Fact]
+        public async Task Head_ExplicitN_ReturnsFirstNRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("head_explicit");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            var result = await fixture.Table.Head(3);
+
+            Assert.Equal(3, result.Length);
+        }
+
+        /// <summary>
+        /// Head with n larger than table returns all rows.
+        /// </summary>
+        [Fact]
+        public async Task Head_NLargerThanTable_ReturnsAllRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("head_larger");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            var result = await fixture.Table.Head(100);
+
+            Assert.Equal(3, result.Length);
+        }
+
         private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
         {
             var idArray = new Apache.Arrow.Int32Array.Builder();

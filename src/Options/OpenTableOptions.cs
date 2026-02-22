@@ -18,19 +18,6 @@ namespace lancedb
         public Dictionary<string, string>? StorageOptions { get; set; }
 
         /// <summary>
-        /// Set the size of the index cache, specified as a number of entries.
-        ///
-        /// The exact meaning of an "entry" will depend on the type of index:
-        /// - IVF: there is one entry for each IVF partition
-        /// - BTREE: there is one entry for the entire index
-        ///
-        /// This cache applies to the entire opened table, across all indices.
-        /// Setting this value higher will increase performance on larger datasets
-        /// at the expense of more RAM.
-        /// </summary>
-        public uint? IndexCacheSize { get; set; }
-
-        /// <summary>
         /// The explicit location (URI) of the table. If provided, the table will
         /// be opened from this location instead of deriving it from the database
         /// URI and table name. Useful when integrating with namespace systems

@@ -16,13 +16,15 @@ namespace lancedb
     /// </para>
     /// <para>
     /// Use the builder methods to configure the behavior:
-    /// - <see cref="WhenMatchedUpdateAll"/> — Update matched rows with source data.
-    /// - <see cref="WhenNotMatchedInsertAll"/> — Insert source rows that don't match.
-    /// - <see cref="WhenNotMatchedBySourceDelete"/> — Delete target rows not in source.
     /// </para>
+    /// <list type="bullet">
+    /// <item><description><see cref="WhenMatchedUpdateAll"/> — Update matched rows with source data.</description></item>
+    /// <item><description><see cref="WhenNotMatchedInsertAll"/> — Insert source rows that don't match.</description></item>
+    /// <item><description><see cref="WhenNotMatchedBySourceDelete"/> — Delete target rows not in source.</description></item>
+    /// </list>
     /// <para>
     /// At least one of these behaviors must be configured before calling
-    /// <see cref="Execute"/>.
+    /// <see cref="Execute(IReadOnlyList{RecordBatch})"/>.
     /// </para>
     /// </remarks>
     public class MergeInsertBuilder
