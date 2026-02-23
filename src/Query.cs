@@ -21,112 +21,49 @@ namespace lancedb
     public class Query : QueryBase<Query>
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_nearest_to(IntPtr query_ptr, double[] vector, UIntPtr len);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void query_free(IntPtr query_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_select(IntPtr query_ptr, IntPtr columns_json);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_only_if(IntPtr query_ptr, IntPtr predicate);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_limit(IntPtr query_ptr, ulong limit);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_offset(IntPtr query_ptr, ulong offset);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_with_row_id(IntPtr query_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_full_text_search(IntPtr query_ptr, IntPtr query_text);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_fast_search(IntPtr query_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr query_postfilter(IntPtr query_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_execute(
-            IntPtr query_ptr, long timeout_ms, uint max_batch_length,
+            IntPtr table_ptr, IntPtr params_json, long timeout_ms, uint max_batch_length,
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_explain_plan(
-            IntPtr query_ptr, [MarshalAs(UnmanagedType.U1)] bool verbose,
+            IntPtr table_ptr, IntPtr params_json,
+            [MarshalAs(UnmanagedType.U1)] bool verbose,
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_analyze_plan(
-            IntPtr query_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_output_schema(
-            IntPtr query_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion);
 
-        internal Query(IntPtr queryPtr)
-            : base(queryPtr)
+        internal Query(IntPtr tablePtr)
+            : base(tablePtr)
         {
         }
 
         /// <inheritdoc/>
-        protected override void NativeFree(IntPtr ptr) => query_free(ptr);
+        private protected override void NativeConsolidatedExecute(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback)
+            => query_execute(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeSelect(IntPtr ptr, IntPtr columnsJson)
-            => query_select(ptr, columnsJson);
+        private protected override void NativeConsolidatedExplainPlan(
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback)
+            => query_explain_plan(tablePtr, paramsJson, verbose, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeOnlyIf(IntPtr ptr, IntPtr predicate)
-            => query_only_if(ptr, predicate);
+        private protected override void NativeConsolidatedAnalyzePlan(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            => query_analyze_plan(tablePtr, paramsJson, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeLimit(IntPtr ptr, ulong limit)
-            => query_limit(ptr, limit);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeOffset(IntPtr ptr, ulong offset)
-            => query_offset(ptr, offset);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeWithRowId(IntPtr ptr)
-            => query_with_row_id(ptr);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText)
-            => query_full_text_search(ptr, queryText);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeFastSearch(IntPtr ptr)
-            => query_fast_search(ptr);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativePostfilter(IntPtr ptr)
-            => query_postfilter(ptr);
-
-        /// <inheritdoc/>
-        private protected override void NativeExecute(
-            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback)
-            => query_execute(ptr, timeoutMs, maxBatchLength, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeExplainPlan(
-            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback)
-            => query_explain_plan(ptr, verbose, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeAnalyzePlan(
-            IntPtr ptr, NativeCall.FfiCallback callback)
-            => query_analyze_plan(ptr, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeOutputSchema(
-            IntPtr ptr, NativeCall.FfiCallback callback)
-            => query_output_schema(ptr, callback);
+        private protected override void NativeConsolidatedOutputSchema(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            => query_output_schema(tablePtr, paramsJson, callback);
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.
@@ -167,9 +104,7 @@ namespace lancedb
         /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
         public VectorQuery NearestTo(double[] vector)
         {
-            IntPtr vectorQueryPtr = query_nearest_to(NativePtr, vector, (UIntPtr)vector.Length);
-            NativeCall.ThrowIfNullWithError(vectorQueryPtr, "Failed to create vector query");
-            return new VectorQuery(vectorQueryPtr);
+            return new VectorQuery(TablePtr, this, vector);
         }
 
         /// <summary>
@@ -202,15 +137,16 @@ namespace lancedb
         /// <returns>A new <see cref="Query"/> with full-text search applied.</returns>
         public Query NearestToText(string query)
         {
-            byte[] textBytes = NativeCall.ToUtf8(query);
-            unsafe
-            {
-                fixed (byte* p = textBytes)
-                {
-                    IntPtr newPtr = query_full_text_search(NativePtr, new IntPtr(p));
-                    return new Query(newPtr);
-                }
-            }
+            var newQuery = new Query(TablePtr);
+            newQuery.SelectJson = SelectJson;
+            newQuery.Predicate = Predicate;
+            newQuery.StoredLimit = StoredLimit;
+            newQuery.StoredOffset = StoredOffset;
+            newQuery.StoredWithRowId = StoredWithRowId;
+            newQuery.StoredFastSearch = StoredFastSearch;
+            newQuery.StoredPostfilter = StoredPostfilter;
+            newQuery.FullTextSearchQuery = query;
+            return newQuery;
         }
     }
 }

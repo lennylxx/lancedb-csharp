@@ -14,13 +14,13 @@ The SDK has two layers:
 - **`pinvoke/`** — A Rust `cdylib` that exposes C-compatible FFI functions. Uses a pool of Tokio runtimes (one per CPU core) with least-loaded dispatch to bridge Rust async operations into synchronous FFI calls with C function pointer callbacks.
 - **`src/`** — A C# class library that declares `[DllImport]` extern methods matching the Rust FFI surface, and wraps them in idiomatic async APIs using `TaskCompletionSource`.
 
-Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup. Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust→C#, clone-and-pin for C#→Rust).
+### Ownership model
 
-## Ownership model
+Rust objects (`Connection`, `Table`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup via the corresponding Rust free/drop functions. `RustStringHandle` extends `SafeHandle` to automatically free Rust-allocated strings via `free_string`.
 
-Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as raw `IntPtr` pointers to C#. C# classes hold these pointers and are responsible for calling the corresponding Rust free/drop functions. `RustStringHandle` extends `SafeHandle` to automatically free Rust-allocated strings via `free_string`.
+Query builders (`Query`, `VectorQuery`) are pure C# objects with no native pointers. They store all builder parameters locally and make a single FFI call at execution time (e.g., `ToArrow()`, `ExplainPlan()`). Parameters are serialized to JSON and passed to a consolidated Rust FFI function (`query_execute` or `vector_query_execute`) that builds and executes the query in one shot. This matches the Python SDK's lazy builder pattern.
 
-Query and VectorQuery builder methods use a borrow-clone-return pattern: the Rust FFI function borrows the existing pointer (`ffi_borrow!`), clones the inner value, applies the builder method (which consumes self), and returns a new `Arc` pointer. The C# side frees the old pointer and stores the new one. This avoids consuming the original and keeps each pointer independently freeable.
+Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust→C#, clone-and-pin for C#→Rust).
 
 ## Adding a new FFI function
 

@@ -1,6 +1,8 @@
 use lancedb::index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, Query, QueryBase, QueryExecutionOptions, Select, VectorQuery};
-use libc::{c_char, c_double, c_float, size_t};
+use lancedb::table::Table;
+use libc::{c_char, c_double, size_t};
+use serde::Deserialize;
 use std::slice;
 use std::sync::Arc;
 
@@ -42,446 +44,170 @@ fn parse_select(json: &str) -> Result<Select, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Query builder FFI
+// Query parameters (for build+execute)
 // ---------------------------------------------------------------------------
 
-/// Applies a column selection to a Query. columns_json is a JSON array of
-/// column names or a JSON object of {"alias": "expression"} pairs.
-/// Returns a new Query pointer; caller must free the old one.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_select(
-    query_ptr: *const Query,
-    columns_json: *const c_char,
-) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let json = ffi::to_string(columns_json);
-    let select = match parse_select(&json) {
-        Ok(s) => s,
-        Err(e) => {
-            ffi::set_last_error(e);
-            return std::ptr::null();
-        }
-    };
-    let new_query = query.clone().select(select);
-    Arc::into_raw(Arc::new(new_query))
+/// All parameters for building a query, deserialized from JSON.
+/// Used by the query_* and vector_query_* FFI functions.
+#[derive(Deserialize, Default)]
+pub(crate) struct QueryParams {
+    pub select: Option<serde_json::Value>,
+    #[serde(rename = "where")]
+    pub predicate: Option<String>,
+    pub limit: Option<u64>,
+    pub offset: Option<u64>,
+    pub with_row_id: Option<bool>,
+    pub full_text_search: Option<String>,
+    pub fast_search: Option<bool>,
+    pub postfilter: Option<bool>,
+    // Vector-specific
+    pub column: Option<String>,
+    pub distance_type: Option<String>,
+    pub nprobes: Option<u64>,
+    pub refine_factor: Option<u32>,
+    pub bypass_vector_index: Option<bool>,
+    pub ef: Option<u64>,
+    pub distance_range_lower: Option<f32>,
+    pub distance_range_upper: Option<f32>,
+    pub minimum_nprobes: Option<u32>,
+    pub maximum_nprobes: Option<u32>,
+    pub additional_vectors: Option<Vec<Vec<f32>>>,
 }
 
-/// Applies a WHERE filter to a Query. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_only_if(
-    query_ptr: *const Query,
-    predicate: *const c_char,
-) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let predicate = ffi::to_string(predicate);
-    let new_query = query.clone().only_if(predicate);
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Sets a row limit on a Query. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_limit(query_ptr: *const Query, limit: u64) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let new_query = query.clone().limit(limit as usize);
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Sets a row offset on a Query. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_offset(query_ptr: *const Query, offset: u64) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let new_query = query.clone().offset(offset as usize);
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Includes the internal row ID column in results. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_with_row_id(query_ptr: *const Query) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let new_query = query.clone().with_row_id();
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Applies a full-text search to a Query. Returns a new Query pointer.
-/// The query text is a search string for the FTS index.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_full_text_search(
-    query_ptr: *const Query,
-    query_text: *const c_char,
-) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let text = ffi::to_string(query_text);
-    let fts_query = FullTextSearchQuery::new(text);
-    let new_query = query.clone().full_text_search(fts_query);
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Enables fast search on a Query, skipping unindexed data. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_fast_search(query_ptr: *const Query) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let new_query = query.clone().fast_search();
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Applies filters after the search instead of before. Returns a new Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_postfilter(query_ptr: *const Query) -> *const Query {
-    let query = ffi_borrow!(query_ptr, Query);
-    let new_query = query.clone().postfilter();
-    Arc::into_raw(Arc::new(new_query))
-}
-
-/// Creates a VectorQuery from a Query by finding nearest vectors.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_nearest_to(
-    query_ptr: *const Query,
-    vector_ptr: *const c_double,
-    len: size_t,
-) -> *const VectorQuery {
-    let query = ffi_borrow!(query_ptr, Query);
-
-    let vector = unsafe {
-        if vector_ptr.is_null() {
-            ffi::set_last_error("Vector pointer is null");
-            return std::ptr::null();
-        }
-        slice::from_raw_parts(vector_ptr, len as usize)
-    };
-
-    let vector_query = match query.clone().nearest_to(vector) {
-        Ok(vq) => vq.clone(),
-        Err(e) => {
-            ffi::set_last_error(e);
-            return std::ptr::null();
-        }
-    };
-    Arc::into_raw(Arc::new(vector_query))
-}
-
-/// Executes a Query and returns results via Arrow C Data Interface.
-/// The callback receives a pointer to an FfiCData struct (caller must free with free_ffi_cdata).
-/// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
-/// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
-#[unsafe(no_mangle)]
-pub extern "C" fn query_execute(
-    query_ptr: *const Query,
-    timeout_ms: i64,
-    max_batch_length: u32,
-    completion: FfiCallback,
-) {
-    let query = ffi_clone_arc!(query_ptr, Query);
-    let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_cdata_with_options(query, options, completion);
-}
-
-/// Frees a Query pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_free(query_ptr: *const Query) {
-    ffi_free!(query_ptr, Query);
-}
-
-/// Returns the query execution plan as a string via callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_explain_plan(
-    query_ptr: *const Query,
-    verbose: bool,
-    completion: FfiCallback,
-) {
-    let query = ffi_clone_arc!(query_ptr, Query);
-    explain_plan_impl(query, verbose, completion);
-}
-
-/// Executes the query and returns runtime metrics as a string via callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn query_analyze_plan(query_ptr: *const Query, completion: FfiCallback) {
-    let query = ffi_clone_arc!(query_ptr, Query);
-    analyze_plan_impl(query, completion);
-}
-
-/// Returns the output schema via the C Data Interface (FFI_ArrowSchema pointer).
-#[unsafe(no_mangle)]
-pub extern "C" fn query_output_schema(query_ptr: *const Query, completion: FfiCallback) {
-    let query = ffi_clone_arc!(query_ptr, Query);
-    output_schema_impl(query, completion);
-}
-
-// ---------------------------------------------------------------------------
-// VectorQuery builder FFI
-// ---------------------------------------------------------------------------
-
-/// Applies a column selection to a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_select(
-    vq_ptr: *const VectorQuery,
-    columns_json: *const c_char,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let json = ffi::to_string(columns_json);
-    let select = match parse_select(&json) {
-        Ok(s) => s,
-        Err(e) => {
-            ffi::set_last_error(e);
-            return std::ptr::null();
-        }
-    };
-    let new_vq = vq.clone().select(select);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Applies a WHERE filter to a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_only_if(
-    vq_ptr: *const VectorQuery,
-    predicate: *const c_char,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let predicate = ffi::to_string(predicate);
-    let new_vq = vq.clone().only_if(predicate);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets a row limit on a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_limit(vq_ptr: *const VectorQuery, limit: u64) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().limit(limit as usize);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets a row offset on a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_offset(
-    vq_ptr: *const VectorQuery,
-    offset: u64,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().offset(offset as usize);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Includes the internal row ID column in VectorQuery results.
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_with_row_id(vq_ptr: *const VectorQuery) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().with_row_id();
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets the vector column to query. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_column(
-    vq_ptr: *const VectorQuery,
-    column_name: *const c_char,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let column_name = ffi::to_string(column_name);
-    let new_vq = vq.clone().column(&column_name);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets the distance type for a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_distance_type(
-    vq_ptr: *const VectorQuery,
-    distance_type: *const c_char,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let dt_str = ffi::to_string(distance_type);
-    let dt = match ffi::parse_distance_type(&dt_str) {
-        Ok(d) => d,
-        Err(e) => {
-            ffi::set_last_error(e);
-            return std::ptr::null();
-        }
-    };
-    let new_vq = vq.clone().distance_type(dt);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets nprobes for a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_nprobes(
-    vq_ptr: *const VectorQuery,
-    nprobes: u64,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().nprobes(nprobes as usize);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets refine_factor for a VectorQuery. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_refine_factor(
-    vq_ptr: *const VectorQuery,
-    refine_factor: u32,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().refine_factor(refine_factor);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Bypasses the vector index for a VectorQuery (brute-force search).
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_bypass_vector_index(
-    vq_ptr: *const VectorQuery,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().bypass_vector_index();
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Applies filters after the vector search instead of before.
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_postfilter(vq_ptr: *const VectorQuery) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().postfilter();
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Applies a full-text search to a VectorQuery for hybrid (vector + FTS) search.
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_full_text_search(
-    vq_ptr: *const VectorQuery,
-    query_text: *const c_char,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let text = ffi::to_string(query_text);
-    let fts_query = FullTextSearchQuery::new(text);
-    let new_vq = vq.clone().full_text_search(fts_query);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Enables fast search on a VectorQuery, skipping unindexed data.
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_fast_search(vq_ptr: *const VectorQuery) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().fast_search();
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets the HNSW ef search parameter. Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_ef(vq_ptr: *const VectorQuery, ef: u64) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let new_vq = vq.clone().ef(ef as usize);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets a distance range filter. NaN values indicate no bound.
-/// Returns a new VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_distance_range(
-    vq_ptr: *const VectorQuery,
-    lower: c_float,
-    upper: c_float,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let lower_bound = if lower.is_nan() { None } else { Some(lower) };
-    let upper_bound = if upper.is_nan() { None } else { Some(upper) };
-    let new_vq = vq.clone().distance_range(lower_bound, upper_bound);
-    Arc::into_raw(Arc::new(new_vq))
-}
-
-/// Sets the minimum number of partitions to search. Returns a new VectorQuery pointer.
-/// Returns null on error (e.g., invalid value).
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_minimum_nprobes(
-    vq_ptr: *const VectorQuery,
-    minimum_nprobes: u32,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    match vq.clone().minimum_nprobes(minimum_nprobes as usize) {
-        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
-        Err(_) => std::ptr::null(),
+/// Parses a JSON string into QueryParams.
+pub(crate) fn parse_query_params(json: *const c_char) -> Result<QueryParams, String> {
+    if json.is_null() {
+        return Ok(QueryParams::default());
     }
-}
-
-/// Sets the maximum number of partitions to search. Returns a new VectorQuery pointer.
-/// max_nprobes: if 0, sets to None (search all partitions if needed).
-/// Returns null on error (e.g., invalid value).
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_maximum_nprobes(
-    vq_ptr: *const VectorQuery,
-    max_nprobes: u32,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let max = if max_nprobes == 0 {
-        None
-    } else {
-        Some(max_nprobes as usize)
-    };
-    match vq.clone().maximum_nprobes(max) {
-        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
-        Err(_) => std::ptr::null(),
+    let json_str = ffi::to_string(json);
+    if json_str.is_empty() {
+        return Ok(QueryParams::default());
     }
+    serde_json::from_str(&json_str).map_err(|e| format!("Invalid query params JSON: {}", e))
 }
 
-/// Adds another query vector for multi-vector search. Returns a new VectorQuery pointer.
-/// Returns null on error.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_add_query_vector(
-    vq_ptr: *const VectorQuery,
-    vector_ptr: *const c_float,
-    len: size_t,
-) -> *const VectorQuery {
-    let vq = ffi_borrow!(vq_ptr, VectorQuery);
-    let vector: Vec<f32> = unsafe { slice::from_raw_parts(vector_ptr, len as usize) }.to_vec();
-    match vq.clone().add_query_vector(vector) {
-        Ok(new_vq) => Arc::into_raw(Arc::new(new_vq)),
-        Err(_) => std::ptr::null(),
+/// Applies base query parameters (shared between Query and VectorQuery).
+pub(crate) fn apply_base_params(mut query: Query, params: &QueryParams) -> Result<Query, String> {
+    if let Some(ref select) = params.select {
+        let sel = parse_select(&select.to_string())?;
+        query = query.select(sel);
     }
+    if let Some(ref pred) = params.predicate {
+        query = query.only_if(pred);
+    }
+    if let Some(limit) = params.limit {
+        query = query.limit(limit as usize);
+    }
+    if let Some(offset) = params.offset {
+        query = query.offset(offset as usize);
+    }
+    if params.with_row_id == Some(true) {
+        query = query.with_row_id();
+    }
+    if let Some(ref text) = params.full_text_search {
+        query = query.full_text_search(FullTextSearchQuery::new(text.clone()));
+    }
+    if params.fast_search == Some(true) {
+        query = query.fast_search();
+    }
+    if params.postfilter == Some(true) {
+        query = query.postfilter();
+    }
+    Ok(query)
 }
 
-/// Executes a VectorQuery and returns results via Arrow C Data Interface.
-/// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
-/// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_execute(
-    vq_ptr: *const VectorQuery,
-    timeout_ms: i64,
-    max_batch_length: u32,
-    completion: FfiCallback,
-) {
-    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
-    let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_cdata_with_options(vq, options, completion);
+/// Applies vector-specific parameters to a VectorQuery.
+pub(crate) fn apply_vector_params(
+    mut vq: VectorQuery,
+    params: &QueryParams,
+) -> Result<VectorQuery, String> {
+    if let Some(ref select) = params.select {
+        let sel = parse_select(&select.to_string())?;
+        vq = vq.select(sel);
+    }
+    if let Some(ref pred) = params.predicate {
+        vq = vq.only_if(pred);
+    }
+    if let Some(limit) = params.limit {
+        vq = vq.limit(limit as usize);
+    }
+    if let Some(offset) = params.offset {
+        vq = vq.offset(offset as usize);
+    }
+    if params.with_row_id == Some(true) {
+        vq = vq.with_row_id();
+    }
+    if let Some(ref text) = params.full_text_search {
+        vq = vq.full_text_search(FullTextSearchQuery::new(text.clone()));
+    }
+    if params.fast_search == Some(true) {
+        vq = vq.fast_search();
+    }
+    if params.postfilter == Some(true) {
+        vq = vq.postfilter();
+    }
+    if let Some(ref col) = params.column {
+        vq = vq.column(col);
+    }
+    if let Some(ref dt) = params.distance_type {
+        let dt = ffi::parse_distance_type(dt)?;
+        vq = vq.distance_type(dt);
+    }
+    if let Some(nprobes) = params.nprobes {
+        vq = vq.nprobes(nprobes as usize);
+    }
+    if let Some(rf) = params.refine_factor {
+        vq = vq.refine_factor(rf);
+    }
+    if params.bypass_vector_index == Some(true) {
+        vq = vq.bypass_vector_index();
+    }
+    if let Some(ef) = params.ef {
+        vq = vq.ef(ef as usize);
+    }
+    let lower = params.distance_range_lower;
+    let upper = params.distance_range_upper;
+    if lower.is_some() || upper.is_some() {
+        vq = vq.distance_range(lower, upper);
+    }
+    if let Some(min_np) = params.minimum_nprobes {
+        vq = vq
+            .minimum_nprobes(min_np as usize)
+            .map_err(|e| format!("Invalid minimum_nprobes: {}", e))?;
+    }
+    if let Some(max_np) = params.maximum_nprobes {
+        let max = if max_np == 0 { None } else { Some(max_np as usize) };
+        vq = vq
+            .maximum_nprobes(max)
+            .map_err(|e| format!("Invalid maximum_nprobes: {}", e))?;
+    }
+    if let Some(ref vectors) = params.additional_vectors {
+        for v in vectors {
+            vq = vq
+                .add_query_vector(v.clone())
+                .map_err(|e| format!("Failed to add query vector: {}", e))?;
+        }
+    }
+    Ok(vq)
 }
 
-/// Frees a VectorQuery pointer.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_free(vector_query_ptr: *const VectorQuery) {
-    ffi_free!(vector_query_ptr, VectorQuery);
+/// Builds a Query from a table and applies all base params.
+fn build_query(table: &Table, params: &QueryParams) -> Result<Query, String> {
+    let query = table.query().clone();
+    apply_base_params(query, params)
 }
 
-/// Returns the query execution plan as a string via callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_explain_plan(
-    vq_ptr: *const VectorQuery,
-    verbose: bool,
-    completion: FfiCallback,
-) {
-    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
-    explain_plan_impl(vq, verbose, completion);
-}
-
-/// Executes the VectorQuery and returns runtime metrics as a string via callback.
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_analyze_plan(vq_ptr: *const VectorQuery, completion: FfiCallback) {
-    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
-    analyze_plan_impl(vq, completion);
-}
-
-/// Returns the VectorQuery output schema via the C Data Interface (FFI_ArrowSchema pointer).
-#[unsafe(no_mangle)]
-pub extern "C" fn vector_query_output_schema(vq_ptr: *const VectorQuery, completion: FfiCallback) {
-    let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
-    output_schema_impl(vq, completion);
+/// Builds a VectorQuery from a table, query vector, and all params.
+fn build_vector_query(
+    table: &Table,
+    vector: &[f64],
+    params: &QueryParams,
+) -> Result<VectorQuery, String> {
+    let query = table.query().clone();
+    let vq = query
+        .nearest_to(vector)
+        .map_err(|e| format!("Failed to create vector query: {}", e))?;
+    apply_vector_params(vq, params)
 }
 
 // ---------------------------------------------------------------------------
@@ -633,4 +359,256 @@ where
             Err(e) => crate::callback_error(completion, e),
         }
     });
+}
+
+// ---------------------------------------------------------------------------
+// Query FFI
+// ---------------------------------------------------------------------------
+
+/// Builds a Query from table + JSON params and executes it.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_execute(
+    table_ptr: *const Table,
+    params_json: *const c_char,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let query = match build_query(table, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_to_cdata_with_options(Arc::new(query), options, completion);
+}
+
+/// Builds a Query from table + JSON params and returns the explain plan.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_explain_plan(
+    table_ptr: *const Table,
+    params_json: *const c_char,
+    verbose: bool,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let query = match build_query(table, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    explain_plan_impl(Arc::new(query), verbose, completion);
+}
+
+/// Builds a Query from table + JSON params and returns the analyze plan.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_analyze_plan(
+    table_ptr: *const Table,
+    params_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let query = match build_query(table, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    analyze_plan_impl(Arc::new(query), completion);
+}
+
+/// Builds a Query from table + JSON params and returns the output schema.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_output_schema(
+    table_ptr: *const Table,
+    params_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let query = match build_query(table, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    output_schema_impl(Arc::new(query), completion);
+}
+
+// ---------------------------------------------------------------------------
+// VectorQuery FFI
+// ---------------------------------------------------------------------------
+
+/// Builds a VectorQuery from table + vector + JSON params and executes it.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_execute(
+    table_ptr: *const Table,
+    vector_ptr: *const c_double,
+    vector_len: size_t,
+    params_json: *const c_char,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let vector = unsafe {
+        if vector_ptr.is_null() {
+            crate::callback_error(completion, "Vector pointer is null");
+            return;
+        }
+        slice::from_raw_parts(vector_ptr, vector_len as usize)
+    };
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let vq = match build_vector_query(table, vector, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_to_cdata_with_options(Arc::new(vq), options, completion);
+}
+
+/// Builds a VectorQuery from table + vector + JSON params and returns explain plan.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_explain_plan(
+    table_ptr: *const Table,
+    vector_ptr: *const c_double,
+    vector_len: size_t,
+    params_json: *const c_char,
+    verbose: bool,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let vector = unsafe {
+        if vector_ptr.is_null() {
+            crate::callback_error(completion, "Vector pointer is null");
+            return;
+        }
+        slice::from_raw_parts(vector_ptr, vector_len as usize)
+    };
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let vq = match build_vector_query(table, vector, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    explain_plan_impl(Arc::new(vq), verbose, completion);
+}
+
+/// Builds a VectorQuery from table + vector + JSON params and returns analyze plan.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_analyze_plan(
+    table_ptr: *const Table,
+    vector_ptr: *const c_double,
+    vector_len: size_t,
+    params_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let vector = unsafe {
+        if vector_ptr.is_null() {
+            crate::callback_error(completion, "Vector pointer is null");
+            return;
+        }
+        slice::from_raw_parts(vector_ptr, vector_len as usize)
+    };
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let vq = match build_vector_query(table, vector, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    analyze_plan_impl(Arc::new(vq), completion);
+}
+
+/// Builds a VectorQuery from table + vector + JSON params and returns output schema.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_output_schema(
+    table_ptr: *const Table,
+    vector_ptr: *const c_double,
+    vector_len: size_t,
+    params_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let vector = unsafe {
+        if vector_ptr.is_null() {
+            crate::callback_error(completion, "Vector pointer is null");
+            return;
+        }
+        slice::from_raw_parts(vector_ptr, vector_len as usize)
+    };
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    let vq = match build_vector_query(table, vector, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
+    output_schema_impl(Arc::new(vq), completion);
 }

@@ -14,25 +14,18 @@ mod table;
 
 // Re-export FFI functions for integration tests
 pub use query::{
-    query_analyze_plan, query_execute, query_explain_plan, query_fast_search,
-    query_free, query_full_text_search, query_limit, query_nearest_to, query_offset, query_only_if,
-    query_output_schema, query_postfilter, query_select, query_with_row_id,
-    vector_query_add_query_vector, vector_query_analyze_plan,
-    vector_query_bypass_vector_index, vector_query_column, vector_query_distance_range,
-    vector_query_distance_type, vector_query_ef, vector_query_execute,
-    vector_query_explain_plan, vector_query_fast_search, vector_query_free,
-    vector_query_full_text_search, vector_query_limit, vector_query_maximum_nprobes,
-    vector_query_minimum_nprobes, vector_query_nprobes, vector_query_offset, vector_query_only_if,
-    vector_query_output_schema, vector_query_postfilter, vector_query_refine_factor,
-    vector_query_select, vector_query_with_row_id,
+    query_analyze_plan, query_execute, query_explain_plan, query_output_schema,
+    vector_query_analyze_plan, vector_query_execute,
+    vector_query_explain_plan, vector_query_output_schema,
 };
 pub use table::{
     table_add, table_add_columns, table_alter_columns,
-    table_checkout, table_checkout_latest, table_close, table_count_rows, table_create_index,
-    table_create_query, table_delete, table_drop_columns, table_get_name, table_is_open,
-    table_list_indices, table_list_versions, table_merge_insert, table_optimize, table_restore,
-    table_schema, table_tags_create, table_tags_delete, table_tags_list, table_tags_update,
-    table_take_offsets, table_take_row_ids, table_update, table_uri, table_version
+    table_checkout, table_checkout_latest, table_checkout_tag, table_close, table_count_rows,
+    table_create_index, table_delete, table_drop_columns, table_drop_index, table_get_name,
+    table_index_stats, table_is_open, table_list_indices, table_list_versions, table_merge_insert,
+    table_optimize, table_prewarm_index, table_restore, table_schema, table_tags_create,
+    table_tags_delete, table_tags_get_version, table_tags_list, table_tags_update, table_take_offsets,
+    table_take_row_ids, table_update, table_uri, table_version, table_wait_for_index,
 };
 pub use ffi::{free_ffi_cdata, free_ffi_schema, free_string, FfiCData};
 

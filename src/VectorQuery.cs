@@ -1,6 +1,7 @@
 namespace lancedb
 {
     using System;
+    using System.Collections.Generic;
     using System.Runtime.InteropServices;
 
     /// <summary>
@@ -16,140 +17,131 @@ namespace lancedb
     public class VectorQuery : QueryBase<VectorQuery>
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void vector_query_free(IntPtr vq_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_select(IntPtr vq_ptr, IntPtr columns_json);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_only_if(IntPtr vq_ptr, IntPtr predicate);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_limit(IntPtr vq_ptr, ulong limit);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_offset(IntPtr vq_ptr, ulong offset);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_with_row_id(IntPtr vq_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_execute(
-            IntPtr vq_ptr, long timeout_ms, uint max_batch_length,
-            NativeCall.FfiCallback completion);
+            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_explain_plan(
-            IntPtr vq_ptr, [MarshalAs(UnmanagedType.U1)] bool verbose,
-            NativeCall.FfiCallback completion);
+            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            [MarshalAs(UnmanagedType.U1)] bool verbose, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_analyze_plan(
-            IntPtr vq_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_output_schema(
-            IntPtr vq_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            NativeCall.FfiCallback completion);
 
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_minimum_nprobes(IntPtr vq_ptr, uint n);
+        private readonly double[] _vector;
 
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_maximum_nprobes(IntPtr vq_ptr, uint n);
+        // Vector-specific stored parameters
+        private string? _column;
+        private string? _distanceType;
+        private int? _nprobes;
+        private int? _refineFactor;
+        private bool _bypassVectorIndex;
+        private int? _ef;
+        private float? _distanceRangeLower;
+        private float? _distanceRangeUpper;
+        private int? _minimumNprobes;
+        private int? _maximumNprobes;
+        private List<float[]>? _additionalVectors;
 
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_add_query_vector(
-            IntPtr vq_ptr, float[] vector, UIntPtr len);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_column(IntPtr vq_ptr, IntPtr column_name);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_distance_type(IntPtr vq_ptr, IntPtr distance_type);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_nprobes(IntPtr vq_ptr, ulong nprobes);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_refine_factor(IntPtr vq_ptr, uint refine_factor);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_bypass_vector_index(IntPtr vq_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_postfilter(IntPtr vq_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_full_text_search(IntPtr vq_ptr, IntPtr query_text);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_fast_search(IntPtr vq_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_ef(IntPtr vq_ptr, ulong ef);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr vector_query_distance_range(IntPtr vq_ptr, float lower, float upper);
-
-        internal VectorQuery(IntPtr vectorQueryPtr)
-            : base(vectorQueryPtr)
+        internal VectorQuery(IntPtr tablePtr, Query parentQuery, double[] vector)
+            : base(tablePtr)
         {
+            _vector = vector;
+            // Copy base params from the parent query
+            SelectJson = parentQuery.SelectJson;
+            Predicate = parentQuery.Predicate;
+            StoredLimit = parentQuery.StoredLimit;
+            StoredOffset = parentQuery.StoredOffset;
+            StoredWithRowId = parentQuery.StoredWithRowId;
+            FullTextSearchQuery = parentQuery.FullTextSearchQuery;
+            StoredFastSearch = parentQuery.StoredFastSearch;
+            StoredPostfilter = parentQuery.StoredPostfilter;
         }
 
         /// <inheritdoc/>
-        protected override void NativeFree(IntPtr ptr) => vector_query_free(ptr);
+        internal override Dictionary<string, object> BuildParamsDict()
+        {
+            var dict = base.BuildParamsDict();
+            if (_column != null)
+            {
+                dict["column"] = _column;
+            }
+            if (_distanceType != null)
+            {
+                dict["distance_type"] = _distanceType;
+            }
+            if (_nprobes.HasValue)
+            {
+                dict["nprobes"] = _nprobes.Value;
+            }
+            if (_refineFactor.HasValue)
+            {
+                dict["refine_factor"] = _refineFactor.Value;
+            }
+            if (_bypassVectorIndex)
+            {
+                dict["bypass_vector_index"] = true;
+            }
+            if (_ef.HasValue)
+            {
+                dict["ef"] = _ef.Value;
+            }
+            if (_distanceRangeLower.HasValue)
+            {
+                dict["distance_range_lower"] = _distanceRangeLower.Value;
+            }
+            if (_distanceRangeUpper.HasValue)
+            {
+                dict["distance_range_upper"] = _distanceRangeUpper.Value;
+            }
+            if (_minimumNprobes.HasValue)
+            {
+                dict["minimum_nprobes"] = _minimumNprobes.Value;
+            }
+            if (_maximumNprobes.HasValue)
+            {
+                dict["maximum_nprobes"] = _maximumNprobes.Value;
+            }
+            if (_additionalVectors != null && _additionalVectors.Count > 0)
+            {
+                dict["additional_vectors"] = _additionalVectors;
+            }
+            return dict;
+        }
 
         /// <inheritdoc/>
-        protected override IntPtr NativeSelect(IntPtr ptr, IntPtr columnsJson)
-            => vector_query_select(ptr, columnsJson);
+        private protected override void NativeConsolidatedExecute(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback)
+            => vector_query_execute(
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson,
+                timeoutMs, maxBatchLength, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeOnlyIf(IntPtr ptr, IntPtr predicate)
-            => vector_query_only_if(ptr, predicate);
+        private protected override void NativeConsolidatedExplainPlan(
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback)
+            => vector_query_explain_plan(
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, verbose, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeLimit(IntPtr ptr, ulong limit)
-            => vector_query_limit(ptr, limit);
+        private protected override void NativeConsolidatedAnalyzePlan(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            => vector_query_analyze_plan(
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback);
 
         /// <inheritdoc/>
-        protected override IntPtr NativeOffset(IntPtr ptr, ulong offset)
-            => vector_query_offset(ptr, offset);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeWithRowId(IntPtr ptr)
-            => vector_query_with_row_id(ptr);
-
-        /// <inheritdoc/>
-        private protected override void NativeExecute(
-            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback)
-            => vector_query_execute(ptr, timeoutMs, maxBatchLength, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeExplainPlan(
-            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback)
-            => vector_query_explain_plan(ptr, verbose, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeAnalyzePlan(
-            IntPtr ptr, NativeCall.FfiCallback callback)
-            => vector_query_analyze_plan(ptr, callback);
-
-        /// <inheritdoc/>
-        private protected override void NativeOutputSchema(
-            IntPtr ptr, NativeCall.FfiCallback callback)
-            => vector_query_output_schema(ptr, callback);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText)
-            => vector_query_full_text_search(ptr, queryText);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativeFastSearch(IntPtr ptr)
-            => vector_query_fast_search(ptr);
-
-        /// <inheritdoc/>
-        protected override IntPtr NativePostfilter(IntPtr ptr)
-            => vector_query_postfilter(ptr);
+        private protected override void NativeConsolidatedOutputSchema(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            => vector_query_output_schema(
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback);
 
         /// <summary>
         /// Set the vector column to query.
@@ -164,16 +156,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery Column(string column)
         {
-            byte[] columnBytes = NativeCall.ToUtf8(column);
-            unsafe
-            {
-                fixed (byte* p = columnBytes)
-                {
-                    IntPtr newPtr = vector_query_column(NativePtr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            _column = column;
             return this;
         }
 
@@ -189,16 +172,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery DistanceType(string distanceType)
         {
-            byte[] dtBytes = NativeCall.ToUtf8(distanceType);
-            unsafe
-            {
-                fixed (byte* p = dtBytes)
-                {
-                    IntPtr newPtr = vector_query_distance_type(NativePtr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            _distanceType = distanceType;
             return this;
         }
 
@@ -212,8 +186,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery Nprobes(int nprobes)
         {
-            IntPtr newPtr = vector_query_nprobes(NativePtr, (ulong)nprobes);
-            ReplacePtr(newPtr);
+            _nprobes = nprobes;
             return this;
         }
 
@@ -229,8 +202,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery RefineFactor(int refineFactor)
         {
-            IntPtr newPtr = vector_query_refine_factor(NativePtr, (uint)refineFactor);
-            ReplacePtr(newPtr);
+            _refineFactor = refineFactor;
             return this;
         }
 
@@ -240,8 +212,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery BypassVectorIndex()
         {
-            IntPtr newPtr = vector_query_bypass_vector_index(NativePtr);
-            ReplacePtr(newPtr);
+            _bypassVectorIndex = true;
             return this;
         }
 
@@ -262,8 +233,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery Ef(int ef)
         {
-            IntPtr newPtr = vector_query_ef(NativePtr, (ulong)ef);
-            ReplacePtr(newPtr);
+            _ef = ef;
             return this;
         }
 
@@ -281,11 +251,8 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery DistanceRange(float? lowerBound = null, float? upperBound = null)
         {
-            IntPtr newPtr = vector_query_distance_range(
-                NativePtr,
-                lowerBound ?? float.NaN,
-                upperBound ?? float.NaN);
-            ReplacePtr(newPtr);
+            _distanceRangeLower = lowerBound;
+            _distanceRangeUpper = upperBound;
             return this;
         }
 
@@ -299,13 +266,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery MinimumNprobes(int n)
         {
-            IntPtr newPtr = vector_query_minimum_nprobes(NativePtr, (uint)n);
-            if (newPtr == IntPtr.Zero)
-            {
-                throw new LanceDbException("Invalid minimum nprobes value");
-            }
-
-            ReplacePtr(newPtr);
+            _minimumNprobes = n;
             return this;
         }
 
@@ -320,13 +281,7 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery MaximumNprobes(int n)
         {
-            IntPtr newPtr = vector_query_maximum_nprobes(NativePtr, (uint)n);
-            if (newPtr == IntPtr.Zero)
-            {
-                throw new LanceDbException("Invalid maximum nprobes value");
-            }
-
-            ReplacePtr(newPtr);
+            _maximumNprobes = n;
             return this;
         }
 
@@ -347,14 +302,11 @@ namespace lancedb
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
         public VectorQuery AddQueryVector(float[] vector)
         {
-            IntPtr newPtr = vector_query_add_query_vector(
-                NativePtr, vector, (UIntPtr)vector.Length);
-            if (newPtr == IntPtr.Zero)
+            if (_additionalVectors == null)
             {
-                throw new LanceDbException("Failed to add query vector");
+                _additionalVectors = new List<float[]>();
             }
-
-            ReplacePtr(newPtr);
+            _additionalVectors.Add(vector);
             return this;
         }
     }

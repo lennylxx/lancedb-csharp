@@ -34,9 +34,6 @@ namespace lancedb
         private static extern bool table_is_open(IntPtr table_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern IntPtr table_create_query(IntPtr table_ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_count_rows(
             IntPtr table_ptr, IntPtr filter, NativeCall.FfiCallback completion);
 
@@ -236,8 +233,7 @@ namespace lancedb
         /// <returns>A builder that can be used to parameterize the query.</returns>
         public Query Query()
         {
-            IntPtr queryPtr = table_create_query(_handle!.DangerousGetHandle());
-            return new Query(queryPtr);
+            return new Query(_handle!.DangerousGetHandle());
         }
 
         /// <summary>

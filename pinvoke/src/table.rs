@@ -1,9 +1,8 @@
 use lancedb::index::Index as LanceIndex;
-use lancedb::query::{ExecutableQuery, Query};
+use lancedb::query::ExecutableQuery;
 use lancedb::table::{ColumnAlteration, NewColumnTransform, OptimizeAction, Table};
 use libc::c_char;
 use std::ffi::CString;
-use std::sync::Arc;
 
 use crate::FfiCallback;
 use crate::ffi;
@@ -27,14 +26,6 @@ pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
 #[unsafe(no_mangle)]
 pub extern "C" fn table_is_open(table_ptr: *const Table) -> bool {
     !table_ptr.is_null()
-}
-
-/// Creates a new Query from the table.
-#[unsafe(no_mangle)]
-pub extern "C" fn table_create_query(table_ptr: *const Table) -> *const Query {
-    let table = ffi_borrow!(table_ptr, Table);
-    let query = table.query().clone();
-    Arc::into_raw(Arc::new(query))
 }
 
 /// Counts the number of rows in the table, optionally filtered by a SQL predicate.

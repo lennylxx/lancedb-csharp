@@ -9,7 +9,7 @@ namespace lancedb
     using Apache.Arrow.C;
 
     /// <summary>
-    /// Base class for LanceDB query builders (scan and vector).
+    /// Base class for LanceDB query builders (Query and VectorQuery).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -17,7 +17,8 @@ namespace lancedb
     /// <see cref="Table.Query"/> method to create a query.
     /// </para>
     /// <para>
-    /// Implements <see cref="IDisposable"/> to release the underlying native query handle.
+    /// Builder methods store parameters locally and defer all FFI calls until
+    /// execution time (e.g., <see cref="ToArrow"/>, <see cref="ExplainPlan"/>).
     /// All builder methods return the concrete type <typeparamref name="T"/> for fluent
     /// method chaining.
     /// </para>
@@ -25,101 +26,114 @@ namespace lancedb
     /// <typeparam name="T">The concrete query type for fluent method chaining.</typeparam>
     public abstract class QueryBase<T> : IDisposable where T : QueryBase<T>
     {
-        private IntPtr _ptr;
-        private bool _disposed;
-
         /// <summary>
-        /// Gets the native pointer for FFI calls.
+        /// Raw pointer to the native Table (not owned — the Table must outlive the query).
         /// </summary>
-        protected IntPtr NativePtr => _ptr;
+        internal IntPtr TablePtr;
 
-        internal QueryBase(IntPtr ptr)
+        // Stored builder parameters (applied lazily at execution time)
+        internal string? SelectJson;
+        internal string? Predicate;
+        internal int? StoredLimit;
+        internal int? StoredOffset;
+        internal bool StoredWithRowId;
+        internal string? FullTextSearchQuery;
+        internal bool StoredFastSearch;
+        internal bool StoredPostfilter;
+
+        internal QueryBase(IntPtr tablePtr)
         {
-            _ptr = ptr;
+            TablePtr = tablePtr;
         }
 
         /// <summary>
-        /// Frees the native pointer using the type-specific free function.
+        /// Serializes all stored base query parameters to a JSON dictionary.
+        /// Subclasses override to add type-specific params.
         /// </summary>
-        protected abstract void NativeFree(IntPtr ptr);
-
-        /// <summary>
-        /// Calls the native select FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeSelect(IntPtr ptr, IntPtr columnsJson);
-
-        /// <summary>
-        /// Calls the native where/only_if FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeOnlyIf(IntPtr ptr, IntPtr predicate);
-
-        /// <summary>
-        /// Calls the native limit FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeLimit(IntPtr ptr, ulong limit);
-
-        /// <summary>
-        /// Calls the native offset FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeOffset(IntPtr ptr, ulong offset);
-
-        /// <summary>
-        /// Calls the native with_row_id FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeWithRowId(IntPtr ptr);
-
-        /// <summary>
-        /// Calls the native full_text_search FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeFullTextSearch(IntPtr ptr, IntPtr queryText);
-
-        /// <summary>
-        /// Calls the native fast_search FFI function.
-        /// </summary>
-        protected abstract IntPtr NativeFastSearch(IntPtr ptr);
-
-        /// <summary>
-        /// Calls the native postfilter FFI function.
-        /// </summary>
-        protected abstract IntPtr NativePostfilter(IntPtr ptr);
-
-        /// <summary>
-        /// Calls the native execute FFI function using Arrow C Data Interface.
-        /// </summary>
-        private protected abstract void NativeExecute(
-            IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback);
-
-        /// <summary>
-        /// Calls the native explain_plan FFI function.
-        /// </summary>
-        private protected abstract void NativeExplainPlan(
-            IntPtr ptr, bool verbose, NativeCall.FfiCallback callback);
-
-        /// <summary>
-        /// Calls the native analyze_plan FFI function.
-        /// </summary>
-        private protected abstract void NativeAnalyzePlan(
-            IntPtr ptr, NativeCall.FfiCallback callback);
-
-        /// <summary>
-        /// Calls the native output_schema FFI function.
-        /// </summary>
-        private protected abstract void NativeOutputSchema(
-            IntPtr ptr, NativeCall.FfiCallback callback);
-
-        /// <summary>
-        /// Replaces the current native pointer with a new one, freeing the old one.
-        /// Throws LanceDbException if the new pointer is null due to an FFI error.
-        /// </summary>
-        protected void ReplacePtr(IntPtr newPtr)
+        internal virtual Dictionary<string, object> BuildParamsDict()
         {
-            NativeCall.ThrowIfNullWithError(newPtr, "Native FFI call returned null");
-            IntPtr old = _ptr;
-            _ptr = newPtr;
-            if (old != IntPtr.Zero && old != newPtr)
+            var dict = new Dictionary<string, object>();
+            if (SelectJson != null)
             {
-                NativeFree(old);
+                dict["select"] = JsonSerializer.Deserialize<object>(SelectJson)!;
             }
+            if (Predicate != null)
+            {
+                dict["where"] = Predicate;
+            }
+            if (StoredLimit.HasValue)
+            {
+                dict["limit"] = StoredLimit.Value;
+            }
+            if (StoredOffset.HasValue)
+            {
+                dict["offset"] = StoredOffset.Value;
+            }
+            if (StoredWithRowId)
+            {
+                dict["with_row_id"] = true;
+            }
+            if (FullTextSearchQuery != null)
+            {
+                dict["full_text_search"] = FullTextSearchQuery;
+            }
+            if (StoredFastSearch)
+            {
+                dict["fast_search"] = true;
+            }
+            if (StoredPostfilter)
+            {
+                dict["postfilter"] = true;
+            }
+            return dict;
+        }
+
+        /// <summary>
+        /// Serializes all stored parameters to a JSON string for the consolidated FFI call.
+        /// </summary>
+        internal string SerializeParams()
+        {
+            return JsonSerializer.Serialize(BuildParamsDict());
+        }
+
+        /// <summary>
+        /// Calls the native consolidated execute FFI function.
+        /// </summary>
+        private protected abstract void NativeConsolidatedExecute(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native consolidated explain_plan FFI function.
+        /// </summary>
+        private protected abstract void NativeConsolidatedExplainPlan(
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native consolidated analyze_plan FFI function.
+        /// </summary>
+        private protected abstract void NativeConsolidatedAnalyzePlan(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Calls the native consolidated output_schema FFI function.
+        /// </summary>
+        private protected abstract void NativeConsolidatedOutputSchema(
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback);
+
+        /// <summary>
+        /// Copies base parameters from another query builder.
+        /// </summary>
+        internal void CopyBaseParams(QueryBase<T> source)
+        {
+            SelectJson = source.SelectJson;
+            Predicate = source.Predicate;
+            StoredLimit = source.StoredLimit;
+            StoredOffset = source.StoredOffset;
+            StoredWithRowId = source.StoredWithRowId;
+            FullTextSearchQuery = source.FullTextSearchQuery;
+            StoredFastSearch = source.StoredFastSearch;
+            StoredPostfilter = source.StoredPostfilter;
         }
 
         /// <summary>
@@ -134,17 +148,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(IReadOnlyList<string> columns)
         {
-            string json = JsonSerializer.Serialize(columns);
-            byte[] jsonBytes = NativeCall.ToUtf8(json);
-            unsafe
-            {
-                fixed (byte* p = jsonBytes)
-                {
-                    IntPtr newPtr = NativeSelect(_ptr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            SelectJson = JsonSerializer.Serialize(columns);
             return (T)this;
         }
 
@@ -160,17 +164,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(Dictionary<string, string> columns)
         {
-            string json = JsonSerializer.Serialize(columns);
-            byte[] jsonBytes = NativeCall.ToUtf8(json);
-            unsafe
-            {
-                fixed (byte* p = jsonBytes)
-                {
-                    IntPtr newPtr = NativeSelect(_ptr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            SelectJson = JsonSerializer.Serialize(columns);
             return (T)this;
         }
 
@@ -188,16 +182,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Where(string predicate)
         {
-            byte[] predicateBytes = NativeCall.ToUtf8(predicate);
-            unsafe
-            {
-                fixed (byte* p = predicateBytes)
-                {
-                    IntPtr newPtr = NativeOnlyIf(_ptr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            Predicate = predicate;
             return (T)this;
         }
 
@@ -212,8 +197,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Limit(int limit)
         {
-            IntPtr newPtr = NativeLimit(_ptr, (ulong)limit);
-            ReplacePtr(newPtr);
+            StoredLimit = limit;
             return (T)this;
         }
 
@@ -227,8 +211,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Offset(int offset)
         {
-            IntPtr newPtr = NativeOffset(_ptr, (ulong)offset);
-            ReplacePtr(newPtr);
+            StoredOffset = offset;
             return (T)this;
         }
 
@@ -238,8 +221,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T WithRowId()
         {
-            IntPtr newPtr = NativeWithRowId(_ptr);
-            ReplacePtr(newPtr);
+            StoredWithRowId = true;
             return (T)this;
         }
 
@@ -267,16 +249,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T FullTextSearch(string query)
         {
-            byte[] textBytes = NativeCall.ToUtf8(query);
-            unsafe
-            {
-                fixed (byte* p = textBytes)
-                {
-                    IntPtr newPtr = NativeFullTextSearch(_ptr, new IntPtr(p));
-                    ReplacePtr(newPtr);
-                }
-            }
-
+            FullTextSearchQuery = query;
             return (T)this;
         }
 
@@ -297,8 +270,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T FastSearch()
         {
-            IntPtr newPtr = NativeFastSearch(_ptr);
-            ReplacePtr(newPtr);
+            StoredFastSearch = true;
             return (T)this;
         }
 
@@ -318,8 +290,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Postfilter()
         {
-            IntPtr newPtr = NativePostfilter(_ptr);
-            ReplacePtr(newPtr);
+            StoredPostfilter = true;
             return (T)this;
         }
 
@@ -338,10 +309,12 @@ namespace lancedb
         {
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
             uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
+            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
+            IntPtr ffiCDataPtr = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeExecute(_ptr, timeoutMs, batchLen, completion);
+                NativeConsolidatedExecute(TablePtr, pJson, timeoutMs, batchLen, completion);
             }).ConfigureAwait(false);
 
             try
@@ -387,9 +360,12 @@ namespace lancedb
         /// <returns>A string representation of the execution plan.</returns>
         public async Task<string> ExplainPlan(bool verbose = false)
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
+
+            IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeExplainPlan(_ptr, verbose, completion);
+                NativeConsolidatedExplainPlan(TablePtr, pJson, verbose, completion);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -404,9 +380,12 @@ namespace lancedb
         /// <returns>A string representation of the execution plan with runtime metrics.</returns>
         public async Task<string> AnalyzePlan()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
+
+            IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeAnalyzePlan(_ptr, completion);
+                NativeConsolidatedAnalyzePlan(TablePtr, pJson, completion);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -421,9 +400,12 @@ namespace lancedb
         /// <returns>The output <see cref="Schema"/>.</returns>
         public async Task<Schema> OutputSchema()
         {
-            IntPtr ffiSchemaPtr = await NativeCall.Async(completion =>
+            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
+
+            IntPtr ffiSchemaPtr = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeOutputSchema(_ptr, completion);
+                NativeConsolidatedOutputSchema(TablePtr, pJson, completion);
             }).ConfigureAwait(false);
 
             try
@@ -434,6 +416,30 @@ namespace lancedb
             {
                 NativeCall.free_ffi_schema(ffiSchemaPtr);
             }
+        }
+
+        /// <summary>
+        /// Pins a byte array and calls the FFI function synchronously, returning the async result.
+        /// The byte array is pinned using GCHandle and unpinned after the FFI function is called.
+        /// </summary>
+        private static async Task<IntPtr> CallWithPinnedJson(
+            GCHandle jsonHandle, Action<NativeCall.FfiCallback> invokeWithCallback)
+        {
+            try
+            {
+                return await NativeCall.Async(invokeWithCallback).ConfigureAwait(false);
+            }
+            finally
+            {
+                jsonHandle.Free();
+            }
+        }
+
+        private static GCHandle PinJson(byte[] jsonBytes, out IntPtr ptr)
+        {
+            var handle = GCHandle.Alloc(jsonBytes, GCHandleType.Pinned);
+            ptr = handle.AddrOfPinnedObject();
+            return handle;
         }
 
         private static unsafe Schema ReadSchemaFromCData(IntPtr ffiSchemaPtr)
@@ -517,13 +523,6 @@ namespace lancedb
         /// <inheritdoc/>
         public void Dispose()
         {
-            if (!_disposed && _ptr != IntPtr.Zero)
-            {
-                NativeFree(_ptr);
-                _ptr = IntPtr.Zero;
-                _disposed = true;
-            }
-
             GC.SuppressFinalize(this);
         }
     }
