@@ -2,12 +2,11 @@ namespace lancedb
 {
     using System;
     using System.Collections.Generic;
-    using System.IO;
     using System.Runtime.InteropServices;
     using System.Text.Json;
     using System.Threading.Tasks;
     using Apache.Arrow;
-    using Apache.Arrow.Ipc;
+    using Apache.Arrow.C;
 
     /// <summary>
     /// A connection to a LanceDB database.
@@ -30,10 +29,10 @@ namespace lancedb
         private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, IntPtr schema_ipc_data, nuint schema_ipc_len, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, CArrowSchema* schema_cdata, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_create_table(IntPtr connection_ptr, IntPtr table_name, IntPtr ipc_data, nuint ipc_len, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void database_create_table(IntPtr connection_ptr, IntPtr table_name, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
@@ -188,9 +187,6 @@ namespace lancedb
         public async Task<Table> CreateEmptyTable(string name, CreateTableOptions? options = null)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
-            byte[]? schemaIpcBytes = options?.Schema != null
-                ? SerializeSchemaToIpc(options.Schema)
-                : null;
             byte[]? modeBytes = options != null
                 ? NativeCall.ToUtf8(options.Mode)
                 : null;
@@ -210,23 +206,31 @@ namespace lancedb
                 unsafe
                 {
                     fixed (byte* pName = nameBytes)
-                    fixed (byte* pSchema = schemaIpcBytes)
                     fixed (byte* pMode = modeBytes)
                     fixed (byte* pStorage = storageJson)
                     fixed (byte* pLocation = locationBytes)
                     fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_create_empty_table(
-                            _handle!.DangerousGetHandle(),
-                            new IntPtr(pName),
-                            schemaIpcBytes != null ? new IntPtr(pSchema) : IntPtr.Zero,
-                            (nuint)(schemaIpcBytes?.Length ?? 0),
-                            modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
-                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
-                            locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
-                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            existOk,
-                            callback);
+                        var cSchemaArr = new CArrowSchema[1];
+                        fixed (CArrowSchema* pSchema = cSchemaArr)
+                        {
+                            CArrowSchema* schemaPtr = null;
+                            if (options?.Schema != null)
+                            {
+                                CArrowSchemaExporter.ExportSchema(options.Schema, pSchema);
+                                schemaPtr = pSchema;
+                            }
+                            database_create_empty_table(
+                                _handle!.DangerousGetHandle(),
+                                new IntPtr(pName),
+                                schemaPtr,
+                                modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
+                                storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                                locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
+                                namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                                existOk,
+                                callback);
+                        }
                     }
                 }
             });
@@ -263,7 +267,6 @@ namespace lancedb
             }
 
             byte[] nameBytes = NativeCall.ToUtf8(name);
-            byte[] ipcBytes = SerializeToIpc(options.Data);
             byte[] modeBytes = NativeCall.ToUtf8(options.Mode);
             byte[]? storageJson = options.StorageOptions != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
@@ -280,21 +283,39 @@ namespace lancedb
                 unsafe
                 {
                     fixed (byte* pName = nameBytes)
-                    fixed (byte* pData = ipcBytes)
                     fixed (byte* pMode = modeBytes)
                     fixed (byte* pStorage = storageJson)
                     fixed (byte* pLocation = locationBytes)
                     fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_create_table(
-                            _handle!.DangerousGetHandle(),
-                            (IntPtr)pName,
-                            (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
-                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
-                            locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
-                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            options.ExistOk,
-                            callback);
+                        var cArrays = new CArrowArray[options.Data.Count];
+                        var cSchemaArr = new CArrowSchema[1];
+                        fixed (CArrowSchema* pSchema = cSchemaArr)
+                        {
+                            CArrowSchemaExporter.ExportSchema(options.Data[0].Schema, pSchema);
+                            for (int i = 0; i < options.Data.Count; i++)
+                            {
+                                cArrays[i] = default;
+                                var clone = ArrowExportHelper.CloneBatchForExport(options.Data[i]);
+                                fixed (CArrowArray* pArr = &cArrays[i])
+                                {
+                                    CArrowArrayExporter.ExportRecordBatch(clone, pArr);
+                                }
+                            }
+                            fixed (CArrowArray* pArrays = cArrays)
+                            {
+                                database_create_table(
+                                    _handle!.DangerousGetHandle(),
+                                    (IntPtr)pName,
+                                    pArrays, pSchema, (nuint)options.Data.Count,
+                                    (IntPtr)pMode,
+                                    storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                                    locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
+                                    namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                                    options.ExistOk,
+                                    callback);
+                            }
+                        }
                     }
                 }
             });
@@ -454,35 +475,6 @@ namespace lancedb
             {
                 database_drop_all_tables(_handle!.DangerousGetHandle(), callback);
             });
-        }
-
-        private static byte[] SerializeToIpc(IReadOnlyList<RecordBatch> batches)
-        {
-            if (batches.Count == 0)
-            {
-                throw new ArgumentException("At least one RecordBatch is required.", nameof(batches));
-            }
-
-            using var stream = new MemoryStream();
-            using (var writer = new ArrowFileWriter(stream, batches[0].Schema))
-            {
-                foreach (var batch in batches)
-                {
-                    writer.WriteRecordBatch(batch);
-                }
-                writer.WriteEnd();
-            }
-            return stream.ToArray();
-        }
-
-        private static byte[] SerializeSchemaToIpc(Schema schema)
-        {
-            using var stream = new MemoryStream();
-            using (var writer = new ArrowFileWriter(stream, schema))
-            {
-                writer.WriteEnd();
-            }
-            return stream.ToArray();
         }
     }
 }

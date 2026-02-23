@@ -14,7 +14,7 @@ The SDK has two layers:
 - **`pinvoke/`** — A Rust `cdylib` that exposes C-compatible FFI functions. Uses a pool of Tokio runtimes (one per CPU core) with least-loaded dispatch to bridge Rust async operations into synchronous FFI calls with C function pointer callbacks.
 - **`src/`** — A C# class library that declares `[DllImport]` extern methods matching the Rust FFI surface, and wraps them in idiomatic async APIs using `TaskCompletionSource`.
 
-Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup. Data crosses the FFI boundary as Arrow IPC byte buffers.
+Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup. Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust→C#, clone-and-pin for C#→Rust).
 
 ## Ownership model
 

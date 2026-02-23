@@ -23,7 +23,10 @@ namespace lancedb
         private static extern void free_string(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        internal static extern void free_ffi_bytes(IntPtr ptr);
+        internal static extern void free_ffi_cdata(IntPtr ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void free_ffi_schema(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern IntPtr ffi_get_last_error();

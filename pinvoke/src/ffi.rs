@@ -1,10 +1,9 @@
-use arrow_ipc::reader::FileReader;
+use arrow_array::{RecordBatch, StructArray};
 use arrow_schema::{DataType, Schema, SchemaRef};
 use libc::c_char;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use std::io::Cursor;
 use std::sync::Arc;
 
 thread_local! {
@@ -88,16 +87,87 @@ pub fn parse_optional_string(ptr: *const c_char) -> Option<String> {
     Some(to_string(ptr))
 }
 
-/// Deserializes Arrow IPC file bytes into a Schema.
-pub fn ipc_to_schema(ipc_data: *const u8, ipc_len: usize) -> Result<SchemaRef, String> {
-    if ipc_data.is_null() || ipc_len == 0 {
-        return Err("Schema IPC data is null or empty".to_string());
+/// Imports a RecordBatch from Arrow C Data Interface pointers.
+/// Takes ownership of both the array and schema by reading from the pointers.
+/// After reading, the source pointers are zeroed to prevent double-free
+/// (the original structs' Drop will be a no-op with zeroed release callbacks).
+/// Must be called synchronously before any async task, as the pointers
+/// may become invalid after the FFI function returns.
+pub fn import_record_batch(
+    array_ptr: *mut arrow_data::ffi::FFI_ArrowArray,
+    schema_ptr: *mut arrow_schema::ffi::FFI_ArrowSchema,
+) -> Result<RecordBatch, String> {
+    if array_ptr.is_null() || schema_ptr.is_null() {
+        return Err("C Data array or schema pointer is null".to_string());
     }
-    let bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) };
-    let cursor = Cursor::new(bytes);
-    let reader =
-        FileReader::try_new(cursor, None).map_err(|e| format!("Invalid IPC schema: {}", e))?;
-    Ok(reader.schema())
+    unsafe {
+        let ffi_array = std::ptr::read(array_ptr);
+        std::ptr::write_bytes(array_ptr, 0, 1);
+        let ffi_schema = std::ptr::read(schema_ptr);
+        std::ptr::write_bytes(schema_ptr, 0, 1);
+        let data = arrow_array::ffi::from_ffi(ffi_array, &ffi_schema)
+            .map_err(|e| format!("Failed to import C Data: {}", e))?;
+        let struct_array = StructArray::from(data);
+        Ok(RecordBatch::from(struct_array))
+    }
+}
+
+/// Imports a Schema from an Arrow C Data Interface pointer.
+/// Takes ownership by reading from the pointer and zeroing the source.
+pub fn import_schema(
+    schema_ptr: *mut arrow_schema::ffi::FFI_ArrowSchema,
+) -> Result<SchemaRef, String> {
+    if schema_ptr.is_null() {
+        return Err("C Data schema pointer is null".to_string());
+    }
+    unsafe {
+        let ffi_schema = std::ptr::read(schema_ptr);
+        std::ptr::write_bytes(schema_ptr, 0, 1);
+        let data_type = DataType::try_from(&ffi_schema)
+            .map_err(|e| format!("Failed to import C Data schema: {}", e))?;
+        match data_type {
+            DataType::Struct(fields) => Ok(Arc::new(Schema::new(fields))),
+            _ => Err("Expected Struct type for schema import".to_string()),
+        }
+    }
+}
+
+/// Imports multiple RecordBatches from contiguous Arrow C Data Interface arrays.
+/// `arrays` points to `count` contiguous FFI_ArrowArray structs.
+/// `schema` points to a single FFI_ArrowSchema shared by all batches.
+/// All pointers are zeroed after reading to prevent double-free.
+pub fn import_batches(
+    arrays: *mut arrow_data::ffi::FFI_ArrowArray,
+    schema: *mut arrow_schema::ffi::FFI_ArrowSchema,
+    count: usize,
+) -> Result<(Vec<RecordBatch>, SchemaRef), String> {
+    if arrays.is_null() || schema.is_null() || count == 0 {
+        return Err("C Data arrays/schema pointer is null or count is 0".to_string());
+    }
+    unsafe {
+        // Read the schema (borrowed for from_ffi, then converted to SchemaRef)
+        let ffi_schema = std::ptr::read(schema);
+        std::ptr::write_bytes(schema, 0, 1);
+
+        let mut batches = Vec::with_capacity(count);
+        for i in 0..count {
+            let array_ptr = arrays.add(i);
+            let ffi_array = std::ptr::read(array_ptr);
+            std::ptr::write_bytes(array_ptr, 0, 1);
+            let data = arrow_array::ffi::from_ffi(ffi_array, &ffi_schema)
+                .map_err(|e| format!("Failed to import C Data batch {}: {}", i, e))?;
+            batches.push(RecordBatch::from(StructArray::from(data)));
+        }
+
+        let data_type = DataType::try_from(&ffi_schema)
+            .map_err(|e| format!("Failed to import C Data schema: {}", e))?;
+        let schema_ref = match data_type {
+            DataType::Struct(fields) => Arc::new(Schema::new(fields)),
+            _ => return Err("Expected Struct type for schema import".to_string()),
+        };
+
+        Ok((batches, schema_ref))
+    }
 }
 
 #[unsafe(no_mangle)]
@@ -110,19 +180,34 @@ pub extern "C" fn free_string(c_string: *mut c_char) {
     };
 }
 
-/// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
+/// Arrow C Data Interface struct holding exported FFI_ArrowArray and FFI_ArrowSchema.
+/// Must be freed with free_ffi_cdata.
 #[repr(C)]
-pub struct FfiBytes {
-    pub data: *const u8,
-    pub len: usize,
-    pub(crate) _owner: Vec<u8>,
+pub struct FfiCData {
+    pub array: *mut arrow_data::ffi::FFI_ArrowArray,
+    pub schema: *mut arrow_schema::ffi::FFI_ArrowSchema,
 }
 
-/// Frees an FfiBytes struct allocated by Rust.
+/// Frees an FfiCData struct and its contained FFI_ArrowArray and FFI_ArrowSchema.
 #[unsafe(no_mangle)]
-pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
+pub extern "C" fn free_ffi_cdata(ptr: *mut FfiCData) {
+    if !ptr.is_null() {
+        unsafe {
+            let cdata = Box::from_raw(ptr);
+            if !cdata.array.is_null() {
+                drop(Box::from_raw(cdata.array));
+            }
+            if !cdata.schema.is_null() {
+                drop(Box::from_raw(cdata.schema));
+            }
+        }
+    }
+}
+
+/// Frees a heap-allocated FFI_ArrowSchema.
+#[unsafe(no_mangle)]
+pub extern "C" fn free_ffi_schema(ptr: *mut arrow_schema::ffi::FFI_ArrowSchema) {
     if !ptr.is_null() {
         unsafe { drop(Box::from_raw(ptr)) };
     }
 }
-

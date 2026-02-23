@@ -6,7 +6,7 @@ namespace lancedb
     using System.Text.Json;
     using System.Threading.Tasks;
     using Apache.Arrow;
-    using Apache.Arrow.Ipc;
+    using Apache.Arrow.C;
 
     /// <summary>
     /// Base class for LanceDB query builders (scan and vector).
@@ -84,7 +84,7 @@ namespace lancedb
         protected abstract IntPtr NativePostfilter(IntPtr ptr);
 
         /// <summary>
-        /// Calls the native execute FFI function.
+        /// Calls the native execute FFI function using Arrow C Data Interface.
         /// </summary>
         private protected abstract void NativeExecute(
             IntPtr ptr, long timeoutMs, uint maxBatchLength, NativeCall.FfiCallback callback);
@@ -339,18 +339,18 @@ namespace lancedb
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
             uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
 
-            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
             {
                 NativeExecute(_ptr, timeoutMs, batchLen, completion);
             }).ConfigureAwait(false);
 
             try
             {
-                return ReadRecordBatchFromFfiBytes(ffiBytesPtr);
+                return ReadRecordBatchFromCData(ffiCDataPtr);
             }
             finally
             {
-                NativeCall.free_ffi_bytes(ffiBytesPtr);
+                NativeCall.free_ffi_cdata(ffiCDataPtr);
             }
         }
 
@@ -421,94 +421,44 @@ namespace lancedb
         /// <returns>The output <see cref="Schema"/>.</returns>
         public async Task<Schema> OutputSchema()
         {
-            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            IntPtr ffiSchemaPtr = await NativeCall.Async(completion =>
             {
                 NativeOutputSchema(_ptr, completion);
             }).ConfigureAwait(false);
 
             try
             {
-                return ReadSchemaFromFfiBytes(ffiBytesPtr);
+                return ReadSchemaFromCData(ffiSchemaPtr);
             }
             finally
             {
-                NativeCall.free_ffi_bytes(ffiBytesPtr);
+                NativeCall.free_ffi_schema(ffiSchemaPtr);
             }
         }
 
-        private static unsafe Schema ReadSchemaFromFfiBytes(IntPtr ffiBytesPtr)
+        private static unsafe Schema ReadSchemaFromCData(IntPtr ffiSchemaPtr)
         {
-            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
-            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
-
-            byte[] managedBytes = new byte[len];
-            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
-
-            using var stream = new System.IO.MemoryStream(managedBytes);
-            using var reader = new ArrowFileReader(stream);
-            return reader.Schema;
+            return CArrowSchemaImporter.ImportSchema(
+                (CArrowSchema*)ffiSchemaPtr);
         }
 
         /// <summary>
-        /// Reads all RecordBatches from an FfiBytes pointer containing Arrow IPC data
-        /// and concatenates them into a single RecordBatch.
+        /// Imports a RecordBatch from an FfiCData pointer using the Arrow C Data Interface.
+        /// The FfiCData struct contains pointers to FFI_ArrowArray and FFI_ArrowSchema.
         /// </summary>
-        private static unsafe RecordBatch ReadRecordBatchFromFfiBytes(IntPtr ffiBytesPtr)
+        private static unsafe RecordBatch ReadRecordBatchFromCData(IntPtr ffiCDataPtr)
         {
-            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
-            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
+            // FfiCData layout: { array: *mut FFI_ArrowArray, schema: *mut FFI_ArrowSchema }
+            var arrayPtr = Marshal.ReadIntPtr(ffiCDataPtr);
+            var schemaPtr = Marshal.ReadIntPtr(ffiCDataPtr + IntPtr.Size);
 
-            byte[] managedBytes = new byte[len];
-            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
+            var schema = CArrowSchemaImporter.ImportSchema(
+                (CArrowSchema*)schemaPtr);
 
-            using var stream = new System.IO.MemoryStream(managedBytes);
-            using var reader = new ArrowFileReader(stream);
+            var recordBatch = CArrowArrayImporter.ImportRecordBatch(
+                (CArrowArray*)arrayPtr, schema);
 
-            var batches = new System.Collections.Generic.List<RecordBatch>();
-            RecordBatch? batch;
-            while ((batch = reader.ReadNextRecordBatch()) != null)
-            {
-                batches.Add(batch);
-            }
-
-            if (batches.Count == 0)
-            {
-                return new RecordBatch(reader.Schema, System.Array.Empty<IArrowArray>(), 0);
-            }
-
-            if (batches.Count == 1)
-            {
-                return batches[0];
-            }
-
-            return ConcatenateBatches(batches, reader.Schema);
-        }
-
-        /// <summary>
-        /// Concatenates multiple RecordBatches into a single RecordBatch.
-        /// </summary>
-        internal static RecordBatch ConcatenateBatches(
-            List<RecordBatch> batches, Schema schema)
-        {
-            int totalLength = 0;
-            foreach (var b in batches)
-            {
-                totalLength += b.Length;
-            }
-
-            var arrays = new IArrowArray[schema.FieldsList.Count];
-            for (int col = 0; col < schema.FieldsList.Count; col++)
-            {
-                var columnArrays = new System.Collections.Generic.List<IArrowArray>(batches.Count);
-                foreach (var b in batches)
-                {
-                    columnArrays.Add(b.Column(col));
-                }
-
-                arrays[col] = ArrowArrayConcatenator.Concatenate(columnArrays);
-            }
-
-            return new RecordBatch(schema, arrays, totalLength);
+            return recordBatch;
         }
 
         /// <summary>

@@ -1,6 +1,8 @@
 //! Shared test helpers for creating database connections and tables.
 #![allow(dead_code)]
 
+use arrow_array::{RecordBatch, RecordBatchIterator};
+use arrow_schema::SchemaRef;
 use lancedb::connection::Connection;
 use lancedb::table::Table;
 use lancedb_ffi::ffi;
@@ -170,22 +172,22 @@ pub fn update_sync(
     });
 }
 
-/// Returns the table's schema as Arrow IPC bytes.
-pub fn schema_ipc_sync(table_ptr: *const Table) -> Vec<u8> {
+/// Returns the table's schema.
+pub fn schema_sync(table_ptr: *const Table) -> SchemaRef {
     unsafe { Arc::increment_strong_count(table_ptr) };
     let table = unsafe { Arc::from_raw(table_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let schema = rt.block_on(async { table.schema().await.unwrap() });
-    lancedb::ipc::schema_to_ipc_file(&schema).unwrap()
+    rt.block_on(async { table.schema().await.unwrap() })
 }
 
-/// Adds data from Arrow IPC bytes to the table.
-pub fn add_ipc_sync(table_ptr: *const Table, ipc_bytes: Vec<u8>) {
+/// Adds data from RecordBatches to the table.
+pub fn add_sync(table_ptr: *const Table, batches: Vec<RecordBatch>) {
     unsafe { Arc::increment_strong_count(table_ptr) };
     let table = unsafe { Arc::from_raw(table_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
+    let schema = batches[0].schema();
+    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     rt.block_on(async {
-        let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
         table.add(reader).execute().await.unwrap();
     });
 }
@@ -222,16 +224,17 @@ pub fn restore_sync(table_ptr: *const Table) {
     rt.block_on(async { table.restore().await.unwrap() });
 }
 
-/// Creates a table with initial IPC data and returns a raw Table pointer.
+/// Creates a table with initial RecordBatch data and returns a raw Table pointer.
 pub fn create_table_with_data_sync(
     connection_ptr: *const Connection,
     name: &str,
-    ipc_bytes: Vec<u8>,
+    batches: Vec<RecordBatch>,
 ) -> *const Table {
     unsafe { Arc::increment_strong_count(connection_ptr) };
     let connection = unsafe { Arc::from_raw(connection_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
+    let schema = batches[0].schema();
+    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     let table = rt.block_on(async {
         connection
             .create_table(name, reader)
@@ -265,14 +268,15 @@ pub fn create_empty_table_with_schema_sync(
 pub fn create_table_exist_ok_sync(
     connection_ptr: *const Connection,
     name: &str,
-    ipc_bytes: Vec<u8>,
+    batches: Vec<RecordBatch>,
 ) -> *const Table {
     use lancedb::database::CreateTableMode;
 
     unsafe { Arc::increment_strong_count(connection_ptr) };
     let connection = unsafe { Arc::from_raw(connection_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let reader = lancedb::ipc::ipc_file_to_batches(ipc_bytes).unwrap();
+    let schema = batches[0].schema();
+    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     let table = rt.block_on(async {
         connection
             .create_table(name, reader)

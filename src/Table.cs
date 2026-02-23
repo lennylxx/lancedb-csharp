@@ -2,13 +2,12 @@ namespace lancedb
 {
     using System;
     using System.Collections.Generic;
-    using System.IO;
     using System.Linq;
     using System.Runtime.InteropServices;
     using System.Text.Json;
     using System.Threading.Tasks;
     using Apache.Arrow;
-    using Apache.Arrow.Ipc;
+    using Apache.Arrow.C;
 
     /// <summary>
     /// A Table is a collection of Records in a LanceDB Database.
@@ -55,12 +54,9 @@ namespace lancedb
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void free_ffi_bytes(IntPtr ptr);
-
-        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void table_add(
-            IntPtr table_ptr, IntPtr ipc_data, nuint ipc_len, IntPtr mode,
-            NativeCall.FfiCallback completion);
+        private static extern unsafe void table_add(
+            IntPtr table_ptr, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
+            IntPtr mode, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_version(
@@ -154,12 +150,12 @@ namespace lancedb
             IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void table_merge_insert(
+        private static extern unsafe void table_merge_insert(
             IntPtr table_ptr, IntPtr on_columns_json,
             bool when_matched_update_all, IntPtr when_matched_update_all_filter,
             bool when_not_matched_insert_all,
             bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
-            IntPtr ipc_data, nuint ipc_len,
+            CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
             [MarshalAs(UnmanagedType.U1)] bool use_index, long timeout_ms,
             NativeCall.FfiCallback completion);
 
@@ -388,32 +384,23 @@ namespace lancedb
         /// </returns>
         public async Task<Schema> Schema()
         {
-            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            IntPtr ffiSchemaPtr = await NativeCall.Async(completion =>
             {
                 table_schema(_handle!.DangerousGetHandle(), completion);
             }).ConfigureAwait(false);
 
             try
             {
-                return ReadSchemaFromFfiBytes(ffiBytesPtr);
+                unsafe
+                {
+                    return CArrowSchemaImporter.ImportSchema(
+                        (CArrowSchema*)ffiSchemaPtr);
+                }
             }
             finally
             {
-                free_ffi_bytes(ffiBytesPtr);
+                NativeCall.free_ffi_schema(ffiSchemaPtr);
             }
-        }
-
-        private static unsafe Schema ReadSchemaFromFfiBytes(IntPtr ffiBytesPtr)
-        {
-            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
-            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
-
-            byte[] managedBytes = new byte[len];
-            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
-
-            using var stream = new MemoryStream(managedBytes);
-            using var reader = new ArrowFileReader(stream);
-            return reader.Schema;
         }
 
         /// <summary>
@@ -452,20 +439,37 @@ namespace lancedb
                     data[i], options.OnBadVectors, options.FillValue);
             }
 
-            byte[] ipcBytes = SerializeToIpc(processed);
             byte[] utf8Mode = NativeCall.ToUtf8(options.Mode);
 
             await NativeCall.Async(completion =>
             {
                 unsafe
                 {
-                    fixed (byte* pData = ipcBytes)
                     fixed (byte* pMode = utf8Mode)
                     {
-                        table_add(
-                            _handle!.DangerousGetHandle(),
-                            (IntPtr)pData, (nuint)ipcBytes.Length, (IntPtr)pMode,
-                            completion);
+                        var cArrays = new CArrowArray[processed.Length];
+                        var cSchemaArr = new CArrowSchema[1];
+                        fixed (CArrowSchema* pSchema = cSchemaArr)
+                        {
+                            CArrowSchemaExporter.ExportSchema(processed[0].Schema, pSchema);
+                            for (int i = 0; i < processed.Length; i++)
+                            {
+                                cArrays[i] = default;
+                                var clone = ArrowExportHelper.CloneBatchForExport(processed[i]);
+                                fixed (CArrowArray* pArr = &cArrays[i])
+                                {
+                                    CArrowArrayExporter.ExportRecordBatch(clone, pArr);
+                                }
+                            }
+                            fixed (CArrowArray* pArrays = cArrays)
+                            {
+                                table_add(
+                                    _handle!.DangerousGetHandle(),
+                                    pArrays, pSchema, (nuint)processed.Length,
+                                    (IntPtr)pMode,
+                                    completion);
+                            }
+                        }
                     }
                 }
             }).ConfigureAwait(false);
@@ -495,25 +499,6 @@ namespace lancedb
         public Task Add(RecordBatch data, AddOptions options)
         {
             return Add(new[] { data }, options);
-        }
-
-        private static byte[] SerializeToIpc(IReadOnlyList<RecordBatch> batches)
-        {
-            if (batches.Count == 0)
-            {
-                throw new ArgumentException("At least one RecordBatch is required.", nameof(batches));
-            }
-
-            using var stream = new MemoryStream();
-            using (var writer = new ArrowFileWriter(stream, batches[0].Schema))
-            {
-                foreach (var batch in batches)
-                {
-                    writer.WriteRecordBatch(batch);
-                }
-                writer.WriteEnd();
-            }
-            return stream.ToArray();
         }
 
         /// <summary>
@@ -1110,7 +1095,6 @@ namespace lancedb
             IReadOnlyList<RecordBatch> data,
             bool useIndex = true, TimeSpan? timeout = null)
         {
-            byte[] ipcBytes = SerializeToIpc(data);
             string onColumnsJson = JsonSerializer.Serialize(onColumns);
             byte[] onColumnsBytes = NativeCall.ToUtf8(onColumnsJson);
             byte[]? matchedFilterBytes = whenMatchedUpdateAllFilter != null
@@ -1123,20 +1107,37 @@ namespace lancedb
             {
                 unsafe
                 {
-                    fixed (byte* pIpc = ipcBytes)
                     fixed (byte* pOnColumns = onColumnsBytes)
                     fixed (byte* pMatchedFilter = matchedFilterBytes)
                     fixed (byte* pSourceDeleteFilter = sourceDeleteFilterBytes)
                     {
-                        table_merge_insert(
-                            _handle!.DangerousGetHandle(),
-                            (IntPtr)pOnColumns,
-                            whenMatchedUpdateAll, (IntPtr)pMatchedFilter,
-                            whenNotMatchedInsertAll,
-                            whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
-                            (IntPtr)pIpc, (nuint)ipcBytes.Length,
-                            useIndex, timeoutMs,
-                            completion);
+                        var cArrays = new CArrowArray[data.Count];
+                        var cSchemaArr = new CArrowSchema[1];
+                        fixed (CArrowSchema* pSchema = cSchemaArr)
+                        {
+                            CArrowSchemaExporter.ExportSchema(data[0].Schema, pSchema);
+                            for (int i = 0; i < data.Count; i++)
+                            {
+                                cArrays[i] = default;
+                                var clone = ArrowExportHelper.CloneBatchForExport(data[i]);
+                                fixed (CArrowArray* pArr = &cArrays[i])
+                                {
+                                    CArrowArrayExporter.ExportRecordBatch(clone, pArr);
+                                }
+                            }
+                            fixed (CArrowArray* pArrays = cArrays)
+                            {
+                                table_merge_insert(
+                                    _handle!.DangerousGetHandle(),
+                                    (IntPtr)pOnColumns,
+                                    whenMatchedUpdateAll, (IntPtr)pMatchedFilter,
+                                    whenNotMatchedInsertAll,
+                                    whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
+                                    pArrays, pSchema, (nuint)data.Count,
+                                    useIndex, timeoutMs,
+                                    completion);
+                            }
+                        }
                     }
                 }
             }).ConfigureAwait(false);
@@ -1168,7 +1169,7 @@ namespace lancedb
             byte[]? columnsBytes = columns != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
 
-            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1185,11 +1186,11 @@ namespace lancedb
 
             try
             {
-                return ReadRecordBatchFromFfiBytes(ffiBytesPtr);
+                return ReadRecordBatchFromCData(ffiCDataPtr);
             }
             finally
             {
-                free_ffi_bytes(ffiBytesPtr);
+                NativeCall.free_ffi_cdata(ffiCDataPtr);
             }
         }
 
@@ -1223,7 +1224,7 @@ namespace lancedb
             byte[]? columnsBytes = columns != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
 
-            IntPtr ffiBytesPtr = await NativeCall.Async(completion =>
+            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1240,43 +1241,24 @@ namespace lancedb
 
             try
             {
-                return ReadRecordBatchFromFfiBytes(ffiBytesPtr);
+                return ReadRecordBatchFromCData(ffiCDataPtr);
             }
             finally
             {
-                free_ffi_bytes(ffiBytesPtr);
+                NativeCall.free_ffi_cdata(ffiCDataPtr);
             }
         }
 
-        private static unsafe RecordBatch ReadRecordBatchFromFfiBytes(IntPtr ffiBytesPtr)
+        private static unsafe RecordBatch ReadRecordBatchFromCData(IntPtr ffiCDataPtr)
         {
-            var dataPtr = Marshal.ReadIntPtr(ffiBytesPtr);
-            var len = Marshal.ReadIntPtr(ffiBytesPtr + IntPtr.Size).ToInt64();
+            var arrayPtr = Marshal.ReadIntPtr(ffiCDataPtr);
+            var schemaPtr = Marshal.ReadIntPtr(ffiCDataPtr + IntPtr.Size);
 
-            byte[] managedBytes = new byte[len];
-            Marshal.Copy(dataPtr, managedBytes, 0, (int)len);
+            var schema = CArrowSchemaImporter.ImportSchema(
+                (CArrowSchema*)schemaPtr);
 
-            using var stream = new MemoryStream(managedBytes);
-            using var reader = new ArrowFileReader(stream);
-
-            var batches = new List<RecordBatch>();
-            RecordBatch? batch;
-            while ((batch = reader.ReadNextRecordBatch()) != null)
-            {
-                batches.Add(batch);
-            }
-
-            if (batches.Count == 0)
-            {
-                return new RecordBatch(reader.Schema, System.Array.Empty<IArrowArray>(), 0);
-            }
-
-            if (batches.Count == 1)
-            {
-                return batches[0];
-            }
-
-            return QueryBase<Query>.ConcatenateBatches(batches, reader.Schema);
+            return CArrowArrayImporter.ImportRecordBatch(
+                (CArrowArray*)arrayPtr, schema);
         }
 
         /// <summary>

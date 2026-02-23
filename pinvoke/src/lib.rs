@@ -14,8 +14,8 @@ mod table;
 
 // Re-export FFI functions for integration tests
 pub use query::{
-    query_analyze_plan, query_execute, query_explain_plan, query_fast_search, query_free,
-    query_full_text_search, query_limit, query_nearest_to, query_offset, query_only_if,
+    query_analyze_plan, query_execute, query_explain_plan, query_fast_search,
+    query_free, query_full_text_search, query_limit, query_nearest_to, query_offset, query_only_if,
     query_output_schema, query_postfilter, query_select, query_with_row_id,
     vector_query_add_query_vector, vector_query_analyze_plan,
     vector_query_bypass_vector_index, vector_query_column, vector_query_distance_range,
@@ -34,7 +34,7 @@ pub use table::{
     table_schema, table_tags_create, table_tags_delete, table_tags_list, table_tags_update,
     table_take_offsets, table_take_row_ids, table_update, table_uri, table_version
 };
-pub use ffi::{free_ffi_bytes, free_string, FfiBytes};
+pub use ffi::{free_ffi_cdata, free_ffi_schema, free_string, FfiCData};
 
 /// Pool of Tokio runtimes (one per CPU core, each with 1 worker thread).
 /// Async FFI calls are dispatched to the least-loaded runtime to avoid
@@ -197,8 +197,7 @@ pub extern "C" fn database_open_table(
 pub extern "C" fn database_create_empty_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
-    schema_ipc_data: *const u8,
-    schema_ipc_len: usize,
+    schema_cdata: *mut arrow_schema::ffi::FFI_ArrowSchema,
     mode: *const c_char,
     storage_options_json: *const c_char,
     location: *const c_char,
@@ -209,10 +208,10 @@ pub extern "C" fn database_create_empty_table(
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
 
-    let schema = if schema_ipc_data.is_null() || schema_ipc_len == 0 {
+    let schema = if schema_cdata.is_null() {
         ffi::minimal_schema()
     } else {
-        match ffi::ipc_to_schema(schema_ipc_data, schema_ipc_len) {
+        match ffi::import_schema(schema_cdata) {
             Ok(s) => s,
             Err(e) => {
                 callback_error(completion, e);
@@ -263,8 +262,9 @@ pub extern "C" fn database_create_empty_table(
 pub extern "C" fn database_create_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
-    ipc_data: *const u8,
-    ipc_len: usize,
+    arrays: *mut arrow_data::ffi::FFI_ArrowArray,
+    schema: *mut arrow_schema::ffi::FFI_ArrowSchema,
+    batch_count: usize,
     mode: *const c_char,
     storage_options_json: *const c_char,
     location: *const c_char,
@@ -278,7 +278,13 @@ pub extern "C" fn database_create_table(
     let location_str = ffi::parse_optional_string(location);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
 
-    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+        Ok(r) => r,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
 
     let create_mode = if exist_ok {
         CreateTableMode::exist_ok(|req| req)
@@ -292,13 +298,10 @@ pub extern "C" fn database_create_table(
     };
 
     crate::spawn(async move {
-        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
-            Ok(r) => r,
-            Err(e) => {
-                callback_error(completion, e);
-                return;
-            }
-        };
+        let reader = arrow_array::RecordBatchIterator::new(
+            batches.into_iter().map(Ok),
+            schema_ref,
+        );
 
         let mut builder = connection
             .create_table(table_name, reader)

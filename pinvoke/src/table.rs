@@ -8,7 +8,6 @@ use std::sync::Arc;
 use crate::FfiCallback;
 use crate::ffi;
 use crate::ffi::parse_distance_type;
-use crate::ffi::FfiBytes;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
 #[unsafe(no_mangle)]
@@ -124,8 +123,9 @@ pub extern "C" fn table_update(
     });
 }
 
-/// Returns the table's Arrow schema serialized as Arrow IPC bytes.
-/// The callback receives a pointer to an FfiBytes struct (caller must free with free_ffi_bytes).
+/// Returns the table's Arrow schema via the C Data Interface.
+/// The callback receives a pointer to a heap-allocated FFI_ArrowSchema
+/// (caller must free with free_ffi_schema).
 #[unsafe(no_mangle)]
 pub extern "C" fn table_schema(
     table_ptr: *const Table,
@@ -134,36 +134,45 @@ pub extern "C" fn table_schema(
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.schema().await {
-            Ok(schema) => match lancedb::ipc::schema_to_ipc_file(&schema) {
-                Ok(ipc_bytes) => {
-                    let ffi_bytes = Box::new(FfiBytes {
-                        data: ipc_bytes.as_ptr(),
-                        len: ipc_bytes.len(),
-                        _owner: ipc_bytes,
-                    });
-                    let ptr = Box::into_raw(ffi_bytes);
-                    completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            Ok(schema) => {
+                match arrow_schema::ffi::FFI_ArrowSchema::try_from(
+                    arrow_schema::DataType::Struct(schema.fields().clone()),
+                ) {
+                    Ok(ffi_schema) => {
+                        let ptr = Box::into_raw(Box::new(ffi_schema));
+                        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                    }
+                    Err(e) => crate::callback_error(completion, e),
                 }
-                Err(e) => crate::callback_error(completion, e),
-            },
+            }
             Err(e) => crate::callback_error(completion, e),
         }
     });
 }
 
-/// Adds data to the table from Arrow IPC file bytes.
+/// Adds data to the table from Arrow C Data Interface arrays.
+/// arrays: pointer to contiguous FFI_ArrowArray structs (one per batch).
+/// schema: pointer to a single FFI_ArrowSchema shared by all batches.
+/// batch_count: number of batches.
 /// mode is "append" (default) or "overwrite" (null = "append").
 #[unsafe(no_mangle)]
 pub extern "C" fn table_add(
     table_ptr: *const Table,
-    ipc_data: *const u8,
-    ipc_len: usize,
+    arrays: *mut arrow_data::ffi::FFI_ArrowArray,
+    schema: *mut arrow_schema::ffi::FFI_ArrowSchema,
+    batch_count: usize,
     mode: *const c_char,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
 
-    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+        Ok(r) => r,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
 
     let add_mode = if mode.is_null() {
         lancedb::table::AddDataMode::Append
@@ -176,14 +185,10 @@ pub extern "C" fn table_add(
     };
 
     crate::spawn(async move {
-        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
-            Ok(r) => r,
-            Err(e) => {
-                crate::callback_error(completion, e);
-                return;
-            }
-        };
-
+        let reader = arrow_array::RecordBatchIterator::new(
+            batches.into_iter().map(Ok),
+            schema_ref,
+        );
         match table.add(reader).mode(add_mode).execute().await {
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -998,7 +1003,7 @@ pub extern "C" fn table_close(table_ptr: *const Table) {
 /// when_not_matched_insert_all: if true, insert non-matching source rows.
 /// when_not_matched_by_source_delete: if true, delete target rows not in source.
 /// when_not_matched_by_source_delete_filter: optional SQL filter for source delete (null for none).
-/// ipc_data/ipc_len: Arrow IPC file bytes containing the new data.
+/// arrays/schema/batch_count: Arrow C Data Interface arrays containing the new data.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_merge_insert(
     table_ptr: *const Table,
@@ -1008,8 +1013,9 @@ pub extern "C" fn table_merge_insert(
     when_not_matched_insert_all: bool,
     when_not_matched_by_source_delete: bool,
     when_not_matched_by_source_delete_filter: *const c_char,
-    ipc_data: *const u8,
-    ipc_len: usize,
+    arrays: *mut arrow_data::ffi::FFI_ArrowArray,
+    schema: *mut arrow_schema::ffi::FFI_ArrowSchema,
+    batch_count: usize,
     use_index: bool,
     timeout_ms: i64,
     completion: FfiCallback,
@@ -1029,7 +1035,13 @@ pub extern "C" fn table_merge_insert(
         Some(crate::ffi::to_string(when_not_matched_by_source_delete_filter))
     };
 
-    let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
+    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+        Ok(r) => r,
+        Err(e) => {
+            crate::callback_error(completion, e);
+            return;
+        }
+    };
 
     crate::spawn(async move {
         let on_columns: Vec<String> = match serde_json::from_str(&on_columns_str) {
@@ -1058,13 +1070,10 @@ pub extern "C" fn table_merge_insert(
             builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
         }
 
-        let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
-            Ok(r) => r,
-            Err(e) => {
-                crate::callback_error(completion, e);
-                return;
-            }
-        };
+        let reader = arrow_array::RecordBatchIterator::new(
+            batches.into_iter().map(Ok),
+            schema_ref,
+        );
 
         match builder.execute(Box::new(reader)).await {
             Ok(_) => {
@@ -1075,7 +1084,7 @@ pub extern "C" fn table_merge_insert(
     });
 }
 
-/// Takes rows by offset positions and returns Arrow IPC bytes.
+/// Takes rows by offset positions and returns results via Arrow C Data Interface.
 /// offsets: pointer to array of u64 offset values.
 /// offsets_len: number of offsets.
 /// columns_json: optional JSON array of column names to select (null for all columns).
@@ -1096,6 +1105,9 @@ pub extern "C" fn table_take_offsets(
     };
 
     crate::spawn(async move {
+        use arrow_array::Array;
+        use arrow_array::StructArray;
+        use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
         use futures::TryStreamExt;
 
         let mut query = table.take_offsets(offset_vec);
@@ -1129,28 +1141,42 @@ pub extern "C" fn table_take_offsets(
             }
         };
 
-        let ipc_result = if batches.is_empty() {
-            lancedb::ipc::schema_to_ipc_file(&schema)
+        let batch = if batches.is_empty() {
+            arrow_array::RecordBatch::new_empty(schema)
+        } else if batches.len() == 1 {
+            batches.into_iter().next().unwrap()
         } else {
-            lancedb::ipc::batches_to_ipc_file(&batches)
+            match arrow_select::concat::concat_batches(&schema, &batches) {
+                Ok(b) => b,
+                Err(e) => {
+                    crate::callback_error(completion, e);
+                    return;
+                }
+            }
         };
 
-        match ipc_result {
-            Ok(ipc_bytes) => {
-                let ffi_bytes = Box::new(FfiBytes {
-                    data: ipc_bytes.as_ptr(),
-                    len: ipc_bytes.len(),
-                    _owner: ipc_bytes,
-                });
-                let ptr = Box::into_raw(ffi_bytes);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        let struct_array: StructArray = batch.into();
+        let data = struct_array.to_data();
+
+        let ffi_array = FFI_ArrowArray::new(&data);
+        let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
             }
-            Err(e) => crate::callback_error(completion, e),
-        }
+        };
+
+        let cdata = Box::new(crate::ffi::FfiCData {
+            array: Box::into_raw(Box::new(ffi_array)),
+            schema: Box::into_raw(Box::new(ffi_schema)),
+        });
+        let ptr = Box::into_raw(cdata);
+        completion(ptr as *const std::ffi::c_void, std::ptr::null());
     });
 }
 
-/// Takes rows by row IDs and returns Arrow IPC bytes.
+/// Takes rows by row IDs and returns results via Arrow C Data Interface.
 /// row_ids: pointer to array of u64 row ID values.
 /// row_ids_len: number of row IDs.
 /// columns_json: optional JSON array of column names to select (null for all columns).
@@ -1171,6 +1197,9 @@ pub extern "C" fn table_take_row_ids(
     };
 
     crate::spawn(async move {
+        use arrow_array::Array;
+        use arrow_array::StructArray;
+        use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
         use futures::TryStreamExt;
 
         let mut query = table.take_row_ids(id_vec);
@@ -1204,23 +1233,37 @@ pub extern "C" fn table_take_row_ids(
             }
         };
 
-        let ipc_result = if batches.is_empty() {
-            lancedb::ipc::schema_to_ipc_file(&schema)
+        let batch = if batches.is_empty() {
+            arrow_array::RecordBatch::new_empty(schema)
+        } else if batches.len() == 1 {
+            batches.into_iter().next().unwrap()
         } else {
-            lancedb::ipc::batches_to_ipc_file(&batches)
+            match arrow_select::concat::concat_batches(&schema, &batches) {
+                Ok(b) => b,
+                Err(e) => {
+                    crate::callback_error(completion, e);
+                    return;
+                }
+            }
         };
 
-        match ipc_result {
-            Ok(ipc_bytes) => {
-                let ffi_bytes = Box::new(FfiBytes {
-                    data: ipc_bytes.as_ptr(),
-                    len: ipc_bytes.len(),
-                    _owner: ipc_bytes,
-                });
-                let ptr = Box::into_raw(ffi_bytes);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        let struct_array: StructArray = batch.into();
+        let data = struct_array.to_data();
+
+        let ffi_array = FFI_ArrowArray::new(&data);
+        let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
             }
-            Err(e) => crate::callback_error(completion, e),
-        }
+        };
+
+        let cdata = Box::new(crate::ffi::FfiCData {
+            array: Box::into_raw(Box::new(ffi_array)),
+            schema: Box::into_raw(Box::new(ffi_schema)),
+        });
+        let ptr = Box::into_raw(cdata);
+        completion(ptr as *const std::ffi::c_void, std::ptr::null());
     });
 }

@@ -2,7 +2,10 @@
 
 mod common;
 
+use arrow_array::{Int32Array, RecordBatch};
+use arrow_schema::{DataType, Field, Schema};
 use lancedb_ffi::*;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]
@@ -83,19 +86,13 @@ fn test_drop_all_tables() {
 
 #[test]
 fn test_create_table_with_data() {
-    use arrow_array::{Int32Array, RecordBatch};
-    use arrow_schema::{DataType, Field, Schema};
-    use std::sync::Arc;
-
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
     let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, false)]));
     let batch =
         RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
-    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "my_table", ipc_bytes);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "my_table", vec![batch]);
     assert_eq!(common::count_rows_sync(table_ptr, None), 3);
 
     let names = common::table_names_sync(conn_ptr);
@@ -107,20 +104,14 @@ fn test_create_table_with_data() {
 
 #[test]
 fn test_create_table_exist_ok_returns_existing() {
-    use arrow_array::{Int32Array, RecordBatch};
-    use arrow_schema::{DataType, Field, Schema};
-    use std::sync::Arc;
-
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
     let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, false)]));
     let batch =
         RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
-    let ipc_bytes = lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap();
-
-    let table1 = common::create_table_with_data_sync(conn_ptr, "dup_table", ipc_bytes.clone());
-    let table2 = common::create_table_exist_ok_sync(conn_ptr, "dup_table", ipc_bytes);
+    let table1 = common::create_table_with_data_sync(conn_ptr, "dup_table", vec![batch.clone()]);
+    let table2 = common::create_table_exist_ok_sync(conn_ptr, "dup_table", vec![batch]);
 
     assert_eq!(common::count_rows_sync(table2, None), 3);
 
@@ -146,11 +137,10 @@ fn test_create_empty_table_with_custom_schema() {
 
     assert_eq!(common::count_rows_sync(table_ptr, None), 0);
 
-    let schema_ipc = common::schema_ipc_sync(table_ptr);
-    let parsed = lancedb_ffi::ffi::ipc_to_schema(schema_ipc.as_ptr(), schema_ipc.len()).unwrap();
-    assert_eq!(parsed.fields().len(), 2);
-    assert_eq!(parsed.field(0).name(), "name");
-    assert_eq!(parsed.field(1).name(), "score");
+    let schema = common::schema_sync(table_ptr);
+    assert_eq!(schema.fields().len(), 2);
+    assert_eq!(schema.field(0).name(), "name");
+    assert_eq!(schema.field(1).name(), "score");
 
     table_close(table_ptr);
     database_close(conn_ptr);

@@ -5,7 +5,6 @@ use std::slice;
 use std::sync::Arc;
 
 use crate::ffi;
-use crate::ffi::FfiBytes;
 use crate::FfiCallback;
 
 /// Parses a JSON string into a Select enum.
@@ -160,8 +159,8 @@ pub extern "C" fn query_nearest_to(
     Arc::into_raw(Arc::new(vector_query))
 }
 
-/// Executes a Query and returns results as Arrow IPC bytes via FfiBytes.
-/// The callback receives a pointer to an FfiBytes struct (caller must free with free_ffi_bytes).
+/// Executes a Query and returns results via Arrow C Data Interface.
+/// The callback receives a pointer to an FfiCData struct (caller must free with free_ffi_cdata).
 /// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
 /// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
 #[unsafe(no_mangle)]
@@ -173,7 +172,7 @@ pub extern "C" fn query_execute(
 ) {
     let query = ffi_clone_arc!(query_ptr, Query);
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_ipc_with_options(query, options, completion);
+    execute_to_cdata_with_options(query, options, completion);
 }
 
 /// Frees a Query pointer.
@@ -200,7 +199,7 @@ pub extern "C" fn query_analyze_plan(query_ptr: *const Query, completion: FfiCal
     analyze_plan_impl(query, completion);
 }
 
-/// Returns the output schema as Arrow IPC bytes via callback (FfiBytes pointer).
+/// Returns the output schema via the C Data Interface (FFI_ArrowSchema pointer).
 #[unsafe(no_mangle)]
 pub extern "C" fn query_output_schema(query_ptr: *const Query, completion: FfiCallback) {
     let query = ffi_clone_arc!(query_ptr, Query);
@@ -439,7 +438,7 @@ pub extern "C" fn vector_query_add_query_vector(
     }
 }
 
-/// Executes a VectorQuery and returns results as Arrow IPC bytes via FfiBytes.
+/// Executes a VectorQuery and returns results via Arrow C Data Interface.
 /// timeout_ms: if >= 0, sets a timeout in milliseconds. If < 0, no timeout.
 /// max_batch_length: if > 0, sets the maximum batch length. If 0, uses default (1024).
 #[unsafe(no_mangle)]
@@ -451,7 +450,7 @@ pub extern "C" fn vector_query_execute(
 ) {
     let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_ipc_with_options(vq, options, completion);
+    execute_to_cdata_with_options(vq, options, completion);
 }
 
 /// Frees a VectorQuery pointer.
@@ -478,7 +477,7 @@ pub extern "C" fn vector_query_analyze_plan(vq_ptr: *const VectorQuery, completi
     analyze_plan_impl(vq, completion);
 }
 
-/// Returns the VectorQuery output schema as Arrow IPC bytes via callback (FfiBytes pointer).
+/// Returns the VectorQuery output schema via the C Data Interface (FFI_ArrowSchema pointer).
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_output_schema(vq_ptr: *const VectorQuery, completion: FfiCallback) {
     let vq = ffi_clone_arc!(vq_ptr, VectorQuery);
@@ -501,8 +500,10 @@ fn build_execution_options(timeout_ms: i64, max_batch_length: u32) -> QueryExecu
     options
 }
 
-/// Executes any query that implements ExecutableQuery and returns Arrow IPC bytes.
-fn execute_to_ipc_with_options<Q>(
+/// Executes any query and returns results via Arrow C Data Interface.
+/// Collects all batches, concatenates into one RecordBatch, then exports
+/// as FFI_ArrowArray + FFI_ArrowSchema (zero-copy on the consumer side).
+fn execute_to_cdata_with_options<Q>(
     query: Arc<Q>,
     options: QueryExecutionOptions,
     completion: FfiCallback,
@@ -510,6 +511,10 @@ fn execute_to_ipc_with_options<Q>(
     Q: ExecutableQuery + Send + Sync + 'static,
 {
     crate::spawn(async move {
+        use arrow_array::Array;
+        use arrow_array::RecordBatch;
+        use arrow_array::StructArray;
+        use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
         use futures::TryStreamExt;
 
         let stream = match query.execute_with_options(options).await {
@@ -521,7 +526,7 @@ fn execute_to_ipc_with_options<Q>(
         };
 
         let schema = stream.schema().clone();
-        let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
+        let batches: Vec<RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
                 crate::callback_error(completion, e);
@@ -529,24 +534,40 @@ fn execute_to_ipc_with_options<Q>(
             }
         };
 
-        let ipc_result = if batches.is_empty() {
-            lancedb::ipc::schema_to_ipc_file(&schema)
+        // Concatenate all batches into a single RecordBatch
+        let batch = if batches.is_empty() {
+            RecordBatch::new_empty(schema)
+        } else if batches.len() == 1 {
+            batches.into_iter().next().unwrap()
         } else {
-            lancedb::ipc::batches_to_ipc_file(&batches)
+            match arrow_select::concat::concat_batches(&schema, &batches) {
+                Ok(b) => b,
+                Err(e) => {
+                    crate::callback_error(completion, e);
+                    return;
+                }
+            }
         };
 
-        match ipc_result {
-            Ok(ipc_bytes) => {
-                let ffi_bytes = Box::new(FfiBytes {
-                    data: ipc_bytes.as_ptr(),
-                    len: ipc_bytes.len(),
-                    _owner: ipc_bytes,
-                });
-                let ptr = Box::into_raw(ffi_bytes);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        // Convert RecordBatch → StructArray → FFI_ArrowArray + FFI_ArrowSchema
+        let struct_array: StructArray = batch.into();
+        let data = struct_array.to_data();
+
+        let ffi_array = FFI_ArrowArray::new(&data);
+        let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
+            Ok(s) => s,
+            Err(e) => {
+                crate::callback_error(completion, e);
+                return;
             }
-            Err(e) => crate::callback_error(completion, e),
-        }
+        };
+
+        let cdata = Box::new(ffi::FfiCData {
+            array: Box::into_raw(Box::new(ffi_array)),
+            schema: Box::into_raw(Box::new(ffi_schema)),
+        });
+        let ptr = Box::into_raw(cdata);
+        completion(ptr as *const std::ffi::c_void, std::ptr::null());
     });
 }
 
@@ -591,6 +612,7 @@ where
 }
 
 /// Shared implementation for output_schema across query types.
+/// Returns a heap-allocated FFI_ArrowSchema (caller must free with free_ffi_schema).
 fn output_schema_impl<Q>(query: Arc<Q>, completion: FfiCallback)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
@@ -598,15 +620,11 @@ where
     crate::spawn(async move {
         match query.output_schema().await {
             Ok(schema) => {
-                let ipc_result = lancedb::ipc::schema_to_ipc_file(&schema);
-                match ipc_result {
-                    Ok(ipc_bytes) => {
-                        let ffi_bytes = Box::new(FfiBytes {
-                            data: ipc_bytes.as_ptr(),
-                            len: ipc_bytes.len(),
-                            _owner: ipc_bytes,
-                        });
-                        let ptr = Box::into_raw(ffi_bytes);
+                match arrow_schema::ffi::FFI_ArrowSchema::try_from(
+                    arrow_schema::DataType::Struct(schema.fields().clone()),
+                ) {
+                    Ok(ffi_schema) => {
+                        let ptr = Box::into_raw(Box::new(ffi_schema));
                         completion(ptr as *const std::ffi::c_void, std::ptr::null());
                     }
                     Err(e) => crate::callback_error(completion, e),

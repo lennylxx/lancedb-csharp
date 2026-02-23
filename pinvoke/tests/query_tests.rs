@@ -4,10 +4,13 @@
 
 mod common;
 
+use arrow_array::{Int32Array, RecordBatch, FixedSizeListArray, Float32Array};
+use arrow_schema::{DataType, Field, Schema};
 use lancedb_ffi::*;
 use lancedb_ffi::ffi;
 use std::ffi::CString;
 use std::ptr;
+use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]
@@ -328,7 +331,7 @@ fn test_query_explain_plan_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "explain_q");
-    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let query = table_create_query(table_ptr);
     query_explain_plan(query, false, common::ffi_callback);
@@ -352,7 +355,7 @@ fn test_query_analyze_plan_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "analyze_q");
-    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let query = table_create_query(table_ptr);
     query_analyze_plan(query, common::ffi_callback);
@@ -376,18 +379,25 @@ fn test_query_output_schema_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "output_s");
-    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let query = table_create_query(table_ptr);
     query_output_schema(query, common::ffi_callback);
     let result = common::ffi_wait_success();
     assert!(!result.is_null());
 
-    let ffi_bytes = result as *mut FfiBytes;
-    let len = unsafe { (*ffi_bytes).len };
-    assert!(len > 0);
+    // Result is now a heap-allocated FFI_ArrowSchema
+    let schema_ptr = result as *mut arrow_schema::ffi::FFI_ArrowSchema;
+    let schema_ref = unsafe { &*schema_ptr };
+    let data_type = arrow_schema::DataType::try_from(schema_ref).unwrap();
+    if let arrow_schema::DataType::Struct(fields) = &data_type {
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name(), "id");
+    } else {
+        panic!("Expected struct data type, got: {:?}", data_type);
+    }
 
-    free_ffi_bytes(ffi_bytes);
+    free_ffi_schema(schema_ptr);
     query_free(query);
     table_close(table_ptr);
     database_close(conn_ptr);
@@ -399,7 +409,7 @@ fn test_query_execute_with_timeout_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "exec_timeout");
-    common::add_ipc_sync(table_ptr, create_test_ipc_data(5));
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let query = table_create_query(table_ptr);
     // timeout_ms=30000, max_batch_length=0 (default)
@@ -407,7 +417,7 @@ fn test_query_execute_with_timeout_ffi() {
     let result = common::ffi_wait_success();
     assert!(!result.is_null());
 
-    free_ffi_bytes(result as *mut FfiBytes);
+    free_ffi_cdata(result as *mut FfiCData);
     query_free(query);
     table_close(table_ptr);
     database_close(conn_ptr);
@@ -419,7 +429,7 @@ fn test_query_execute_with_max_batch_length_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "exec_batch");
-    common::add_ipc_sync(table_ptr, create_test_ipc_data(10));
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
 
     let query = table_create_query(table_ptr);
     // timeout_ms=-1 (no timeout), max_batch_length=2
@@ -427,7 +437,7 @@ fn test_query_execute_with_max_batch_length_ffi() {
     let result = common::ffi_wait_success();
     assert!(!result.is_null());
 
-    free_ffi_bytes(result as *mut FfiBytes);
+    free_ffi_cdata(result as *mut FfiCData);
     query_free(query);
     table_close(table_ptr);
     database_close(conn_ptr);
@@ -524,8 +534,7 @@ fn test_vector_query_explain_plan_ffi() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
-    let ipc = create_vector_ipc_data(5, 3);
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "vq_explain", ipc);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "vq_explain", vec![create_vector_batch(5, 3)]);
 
     let query = table_create_query(table_ptr);
     let vector: [f64; 3] = [1.0, 2.0, 3.0];
@@ -547,21 +556,15 @@ fn test_vector_query_explain_plan_ffi() {
     database_close(conn_ptr);
 }
 
-fn create_test_ipc_data(num_rows: usize) -> Vec<u8> {
-    use arrow_array::{Int32Array, RecordBatch};
-    use arrow_schema::{DataType, Field, Schema};
-    use std::sync::Arc;
+fn create_test_batch(num_rows: usize) -> RecordBatch {
 
     let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
     let ids: Vec<i32> = (0..num_rows as i32).collect();
     let batch = RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(ids))]).unwrap();
-    lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+    batch
 }
 
-fn create_vector_ipc_data(num_rows: usize, dim: usize) -> Vec<u8> {
-    use arrow_array::{FixedSizeListArray, Float32Array, Int32Array, RecordBatch};
-    use arrow_schema::{DataType, Field, Schema};
-    use std::sync::Arc;
+fn create_vector_batch(num_rows: usize, dim: usize) -> RecordBatch {
 
     let values: Vec<f32> = (0..num_rows * dim).map(|i| i as f32).collect();
     let values_array = Float32Array::from(values);
@@ -587,7 +590,7 @@ fn create_vector_ipc_data(num_rows: usize, dim: usize) -> Vec<u8> {
         vec![Arc::new(Int32Array::from(ids)), Arc::new(vector_array)],
     )
     .unwrap();
-    lancedb::ipc::batches_to_ipc_file(&[batch]).unwrap()
+    batch
 }
 
 // ----- Error handling tests -----
@@ -836,4 +839,129 @@ fn test_vector_query_distance_type_invalid_returns_null_and_sets_error() {
     vector_query_free(vq);
     table_close(table_ptr);
     database_close(conn_ptr);
+}
+
+// ----- C Data Interface tests -----
+
+#[test]
+fn test_query_execute_returns_valid_struct() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "exec_cdata");
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
+
+    let query = table_create_query(table_ptr);
+    query_execute(query, -1, 0, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let cdata = result as *mut FfiCData;
+    // Validate the struct has valid pointers
+    let (array_ptr, schema_ptr) = unsafe { ((*cdata).array, (*cdata).schema) };
+    assert!(!array_ptr.is_null());
+    assert!(!schema_ptr.is_null());
+
+    // Verify the schema has the expected "id" field by reading it directly
+    let schema_ref = unsafe { &*schema_ptr };
+    let data_type = arrow_schema::DataType::try_from(schema_ref).unwrap();
+    if let arrow_schema::DataType::Struct(fields) = &data_type {
+        assert_eq!(fields.len(), 1);
+        assert_eq!(fields[0].name(), "id");
+    } else {
+        panic!("Expected struct data type, got: {:?}", data_type);
+    }
+
+    free_ffi_cdata(cdata);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_execute_empty_table() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "exec_cdata_empty");
+
+    let query = table_create_query(table_ptr);
+    query_execute(query, -1, 0, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let cdata = result as *mut FfiCData;
+    let (array_ptr, schema_ptr) = unsafe { ((*cdata).array, (*cdata).schema) };
+    assert!(!array_ptr.is_null());
+    assert!(!schema_ptr.is_null());
+
+    free_ffi_cdata(cdata);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_vector_query_execute_returns_valid_struct() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_with_data_sync(
+        conn_ptr, "vq_exec_cdata", vec![create_vector_batch(20, 4)]);
+
+    let query = table_create_query(table_ptr);
+    let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
+    let vq = query_nearest_to(query, vector.as_ptr(), 4);
+    let vq = vector_query_limit(vq, 5);
+
+    vector_query_execute(vq, -1, 0, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let cdata = result as *mut FfiCData;
+    let (array_ptr, schema_ptr) = unsafe { ((*cdata).array, (*cdata).schema) };
+    assert!(!array_ptr.is_null());
+    assert!(!schema_ptr.is_null());
+
+    // Import and verify schema has id, vector, _distance columns
+    let schema_ref = unsafe { &*schema_ptr };
+    let data_type = arrow_schema::DataType::try_from(schema_ref).unwrap();
+    if let arrow_schema::DataType::Struct(fields) = &data_type {
+        let names: Vec<&str> = fields.iter().map(|f| f.name().as_str()).collect();
+        assert!(names.contains(&"id"), "Missing 'id' field, got: {:?}", names);
+        assert!(names.contains(&"vector"), "Missing 'vector' field, got: {:?}", names);
+        assert!(names.contains(&"_distance"), "Missing '_distance' field, got: {:?}", names);
+    } else {
+        panic!("Expected struct data type, got: {:?}", data_type);
+    }
+
+    free_ffi_cdata(cdata);
+    query_free(query);
+    vector_query_free(vq);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_query_execute_with_timeout() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "cdata_timeout");
+    common::add_sync(table_ptr, vec![create_test_batch(5)]);
+
+    let query = table_create_query(table_ptr);
+    query_execute(query, 30000, 0, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    free_ffi_cdata(result as *mut FfiCData);
+    query_free(query);
+    table_close(table_ptr);
+    database_close(conn_ptr);
+}
+
+#[test]
+fn test_free_ffi_cdata_null_is_safe() {
+    free_ffi_cdata(std::ptr::null_mut());
 }
