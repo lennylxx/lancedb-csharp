@@ -11,7 +11,7 @@ lancedb-csharp/
 
 The SDK has two layers:
 
-- **`pinvoke/`** — A Rust `cdylib` that exposes C-compatible FFI functions. Uses a global Tokio runtime to bridge Rust async operations into synchronous FFI calls with C function pointer callbacks.
+- **`pinvoke/`** — A Rust `cdylib` that exposes C-compatible FFI functions. Uses a pool of Tokio runtimes (one per CPU core) with least-loaded dispatch to bridge Rust async operations into synchronous FFI calls with C function pointer callbacks.
 - **`src/`** — A C# class library that declares `[DllImport]` extern methods matching the Rust FFI surface, and wraps them in idiomatic async APIs using `TaskCompletionSource`.
 
 Rust objects (`Connection`, `Table`, `Query`, `VectorQuery`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup. Data crosses the FFI boundary as Arrow IPC byte buffers.
@@ -26,7 +26,7 @@ Query and VectorQuery builder methods use a borrow-clone-return pattern: the Rus
 
 1. Add the `#[unsafe(no_mangle)] pub extern "C" fn` in the appropriate Rust file under `pinvoke/src/` (edition 2024 requires `unsafe(...)` for `no_mangle`).
 2. Add a matching `[DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]` declaration in the corresponding C# class.
-3. For async Rust operations: use `RUNTIME.spawn` with a completion callback on the Rust side, and `TaskCompletionSource<IntPtr>` with a pinned `GCHandle` delegate on the C# side.
+3. For async Rust operations: use `crate::spawn` with a completion callback on the Rust side, and `TaskCompletionSource<IntPtr>` with a pinned `GCHandle` delegate on the C# side. The `spawn` function dispatches to the least-loaded runtime in the pool.
 
 ## Conventions
 

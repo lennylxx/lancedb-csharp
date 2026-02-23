@@ -343,38 +343,39 @@ public static class Program
         string desc = warmup ? "Warmup queries" : "Timed queries";
         int total = queries.Length;
         int completed = 0;
-        var latencies = new List<double>();
-        var latencyLock = new object();
+        var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
 
-        // Build a queue of (datasetIdx, queryVector)
-        var taskQueue = new System.Collections.Concurrent.ConcurrentQueue<(int datasetIdx, double[] vector)>();
-        for (int i = 0; i < total; i++)
-        {
-            taskQueue.Enqueue((i % tables.Count, queries[i]));
-        }
+        // Channel for distributing work items to workers
+        var channel = System.Threading.Channels.Channel.CreateBounded<(int datasetIdx, double[] vector)>(
+            new System.Threading.Channels.BoundedChannelOptions(NumWorkers * ConcurrentQueriesPerWorker)
+            {
+                SingleWriter = true,
+                FullMode = System.Threading.Channels.BoundedChannelFullMode.Wait
+            });
 
+        // Start worker tasks — each worker pulls from the channel with limited concurrency
         var workers = new Task[NumWorkers];
         for (int w = 0; w < NumWorkers; w++)
         {
             workers[w] = Task.Run(async () =>
             {
-                // Each worker processes items with limited concurrency
                 var semaphore = new SemaphoreSlim(ConcurrentQueriesPerWorker);
-                var pending = new List<Task>();
+                var inflight = new List<Task>();
 
-                while (taskQueue.TryDequeue(out var item))
+                await foreach (var item in channel.Reader.ReadAllAsync().ConfigureAwait(false))
                 {
-                    await semaphore.WaitAsync();
-                    var task = Task.Run(async () =>
+                    await semaphore.WaitAsync().ConfigureAwait(false);
+                    var captured = item;
+                    inflight.Add(Task.Run(async () =>
                     {
                         try
                         {
                             double latency = await ExecuteQuery(
-                                tables[item.datasetIdx], item.vector);
+                                tables[captured.datasetIdx], captured.vector).ConfigureAwait(false);
 
                             if (!warmup)
                             {
-                                lock (latencyLock) { latencies.Add(latency); }
+                                latencies.Add(latency);
                             }
 
                             int done = Interlocked.Increment(ref completed);
@@ -388,18 +389,24 @@ public static class Program
                         {
                             semaphore.Release();
                         }
-                    });
-                    pending.Add(task);
+                    }));
                 }
 
-                await Task.WhenAll(pending);
+                await Task.WhenAll(inflight).ConfigureAwait(false);
             });
         }
 
-        await Task.WhenAll(workers);
+        // Feed work items into the channel
+        for (int i = 0; i < total; i++)
+        {
+            await channel.Writer.WriteAsync((i % tables.Count, queries[i])).ConfigureAwait(false);
+        }
+        channel.Writer.Complete();
+
+        await Task.WhenAll(workers).ConfigureAwait(false);
         Console.WriteLine();
 
-        return latencies;
+        return latencies.ToList();
     }
 
     private static async Task<double> ExecuteQuery(Table table, double[] queryVector)

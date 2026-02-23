@@ -14,6 +14,10 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 - **Versioning** — checkout, restore, list versions; tag management
 - **Query introspection** — explain plans, analyze plans, output schemas
 
+## Performance
+
+The native Rust layer uses a pool of Tokio runtimes (one per CPU core) with least-loaded dispatch to maximize async throughput across the FFI boundary. Under concurrent workloads, the C# SDK achieves ~90% of native Rust throughput.
+
 ## Prerequisites
 
 - [.NET 8.0 SDK](https://dotnet.microsoft.com) or later
@@ -25,7 +29,7 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 ./build.sh
 ```
 
-This builds both the Rust native library (`lancedb_ffi`) and the C# project. The Rust crate is built automatically via an MSBuild `BeforeTargets="Build"` step.
+This builds the Rust native library (`lancedb_ffi`) first, then the C# project. The C# build copies the pre-built native library to the output directory.
 
 ## Test
 
@@ -33,7 +37,7 @@ This builds both the Rust native library (`lancedb_ffi`) and the C# project. The
 ./test.sh
 ```
 
-Runs both Rust integration tests and C# xUnit tests.
+Runs both Rust integration tests and C# xUnit tests. The Rust native library must be built first.
 
 ## Quick Start
 

@@ -19,11 +19,9 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
-  <!-- Build the Rust native library before the C# build -->
   <PropertyGroup>
     <CargoProfile Condition="'$(Configuration)' == 'Release'">release</CargoProfile>
     <CargoProfile Condition="'$(CargoProfile)' == ''">debug</CargoProfile>
-    <CargoFlags Condition="'$(CargoProfile)' == 'release'">--release</CargoFlags>
   </PropertyGroup>
 
   <ItemGroup>

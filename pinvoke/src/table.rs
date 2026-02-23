@@ -52,7 +52,7 @@ pub extern "C" fn table_count_rows(
     } else {
         Some(crate::ffi::to_string(filter))
     };
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.count_rows(filter).await {
             Ok(count) => {
                 completion(count as *const std::ffi::c_void, std::ptr::null());
@@ -71,7 +71,7 @@ pub extern "C" fn table_delete(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let predicate = crate::ffi::to_string(predicate);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.delete(&predicate).await {
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -98,7 +98,7 @@ pub extern "C" fn table_update(
     };
     let columns_str = crate::ffi::to_string(columns_json);
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let columns: Vec<(String, String)> = match serde_json::from_str(&columns_str) {
             Ok(c) => c,
             Err(e) => {
@@ -132,7 +132,7 @@ pub extern "C" fn table_schema(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.schema().await {
             Ok(schema) => match lancedb::ipc::schema_to_ipc_file(&schema) {
                 Ok(ipc_bytes) => {
@@ -175,7 +175,7 @@ pub extern "C" fn table_add(
         }
     };
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
             Ok(r) => r,
             Err(e) => {
@@ -200,7 +200,7 @@ pub extern "C" fn table_version(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.version().await {
             Ok(version) => {
                 completion(version as *const std::ffi::c_void, std::ptr::null());
@@ -218,7 +218,7 @@ pub extern "C" fn table_list_versions(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.list_versions().await {
             Ok(versions) => {
                 let json_versions: Vec<serde_json::Value> = versions
@@ -248,7 +248,7 @@ pub extern "C" fn table_checkout(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.checkout(version).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -267,7 +267,7 @@ pub extern "C" fn table_checkout_tag(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag = crate::ffi::to_string(tag);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.checkout_tag(&tag).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -284,7 +284,7 @@ pub extern "C" fn table_checkout_latest(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.checkout_latest().await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -301,7 +301,7 @@ pub extern "C" fn table_restore(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.restore().await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -319,7 +319,7 @@ pub extern "C" fn table_uri(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.uri().await {
             Ok(uri) => {
                 let c_str = CString::new(uri).unwrap_or_default();
@@ -362,7 +362,7 @@ pub extern "C" fn table_create_index(
         Some(crate::ffi::to_string(name))
     };
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let columns: Vec<String> = match serde_json::from_str(&columns_str) {
             Ok(c) => c,
             Err(e) => {
@@ -602,7 +602,7 @@ pub extern "C" fn table_list_indices(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.list_indices().await {
             Ok(indices) => {
                 let json_indices: Vec<serde_json::Value> = indices
@@ -636,7 +636,7 @@ pub extern "C" fn table_add_columns(
     let transforms_str = crate::ffi::to_string(transforms_json);
     let pairs: Vec<(String, String)> = serde_json::from_str(&transforms_str).unwrap_or_default();
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let transform = NewColumnTransform::SqlExpressions(pairs);
         match table.add_columns(transform, None).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
@@ -673,7 +673,7 @@ pub extern "C" fn table_alter_columns(
         })
         .collect();
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.alter_columns(&alterations).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
             Err(e) => crate::callback_error(completion, e),
@@ -693,7 +693,7 @@ pub extern "C" fn table_drop_columns(
     let json_str = crate::ffi::to_string(columns_json);
     let columns: Vec<String> = serde_json::from_str(&json_str).unwrap_or_default();
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
         match table.drop_columns(&col_refs).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
@@ -716,7 +716,7 @@ pub extern "C" fn table_optimize(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         // Always run compaction first
         let compaction_stats = match table
             .optimize(OptimizeAction::Compact {
@@ -787,7 +787,7 @@ pub extern "C" fn table_tags_list(
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.tags().await {
             Ok(tags) => match tags.list().await {
                 Ok(tag_map) => {
@@ -821,7 +821,7 @@ pub extern "C" fn table_tags_create(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.create(&tag_name, version).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
@@ -841,7 +841,7 @@ pub extern "C" fn table_tags_delete(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.delete(&tag_name).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
@@ -862,7 +862,7 @@ pub extern "C" fn table_tags_update(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.update(&tag_name, version).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
@@ -882,7 +882,7 @@ pub extern "C" fn table_tags_get_version(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.tags().await {
             Ok(tags) => match tags.get_version(&tag_name).await {
                 Ok(version) => {
@@ -904,7 +904,7 @@ pub extern "C" fn table_drop_index(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let index_name = crate::ffi::to_string(name);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.drop_index(&index_name).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
             Err(e) => crate::callback_error(completion, e),
@@ -921,7 +921,7 @@ pub extern "C" fn table_prewarm_index(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let index_name = crate::ffi::to_string(name);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.prewarm_index(&index_name).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
             Err(e) => crate::callback_error(completion, e),
@@ -945,7 +945,7 @@ pub extern "C" fn table_wait_for_index(
     } else {
         std::time::Duration::from_secs(300)
     };
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
         match table.wait_for_index(&name_refs, timeout).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
@@ -963,7 +963,7 @@ pub extern "C" fn table_index_stats(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let name = crate::ffi::to_string(index_name);
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match table.index_stats(&name).await {
             Ok(Some(stats)) => {
                 let json = serde_json::json!({
@@ -1031,7 +1031,7 @@ pub extern "C" fn table_merge_insert(
 
     let ipc_bytes = unsafe { std::slice::from_raw_parts(ipc_data, ipc_len) }.to_vec();
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let on_columns: Vec<String> = match serde_json::from_str(&on_columns_str) {
             Ok(c) => c,
             Err(e) => {
@@ -1095,7 +1095,7 @@ pub extern "C" fn table_take_offsets(
         Some(crate::ffi::to_string(columns_json))
     };
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         use futures::TryStreamExt;
 
         let mut query = table.take_offsets(offset_vec);
@@ -1170,7 +1170,7 @@ pub extern "C" fn table_take_row_ids(
         Some(crate::ffi::to_string(columns_json))
     };
 
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         use futures::TryStreamExt;
 
         let mut query = table.take_row_ids(id_vec);

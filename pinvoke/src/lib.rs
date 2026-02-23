@@ -36,8 +36,57 @@ pub use table::{
 };
 pub use ffi::{free_ffi_bytes, free_string, FfiBytes};
 
-static RUNTIME: LazyLock<Runtime> =
-    LazyLock::new(|| Runtime::new().expect("Failed to create tokio runtime"));
+/// Pool of Tokio runtimes (one per CPU core, each with 1 worker thread).
+/// Async FFI calls are dispatched to the least-loaded runtime to avoid
+/// task queue contention while keeping isolated per-runtime scheduling.
+static RUNTIME_POOL: LazyLock<Vec<Runtime>> = LazyLock::new(|| {
+    let n = std::thread::available_parallelism()
+        .map(|p| p.get())
+        .unwrap_or(4);
+    (0..n)
+        .map(|_| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(1)
+                .enable_all()
+                .build()
+                .expect("Failed to create tokio runtime")
+        })
+        .collect()
+});
+
+/// Per-runtime inflight task counters for least-loaded dispatch.
+static RUNTIME_LOAD: LazyLock<Vec<std::sync::atomic::AtomicUsize>> = LazyLock::new(|| {
+    (0..RUNTIME_POOL.len())
+        .map(|_| std::sync::atomic::AtomicUsize::new(0))
+        .collect()
+});
+
+/// Spawns a future on the least-loaded runtime from the pool.
+pub(crate) fn spawn<F>(future: F) -> tokio::task::JoinHandle<F::Output>
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    // Find runtime with fewest inflight tasks
+    let mut min_idx = 0;
+    let mut min_load = RUNTIME_LOAD[0].load(std::sync::atomic::Ordering::Relaxed);
+    for i in 1..RUNTIME_POOL.len() {
+        let load = RUNTIME_LOAD[i].load(std::sync::atomic::Ordering::Relaxed);
+        if load < min_load {
+            min_load = load;
+            min_idx = i;
+        }
+    }
+
+    RUNTIME_LOAD[min_idx].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let idx = min_idx;
+
+    RUNTIME_POOL[idx].spawn(async move {
+        let result = future.await;
+        RUNTIME_LOAD[idx].fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+        result
+    })
+}
 
 /// Callback type for async FFI operations.
 /// On success: result is non-null, error is null.
@@ -69,7 +118,7 @@ pub extern "C" fn database_connect(
 
     let has_session = index_cache_size_bytes >= 0 || metadata_cache_size_bytes >= 0;
 
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let mut builder = lancedb::connection::connect(&dataset_uri);
         if let Some(opts) = storage_opts {
             builder = builder.storage_options(opts);
@@ -120,7 +169,7 @@ pub extern "C" fn database_open_table(
     let location_str = ffi::parse_optional_string(location);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let mut builder = connection.open_table(table_name);
         if let Some(opts) = storage_opts {
             builder = builder.storage_options(opts);
@@ -187,7 +236,7 @@ pub extern "C" fn database_create_empty_table(
         CreateTableMode::Create
     };
 
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let mut builder = connection
             .create_empty_table(table_name, schema)
             .mode(create_mode);
@@ -242,7 +291,7 @@ pub extern "C" fn database_create_table(
         }
     };
 
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let reader = match lancedb::ipc::ipc_file_to_batches(ipc_bytes) {
             Ok(r) => r,
             Err(e) => {
@@ -291,7 +340,7 @@ pub extern "C" fn database_table_names(
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     let start_after_str = ffi::parse_optional_string(start_after);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         let mut builder = connection.table_names();
         if let Some(sa) = start_after_str {
             builder = builder.start_after(sa);
@@ -321,7 +370,7 @@ pub extern "C" fn database_drop_table(
 ) {
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match connection.drop_table(&table_name, &[]).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
@@ -337,7 +386,7 @@ pub extern "C" fn database_drop_all_tables(
     completion: FfiCallback,
 ) {
     let connection = ffi_clone_arc!(connection_ptr, Connection);
-    RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match connection.drop_all_tables(&[]).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());

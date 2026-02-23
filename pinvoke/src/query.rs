@@ -509,7 +509,7 @@ fn execute_to_ipc_with_options<Q>(
 ) where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         use futures::TryStreamExt;
 
         let stream = match query.execute_with_options(options).await {
@@ -555,7 +555,7 @@ fn explain_plan_impl<Q>(query: Arc<Q>, verbose: bool, completion: FfiCallback)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match query.explain_plan(verbose).await {
             Ok(plan) => {
                 let c_str =
@@ -575,7 +575,7 @@ fn analyze_plan_impl<Q>(query: Arc<Q>, completion: FfiCallback)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match query.analyze_plan().await {
             Ok(plan) => {
                 let c_str =
@@ -595,7 +595,7 @@ fn output_schema_impl<Q>(query: Arc<Q>, completion: FfiCallback)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
-    crate::RUNTIME.spawn(async move {
+    crate::spawn(async move {
         match query.output_schema().await {
             Ok(schema) => {
                 let ipc_result = lancedb::ipc::schema_to_ipc_file(&schema);
