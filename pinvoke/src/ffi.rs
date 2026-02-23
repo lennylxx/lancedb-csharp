@@ -54,6 +54,7 @@ pub fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
         "l2" => Ok(lancedb::DistanceType::L2),
         "cosine" => Ok(lancedb::DistanceType::Cosine),
         "dot" => Ok(lancedb::DistanceType::Dot),
+        "hamming" => Ok(lancedb::DistanceType::Hamming),
         _ => Err(format!("Unknown distance type: {}", s)),
     }
 }
@@ -98,3 +99,30 @@ pub fn ipc_to_schema(ipc_data: *const u8, ipc_len: usize) -> Result<SchemaRef, S
         FileReader::try_new(cursor, None).map_err(|e| format!("Invalid IPC schema: {}", e))?;
     Ok(reader.schema())
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn free_string(c_string: *mut c_char) {
+    unsafe {
+        if c_string.is_null() {
+            return;
+        }
+        drop(CString::from_raw(c_string))
+    };
+}
+
+/// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
+#[repr(C)]
+pub struct FfiBytes {
+    pub data: *const u8,
+    pub len: usize,
+    pub(crate) _owner: Vec<u8>,
+}
+
+/// Frees an FfiBytes struct allocated by Rust.
+#[unsafe(no_mangle)]
+pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)) };
+    }
+}
+

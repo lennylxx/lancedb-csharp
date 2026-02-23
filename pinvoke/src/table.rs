@@ -7,6 +7,8 @@ use std::sync::Arc;
 
 use crate::FfiCallback;
 use crate::ffi;
+use crate::ffi::parse_distance_type;
+use crate::ffi::FfiBytes;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
 #[unsafe(no_mangle)]
@@ -592,10 +594,6 @@ fn build_index(index_type: &str, config: &serde_json::Value) -> Result<LanceInde
     }
 }
 
-fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
-    crate::ffi::parse_distance_type(s)
-}
-
 /// Returns the table's indices as a JSON string.
 /// Caller must free the returned string with free_string().
 #[unsafe(no_mangle)]
@@ -987,22 +985,6 @@ pub extern "C" fn table_index_stats(
     });
 }
 
-/// Opaque byte buffer returned from FFI. Must be freed with free_ffi_bytes.
-#[repr(C)]
-pub struct FfiBytes {
-    pub data: *const u8,
-    pub len: usize,
-    pub(crate) _owner: Vec<u8>,
-}
-
-/// Frees an FfiBytes struct allocated by Rust.
-#[unsafe(no_mangle)]
-pub extern "C" fn free_ffi_bytes(ptr: *mut FfiBytes) {
-    if !ptr.is_null() {
-        unsafe { drop(Box::from_raw(ptr)) };
-    }
-}
-
 /// Closes the table and frees the underlying Arc.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_close(table_ptr: *const Table) {
@@ -1241,14 +1223,4 @@ pub extern "C" fn table_take_row_ids(
             Err(e) => crate::callback_error(completion, e),
         }
     });
-}
-
-#[unsafe(no_mangle)]
-pub extern "C" fn free_string(c_string: *mut c_char) {
-    unsafe {
-        if c_string.is_null() {
-            return;
-        }
-        drop(CString::from_raw(c_string))
-    };
 }

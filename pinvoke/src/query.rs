@@ -5,7 +5,7 @@ use std::slice;
 use std::sync::Arc;
 
 use crate::ffi;
-use crate::table::FfiBytes;
+use crate::ffi::FfiBytes;
 use crate::FfiCallback;
 
 /// Parses a JSON string into a Select enum.
