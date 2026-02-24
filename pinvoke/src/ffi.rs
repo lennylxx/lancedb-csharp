@@ -65,7 +65,7 @@ pub fn parse_optional_json_map(json_ptr: *const c_char) -> Option<HashMap<String
         return None;
     }
     let json_str = to_string(json_ptr);
-    serde_json::from_str(&json_str).ok()
+    sonic_rs::from_str(&json_str).ok()
 }
 
 /// Parses an optional JSON-encoded string array from a nullable C string.
@@ -75,7 +75,7 @@ pub fn parse_optional_json_list(json_ptr: *const c_char) -> Option<Vec<String>> 
         return None;
     }
     let json_str = to_string(json_ptr);
-    serde_json::from_str(&json_str).ok()
+    sonic_rs::from_str(&json_str).ok()
 }
 
 /// Parses an optional C string pointer into an Option<String>.

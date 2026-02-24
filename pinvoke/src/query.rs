@@ -3,6 +3,7 @@ use lancedb::query::{ExecutableQuery, Query, QueryBase, QueryExecutionOptions, S
 use lancedb::table::Table;
 use libc::{c_char, c_double, size_t};
 use serde::Deserialize;
+use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::slice;
 use std::sync::Arc;
 
@@ -12,34 +13,27 @@ use crate::FfiCallback;
 /// Parses a JSON string into a Select enum.
 /// JSON array of strings → Select::Columns, JSON object → Select::Dynamic.
 fn parse_select(json: &str) -> Result<Select, String> {
-    let value: serde_json::Value =
-        serde_json::from_str(json).map_err(|e| format!("Invalid select JSON: {}", e))?;
-    match value {
-        serde_json::Value::Array(arr) => {
-            let columns: Vec<String> = arr
-                .into_iter()
-                .map(|v| {
-                    v.as_str()
-                        .ok_or_else(|| "Select array elements must be strings".to_string())
-                        .map(|s| s.to_owned())
-                })
-                .collect::<Result<_, _>>()?;
-            Ok(Select::Columns(columns))
+    let value: sonic_rs::Value =
+        sonic_rs::from_str(json).map_err(|e| format!("Invalid select JSON: {}", e))?;
+    if let Some(arr) = value.as_array() {
+        let mut columns = Vec::new();
+        for v in arr.iter() {
+            let s = v.as_str()
+                .ok_or_else(|| "Select array elements must be strings".to_string())?;
+            columns.push(s.to_owned());
         }
-        serde_json::Value::Object(obj) => {
-            let pairs: Vec<(String, String)> = obj
-                .into_iter()
-                .map(|(k, v)| {
-                    let expr = v
-                        .as_str()
-                        .ok_or_else(|| "Select object values must be strings".to_string())?
-                        .to_owned();
-                    Ok((k, expr))
-                })
-                .collect::<Result<_, String>>()?;
-            Ok(Select::Dynamic(pairs))
+        Ok(Select::Columns(columns))
+    } else if let Some(obj) = value.as_object() {
+        let mut pairs = Vec::new();
+        for (k, v) in obj.iter() {
+            let expr = v.as_str()
+                .ok_or_else(|| "Select object values must be strings".to_string())?
+                .to_owned();
+            pairs.push((k.to_owned(), expr));
         }
-        _ => Err("Select must be a JSON array or object".to_string()),
+        Ok(Select::Dynamic(pairs))
+    } else {
+        Err("Select must be a JSON array or object".to_string())
     }
 }
 
@@ -51,7 +45,7 @@ fn parse_select(json: &str) -> Result<Select, String> {
 /// Used by the query_* and vector_query_* FFI functions.
 #[derive(Deserialize, Default)]
 pub(crate) struct QueryParams {
-    pub select: Option<serde_json::Value>,
+    pub select: Option<sonic_rs::Value>,
     #[serde(rename = "where")]
     pub predicate: Option<String>,
     pub limit: Option<u64>,
@@ -83,7 +77,7 @@ pub(crate) fn parse_query_params(json: *const c_char) -> Result<QueryParams, Str
     if json_str.is_empty() {
         return Ok(QueryParams::default());
     }
-    serde_json::from_str(&json_str).map_err(|e| format!("Invalid query params JSON: {}", e))
+    sonic_rs::from_str(&json_str).map_err(|e| format!("Invalid query params JSON: {}", e))
 }
 
 /// Applies base query parameters (shared between Query and VectorQuery).
