@@ -986,6 +986,80 @@ pub extern "C" fn table_close(table_ptr: *const Table) {
     ffi_free!(table_ptr, Table);
 }
 
+/// C-compatible struct for fragment row count summary statistics.
+#[repr(C)]
+pub struct FfiFragmentSummaryStats {
+    pub min: u64,
+    pub max: u64,
+    pub mean: u64,
+    pub p25: u64,
+    pub p50: u64,
+    pub p75: u64,
+    pub p99: u64,
+}
+
+/// C-compatible struct for fragment-level statistics.
+#[repr(C)]
+pub struct FfiFragmentStats {
+    pub num_fragments: u64,
+    pub num_small_fragments: u64,
+    pub lengths: FfiFragmentSummaryStats,
+}
+
+/// C-compatible struct for table statistics, passed across FFI without JSON overhead.
+#[repr(C)]
+pub struct FfiTableStats {
+    pub total_bytes: u64,
+    pub num_rows: u64,
+    pub num_indices: u64,
+    pub fragment_stats: FfiFragmentStats,
+}
+
+/// Returns table statistics as a heap-allocated FfiTableStats struct.
+/// Caller must free the returned pointer with table_stats_free.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_stats(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.stats().await {
+            Ok(stats) => {
+                let ffi_stats = Box::new(FfiTableStats {
+                    total_bytes: stats.total_bytes as u64,
+                    num_rows: stats.num_rows as u64,
+                    num_indices: stats.num_indices as u64,
+                    fragment_stats: FfiFragmentStats {
+                        num_fragments: stats.fragment_stats.num_fragments as u64,
+                        num_small_fragments: stats.fragment_stats.num_small_fragments as u64,
+                        lengths: FfiFragmentSummaryStats {
+                            min: stats.fragment_stats.lengths.min as u64,
+                            max: stats.fragment_stats.lengths.max as u64,
+                            mean: stats.fragment_stats.lengths.mean as u64,
+                            p25: stats.fragment_stats.lengths.p25 as u64,
+                            p50: stats.fragment_stats.lengths.p50 as u64,
+                            p75: stats.fragment_stats.lengths.p75 as u64,
+                            p99: stats.fragment_stats.lengths.p99 as u64,
+                        },
+                    },
+                });
+                let ptr = Box::into_raw(ffi_stats);
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+/// Frees an FfiTableStats pointer returned by table_stats.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_stats_free(ptr: *mut FfiTableStats) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)); }
+    }
+}
+
 /// Merge insert (upsert) operation on the table.
 /// on_columns_json: JSON array of column names to match on, e.g. '["id"]'.
 /// when_matched_update_all: if true, update matched rows.

@@ -1534,5 +1534,80 @@ namespace lancedb.tests
             var indices = await fixture.Table.ListIndices();
             Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_RQ");
         }
+
+        /// <summary>
+        /// Stats should return valid statistics for an empty table.
+        /// </summary>
+        [Fact]
+        public async Task Stats_EmptyTable_ReturnsZeroRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("stats_empty");
+
+            var stats = await fixture.Table.Stats();
+
+            Assert.NotNull(stats);
+            Assert.Equal(0UL, stats.NumRows);
+            Assert.Equal(0UL, stats.NumIndices);
+            Assert.NotNull(stats.FragmentStats);
+            Assert.Equal(0UL, stats.FragmentStats.NumFragments);
+            Assert.Equal(0UL, stats.FragmentStats.NumSmallFragments);
+        }
+
+        /// <summary>
+        /// Stats should reflect data after rows are added.
+        /// </summary>
+        [Fact]
+        public async Task Stats_AfterAdd_ReflectsData()
+        {
+            var batch = CreateVectorBatch(100, 8);
+            using var fixture = await TestFixture.CreateWithTable("stats_after_add", batch);
+
+            var stats = await fixture.Table.Stats();
+
+            Assert.NotNull(stats);
+            Assert.Equal(100UL, stats.NumRows);
+            Assert.True(stats.TotalBytes > 0);
+            Assert.NotNull(stats.FragmentStats);
+            Assert.True(stats.FragmentStats.NumFragments > 0);
+            Assert.NotNull(stats.FragmentStats.Lengths);
+            Assert.True(stats.FragmentStats.Lengths.Max >= stats.FragmentStats.Lengths.Min);
+        }
+
+        /// <summary>
+        /// Stats should show fragment details including summary statistics on row lengths.
+        /// </summary>
+        [Fact]
+        public async Task Stats_FragmentLengths_HaveValidPercentiles()
+        {
+            var batch = CreateVectorBatch(50, 8);
+            using var fixture = await TestFixture.CreateWithTable("stats_fragments", batch);
+
+            var stats = await fixture.Table.Stats();
+
+            var lengths = stats.FragmentStats.Lengths;
+            Assert.NotNull(lengths);
+            // Percentiles should be ordered: min <= p25 <= p50 <= p75 <= p99 <= max
+            Assert.True(lengths.Min <= lengths.P25);
+            Assert.True(lengths.P25 <= lengths.P50);
+            Assert.True(lengths.P50 <= lengths.P75);
+            Assert.True(lengths.P75 <= lengths.P99);
+            Assert.True(lengths.P99 <= lengths.Max);
+        }
+
+        /// <summary>
+        /// Stats can be called multiple times without invalidating the table pointer.
+        /// </summary>
+        [Fact]
+        public async Task Stats_CalledMultipleTimes_DoesNotCrash()
+        {
+            var batch = CreateVectorBatch(10, 8);
+            using var fixture = await TestFixture.CreateWithTable("stats_multi", batch);
+
+            var stats1 = await fixture.Table.Stats();
+            var stats2 = await fixture.Table.Stats();
+
+            Assert.Equal(stats1.NumRows, stats2.NumRows);
+            Assert.Equal(stats1.TotalBytes, stats2.TotalBytes);
+        }
     }
 }

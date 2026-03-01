@@ -127,6 +127,13 @@ namespace lancedb
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_stats(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_stats_free(IntPtr ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_list(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
@@ -280,6 +287,35 @@ namespace lancedb
                 }).ConfigureAwait(false);
             }
             return result.ToInt64();
+        }
+
+        /// <summary>
+        /// Return statistics about the table.
+        /// </summary>
+        /// <remarks>
+        /// This includes the total number of bytes, rows, and indices in the table,
+        /// as well as fragment-level statistics (number of fragments, number of small
+        /// fragments, and percentile summaries of fragment row counts).
+        /// </remarks>
+        /// <returns>
+        /// A <see cref="TableStatistics"/> object with the table's current statistics.
+        /// </returns>
+        public async Task<TableStatistics> Stats()
+        {
+            var result = await NativeCall.Async(completion =>
+            {
+                table_stats(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+
+            try
+            {
+                var ffi = Marshal.PtrToStructure<FfiTableStats>(result);
+                return new TableStatistics(ffi);
+            }
+            finally
+            {
+                table_stats_free(result);
+            }
         }
 
         /// <summary>
