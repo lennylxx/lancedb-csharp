@@ -31,7 +31,7 @@ fn test_table_get_name_does_not_consume_pointer() {
     free_string(name2);
     free_string(name3);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -44,7 +44,7 @@ fn test_table_is_open() {
     assert!(!table_is_open(ptr::null()));
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn test_count_rows_empty_table() {
     assert_eq!(count, 0);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -83,7 +83,7 @@ fn test_schema_returns_valid_fields() {
     assert!(!schema.field(0).is_nullable());
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn test_add_data_and_count_rows() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 3);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -119,7 +119,7 @@ fn test_add_data_append_mode() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 5);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 fn create_test_batch(num_rows: usize) -> RecordBatch {
@@ -141,7 +141,7 @@ fn test_version_increments_on_add() {
     assert!(v2 > v1);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -162,7 +162,7 @@ fn test_checkout_and_restore() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 5);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn test_create_btree_index_and_list_indices() {
     assert!(indices.iter().any(|i| i.columns.contains(&"id".to_string())));
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -192,7 +192,7 @@ fn test_list_indices_empty_table() {
     assert!(indices.is_empty());
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn test_add_columns_with_sql_expression() {
     assert!(schema.fields().len() > 0);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -245,7 +245,7 @@ fn test_alter_columns_rename() {
     common::alter_columns_sync(table_ptr, vec![alt]);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -273,7 +273,7 @@ fn test_drop_columns() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 3);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -303,7 +303,7 @@ fn test_optimize_after_modifications() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 6);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -330,7 +330,7 @@ fn test_tags_create_and_list() {
     assert_eq!(tags["v1"].version, version);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -357,7 +357,7 @@ fn test_tags_delete() {
     assert!(!common::list_tags_sync(table_ptr).contains_key("temp_tag"));
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 fn create_id_value_batch(ids: &[i32], values: &[&str]) -> RecordBatch {
@@ -406,7 +406,7 @@ fn test_create_index_with_name_ffi() {
     assert!(indices.iter().any(|i| i.name == "my_named_idx"));
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -439,7 +439,7 @@ fn test_create_index_train_false_ffi() {
     assert!(!indices.is_empty());
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -463,7 +463,7 @@ fn test_optimize_with_params_ffi() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 10);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -482,7 +482,7 @@ fn test_optimize_default_params_ffi() {
     free_string(result as *mut libc::c_char);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 /// Converts a RecordBatch to C Data Interface structs for FFI ingestion tests.
@@ -532,7 +532,7 @@ fn test_merge_insert_upsert_ffi() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 4);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -568,7 +568,7 @@ fn test_merge_insert_insert_only_ffi() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 3);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -604,7 +604,7 @@ fn test_merge_insert_delete_not_in_source_ffi() {
     assert_eq!(common::count_rows_sync(table_ptr, None), 1);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -644,7 +644,7 @@ fn test_take_offsets_ffi() {
     unsafe { drop(Box::from_raw(cdata)) };
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -679,7 +679,7 @@ fn test_take_offsets_with_columns_ffi() {
 
     unsafe { drop(Box::from_raw(cdata)) };
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -733,5 +733,5 @@ fn test_take_row_ids_ffi() {
 
     unsafe { drop(Box::from_raw(cdata)) };
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }

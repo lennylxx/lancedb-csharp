@@ -12,9 +12,9 @@ mod table;
 
 // Re-export FFI functions for integration tests
 pub use connection::{
-    database_close, database_connect, database_create_empty_table, database_create_table,
-    database_drop_all_tables, database_drop_table, database_list_tables, database_table_names,
-    database_open_table,
+    connection_close, connection_connect, connection_create_empty_table, connection_create_table,
+    connection_drop_all_tables, connection_drop_table, connection_list_tables, connection_table_names,
+    connection_open_table,
 };
 pub use query::{
     query_analyze_plan, query_execute, query_explain_plan, query_output_schema,

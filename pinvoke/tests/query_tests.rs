@@ -71,7 +71,7 @@ fn test_query_execute_with_empty_params() {
 
     free_ffi_cdata(result as *mut FfiCData);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn test_query_execute_with_null_params() {
 
     free_ffi_cdata(result as *mut FfiCData);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -116,7 +116,7 @@ fn test_query_execute_with_limit_and_select() {
 
     free_ffi_cdata(cdata);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn test_query_explain_plan() {
 
     free_string(result as *mut _);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn test_query_output_schema() {
 
     free_ffi_schema(result as *mut _);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 // ---------------------------------------------------------------------------
@@ -200,7 +200,7 @@ fn test_vector_query_execute_basic() {
 
     free_ffi_cdata(cdata);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn test_vector_query_execute_with_all_params() {
 
     free_ffi_cdata(cdata);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 // Note: null vector test omitted — the synchronous error callback
@@ -266,7 +266,7 @@ fn test_vector_query_explain_plan() {
 
     free_string(result as *mut _);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -296,5 +296,5 @@ fn test_vector_query_output_schema() {
 
     free_ffi_schema(result as *mut _);
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }

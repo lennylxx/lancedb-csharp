@@ -5,12 +5,12 @@ namespace lancedb
 
     /// <summary>
     /// SafeHandle wrapper for a Rust Connection pointer.
-    /// Automatically calls database_close when the handle is released.
+    /// Automatically calls connection_close when the handle is released.
     /// </summary>
     internal class ConnectionHandle : SafeHandle
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_close(IntPtr connection_ptr);
+        private static extern void connection_close(IntPtr connection_ptr);
 
         public ConnectionHandle() : base(IntPtr.Zero, true) { }
         public ConnectionHandle(IntPtr ptr) : base(ptr, true) { }
@@ -21,7 +21,7 @@ namespace lancedb
         {
             if (!IsInvalid)
             {
-                database_close(handle);
+                connection_close(handle);
             }
             return true;
         }

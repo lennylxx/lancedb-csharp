@@ -9,14 +9,14 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]
-fn test_database_connect_and_close() {
+fn test_connection_connect_and_close() {
     let tmp = TempDir::new().unwrap();
     let uri = tmp.path().to_str().unwrap();
 
     let ptr = common::connect_sync(uri);
     assert!(!ptr.is_null());
 
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn test_table_names_empty_database() {
     let names = common::table_names_sync(ptr);
     assert!(names.is_empty());
 
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
@@ -45,7 +45,7 @@ fn test_table_names_returns_sorted_names() {
 
     table_close(_t1);
     table_close(_t2);
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
@@ -62,7 +62,7 @@ fn test_drop_table() {
     let names = common::table_names_sync(ptr);
     assert!(names.is_empty());
 
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn test_drop_all_tables() {
     let names = common::table_names_sync(ptr);
     assert!(names.is_empty());
 
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn test_create_table_with_data() {
     assert_eq!(names, vec!["my_table"]);
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -117,7 +117,7 @@ fn test_create_table_exist_ok_returns_existing() {
 
     table_close(table1);
     table_close(table2);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
@@ -143,7 +143,7 @@ fn test_create_empty_table_with_custom_schema() {
     assert_eq!(schema.field(1).name(), "score");
 
     table_close(table_ptr);
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 // -----------------------------------------------------------------------
@@ -151,7 +151,7 @@ fn test_create_empty_table_with_custom_schema() {
 // -----------------------------------------------------------------------
 
 #[test]
-fn test_database_connect_with_session_both_cache_sizes() {
+fn test_connection_connect_with_session_both_cache_sizes() {
     let tmp = TempDir::new().unwrap();
     let uri = tmp.path().to_str().unwrap();
 
@@ -167,11 +167,11 @@ fn test_database_connect_with_session_both_cache_sizes() {
     assert_eq!(names, vec!["session_test"]);
 
     table_close(t);
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
-fn test_database_connect_with_session_default_sizes() {
+fn test_connection_connect_with_session_default_sizes() {
     let tmp = TempDir::new().unwrap();
     let uri = tmp.path().to_str().unwrap();
 
@@ -186,16 +186,16 @@ fn test_database_connect_with_session_default_sizes() {
     let names = common::table_names_sync(ptr);
     assert!(names.is_empty());
 
-    database_close(ptr);
+    connection_close(ptr);
 }
 
 #[test]
-fn test_database_connect_ffi_with_session() {
+fn test_connection_connect_ffi_with_session() {
     let _lock = common::ffi_lock();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
-    database_connect(
+    connection_connect(
         uri_cstr.as_ptr(),
         f64::NAN,
         std::ptr::null(),
@@ -211,17 +211,17 @@ fn test_database_connect_ffi_with_session() {
     let names = common::table_names_sync(conn_ptr);
     assert!(names.is_empty());
 
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
-fn test_database_connect_ffi_with_session_defaults() {
+fn test_connection_connect_ffi_with_session_defaults() {
     let _lock = common::ffi_lock();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
     // Both 0 → use lance defaults (session is created)
-    database_connect(
+    connection_connect(
         uri_cstr.as_ptr(),
         f64::NAN,
         std::ptr::null(),
@@ -234,17 +234,17 @@ fn test_database_connect_ffi_with_session_defaults() {
     assert!(!result.is_null());
     let conn_ptr = result as *const lancedb::connection::Connection;
 
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }
 
 #[test]
-fn test_database_connect_ffi_without_session() {
+fn test_connection_connect_ffi_without_session() {
     let _lock = common::ffi_lock();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
     // Both -1 → no session
-    database_connect(
+    connection_connect(
         uri_cstr.as_ptr(),
         f64::NAN,
         std::ptr::null(),
@@ -257,5 +257,5 @@ fn test_database_connect_ffi_without_session() {
     assert!(!result.is_null());
     let conn_ptr = result as *const lancedb::connection::Connection;
 
-    database_close(conn_ptr);
+    connection_close(conn_ptr);
 }

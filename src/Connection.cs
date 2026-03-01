@@ -23,28 +23,28 @@ namespace lancedb
     public class Connection : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion);
+        private static extern void connection_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern unsafe void database_create_empty_table(IntPtr connection_ptr, IntPtr table_name, CArrowSchema* schema_cdata, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void connection_create_empty_table(IntPtr connection_ptr, IntPtr table_name, CArrowSchema* schema_cdata, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern unsafe void database_create_table(IntPtr connection_ptr, IntPtr table_name, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void connection_create_table(IntPtr connection_ptr, IntPtr table_name, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void database_drop_all_tables(IntPtr connection_ptr, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_all_tables(IntPtr connection_ptr, NativeCall.FfiCallback completion);
 
         private ConnectionHandle? _handle;
 
@@ -88,7 +88,7 @@ namespace lancedb
                     fixed (byte* p = uriBytes)
                     fixed (byte* pStorage = storageJson)
                     {
-                        database_connect(
+                        connection_connect(
                             new IntPtr(p),
                             rciSecs,
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
@@ -162,7 +162,7 @@ namespace lancedb
                     fixed (byte* pLocation = locationBytes)
                     fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_open_table(
+                        connection_open_table(
                             _handle!.DangerousGetHandle(),
                             new IntPtr(p),
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
@@ -223,7 +223,7 @@ namespace lancedb
                                 CArrowSchemaExporter.ExportSchema(options.Schema, pSchema);
                                 schemaPtr = pSchema;
                             }
-                            database_create_empty_table(
+                            connection_create_empty_table(
                                 _handle!.DangerousGetHandle(),
                                 new IntPtr(pName),
                                 schemaPtr,
@@ -307,7 +307,7 @@ namespace lancedb
                             }
                             fixed (CArrowArray* pArrays = cArrays)
                             {
-                                database_create_table(
+                                connection_create_table(
                                     _handle!.DangerousGetHandle(),
                                     (IntPtr)pName,
                                     pArrays, pSchema, (nuint)options.Data.Count,
@@ -384,7 +384,7 @@ namespace lancedb
                     fixed (byte* pStartAfter = startAfterBytes)
                     fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_table_names(
+                        connection_table_names(
                             _handle!.DangerousGetHandle(),
                             startAfterBytes != null ? new IntPtr(pStartAfter) : IntPtr.Zero,
                             limit,
@@ -439,7 +439,7 @@ namespace lancedb
                     fixed (byte* pPageToken = pageTokenBytes)
                     fixed (byte* pNamespace = namespaceJson)
                     {
-                        database_list_tables(
+                        connection_list_tables(
                             _handle!.DangerousGetHandle(),
                             pageTokenBytes != null ? new IntPtr(pPageToken) : IntPtr.Zero,
                             limit,
@@ -478,7 +478,7 @@ namespace lancedb
                     {
                         fixed (byte* p = nameBytes)
                         {
-                            database_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                            connection_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
                         }
                     }
                 });
@@ -510,7 +510,7 @@ namespace lancedb
         {
             await NativeCall.Async(callback =>
             {
-                database_drop_all_tables(_handle!.DangerousGetHandle(), callback);
+                connection_drop_all_tables(_handle!.DangerousGetHandle(), callback);
             });
         }
     }

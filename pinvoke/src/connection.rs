@@ -8,7 +8,7 @@ use crate::ffi;
 use crate::{callback_error, FfiCallback};
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_connect(
+pub extern "C" fn connection_connect(
     uri: *const c_char,
     read_consistency_interval_secs: f64,
     storage_options_json: *const c_char,
@@ -63,7 +63,7 @@ pub extern "C" fn database_connect(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_open_table(
+pub extern "C" fn connection_open_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
     storage_options_json: *const c_char,
@@ -102,7 +102,7 @@ pub extern "C" fn database_open_table(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_create_empty_table(
+pub extern "C" fn connection_create_empty_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
     schema_cdata: *mut arrow_schema::ffi::FFI_ArrowSchema,
@@ -167,7 +167,7 @@ pub extern "C" fn database_create_empty_table(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_create_table(
+pub extern "C" fn connection_create_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
     arrays: *mut arrow_data::ffi::FFI_ArrowArray,
@@ -236,12 +236,12 @@ pub extern "C" fn database_create_table(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_close(connection_ptr: *const Connection) {
+pub extern "C" fn connection_close(connection_ptr: *const Connection) {
     ffi_free!(connection_ptr, Connection);
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_table_names(
+pub extern "C" fn connection_table_names(
     connection_ptr: *const Connection,
     start_after: *const c_char,
     limit: u32,
@@ -274,7 +274,7 @@ pub extern "C" fn database_table_names(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_list_tables(
+pub extern "C" fn connection_list_tables(
     connection_ptr: *const Connection,
     page_token: *const c_char,
     limit: u32,
@@ -309,7 +309,7 @@ pub extern "C" fn database_list_tables(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_drop_table(
+pub extern "C" fn connection_drop_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
     completion: FfiCallback,
@@ -327,7 +327,7 @@ pub extern "C" fn database_drop_table(
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn database_drop_all_tables(
+pub extern "C" fn connection_drop_all_tables(
     connection_ptr: *const Connection,
     completion: FfiCallback,
 ) {
