@@ -259,6 +259,20 @@ namespace lancedb.tests
             Assert.Equal(3, result.Length);
         }
 
+        /// <summary>
+        /// ToArrow returns all rows in the table.
+        /// </summary>
+        [Fact]
+        public async Task ToArrow_ReturnsAllRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("to_arrow");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            var result = await fixture.Table.ToArrow();
+
+            Assert.Equal(10, result.Length);
+        }
+
         private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
         {
             var idArray = new Apache.Arrow.Int32Array.Builder();

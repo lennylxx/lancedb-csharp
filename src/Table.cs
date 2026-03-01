@@ -258,6 +258,20 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Return the entire table as an Arrow <see cref="Apache.Arrow.RecordBatch"/>.
+        /// </summary>
+        /// <remarks>
+        /// This is a convenience method equivalent to <c>Query().ToArrow()</c>.
+        /// For large tables, consider using <see cref="Query"/> with filters or limits instead.
+        /// </remarks>
+        /// <returns>A <see cref="Apache.Arrow.RecordBatch"/> containing all rows in the table.</returns>
+        public async Task<Apache.Arrow.RecordBatch> ToArrow()
+        {
+            using var query = Query();
+            return await query.ToArrow();
+        }
+
+        /// <summary>
         /// Count the number of rows in the table.
         /// </summary>
         /// <param name="filter">
