@@ -620,6 +620,7 @@ fn test_take_offsets_ffi() {
         offsets.as_ptr(),
         offsets.len(),
         ptr::null(),
+        false,
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();
@@ -661,6 +662,7 @@ fn test_take_offsets_with_columns_ffi() {
         offsets.as_ptr(),
         offsets.len(),
         columns_json.as_ptr(),
+        false,
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();
@@ -716,6 +718,7 @@ fn test_take_row_ids_ffi() {
         row_ids.as_ptr(),
         row_ids.len(),
         ptr::null(),
+        false,
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();

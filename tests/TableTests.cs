@@ -1009,7 +1009,7 @@ namespace lancedb.tests
                 var data = CreateIdValueBatch(new[] { 10, 20, 30, 40, 50 }, new[] { "a", "b", "c", "d", "e" });
                 var table = await connection.CreateTable("take_offsets", data);
 
-                var result = await table.TakeOffsets(new ulong[] { 0, 2, 4 });
+                var result = await table.TakeOffsets(new ulong[] { 0, 2, 4 }).ToArrow();
                 Assert.Equal(3, result.Length);
 
                 table.Dispose();
@@ -1036,7 +1036,9 @@ namespace lancedb.tests
                 var data = CreateIdValueBatch(new[] { 10, 20, 30 }, new[] { "a", "b", "c" });
                 var table = await connection.CreateTable("take_offsets_cols", data);
 
-                var result = await table.TakeOffsets(new ulong[] { 0, 1 }, new[] { "id" });
+                var result = await table.TakeOffsets(new ulong[] { 0, 1 })
+                    .Select(new[] { "id" })
+                    .ToArrow();
                 Assert.Equal(2, result.Length);
                 Assert.Single(result.Schema.FieldsList);
                 Assert.Equal("id", result.Schema.FieldsList[0].Name);
@@ -1074,8 +1076,81 @@ namespace lancedb.tests
                 Assert.NotNull(rowIdCol);
 
                 var rowIds = new ulong[] { rowIdCol!.GetValue(0)!.Value, rowIdCol.GetValue(2)!.Value };
-                var result = await table.TakeRowIds(rowIds);
+                var result = await table.TakeRowIds(rowIds).ToArrow();
                 Assert.Equal(2, result.Length);
+
+                query.Dispose();
+                table.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        // ----- Bad Vector Handling Tests -----
+
+        [Fact]
+        public async Task TakeOffsets_WithRowId_IncludesRowIdColumn()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var data = CreateIdValueBatch(new[] { 10, 20, 30 }, new[] { "a", "b", "c" });
+                var table = await connection.CreateTable("take_with_rowid", data);
+
+                var result = await table.TakeOffsets(new ulong[] { 0, 2 })
+                    .WithRowId()
+                    .ToArrow();
+                Assert.Equal(2, result.Length);
+                Assert.True(result.Schema.GetFieldIndex("_rowid") >= 0,
+                    "Result should include _rowid column");
+
+                table.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task TakeRowIds_WithSelectAndRowId_ReturnsSubsetWithRowId()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var data = CreateIdValueBatch(new[] { 10, 20, 30 }, new[] { "a", "b", "c" });
+                var table = await connection.CreateTable("take_rowids_select", data);
+
+                // Get row IDs first
+                var query = table.Query().WithRowId();
+                var batch = await query.ToArrow();
+                var rowIdCol = batch.Column("_rowid") as Apache.Arrow.UInt64Array;
+                Assert.NotNull(rowIdCol);
+
+                var rowIds = new ulong[] { rowIdCol!.GetValue(0)!.Value };
+                var result = await table.TakeRowIds(rowIds)
+                    .Select(new[] { "value" })
+                    .WithRowId()
+                    .ToArrow();
+                Assert.Equal(1, result.Length);
+                Assert.True(result.Schema.GetFieldIndex("value") >= 0);
+                Assert.True(result.Schema.GetFieldIndex("_rowid") >= 0);
 
                 query.Dispose();
                 table.Dispose();

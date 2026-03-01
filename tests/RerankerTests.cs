@@ -399,8 +399,8 @@ namespace lancedb.tests
             Assert.Equal("qux", names.GetString(3));
 
             var scores = (FloatArray)result.Column(result.Schema.GetFieldIndex("_relevance_score"));
-            Assert.Equal(0.75f, scores.GetValue(0), 4);
-            Assert.Equal(0.5f, scores.GetValue(1), 4);
+            Assert.Equal(0.75f, scores.GetValue(0));
+            Assert.Equal(0.5f, scores.GetValue(1));
         }
 
         [Fact]

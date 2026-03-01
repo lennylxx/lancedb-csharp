@@ -1341,12 +1341,14 @@ pub extern "C" fn table_merge_result_free(ptr: *mut FfiMergeResult) {
 /// offsets: pointer to array of u64 offset values.
 /// offsets_len: number of offsets.
 /// columns_json: optional JSON array of column names to select (null for all columns).
+/// with_row_id: whether to include the _rowid column in results.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_take_offsets(
     table_ptr: *const Table,
     offsets: *const u64,
     offsets_len: usize,
     columns_json: *const c_char,
+    with_row_id: bool,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -1375,6 +1377,9 @@ pub extern "C" fn table_take_offsets(
             let col_tuples: Vec<(String, String)> =
                 columns.iter().map(|c| (c.clone(), c.clone())).collect();
             query = query.select(lancedb::query::Select::dynamic(col_tuples.as_slice()));
+        }
+        if with_row_id {
+            query = query.with_row_id();
         }
 
         let stream = match query.execute().await {
@@ -1433,12 +1438,14 @@ pub extern "C" fn table_take_offsets(
 /// row_ids: pointer to array of u64 row ID values.
 /// row_ids_len: number of row IDs.
 /// columns_json: optional JSON array of column names to select (null for all columns).
+/// with_row_id: whether to include the _rowid column in results.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_take_row_ids(
     table_ptr: *const Table,
     row_ids: *const u64,
     row_ids_len: usize,
     columns_json: *const c_char,
+    with_row_id: bool,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -1467,6 +1474,9 @@ pub extern "C" fn table_take_row_ids(
             let col_tuples: Vec<(String, String)> =
                 columns.iter().map(|c| (c.clone(), c.clone())).collect();
             query = query.select(lancedb::query::Select::dynamic(col_tuples.as_slice()));
+        }
+        if with_row_id {
+            query = query.with_row_id();
         }
 
         let stream = match query.execute().await {

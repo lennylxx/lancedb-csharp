@@ -188,11 +188,13 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_take_offsets(
             IntPtr table_ptr, IntPtr offsets, nuint offsets_len, IntPtr columns_json,
+            [MarshalAs(UnmanagedType.U1)] bool with_row_id,
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_take_row_ids(
             IntPtr table_ptr, IntPtr row_ids, nuint row_ids_len, IntPtr columns_json,
+            [MarshalAs(UnmanagedType.U1)] bool with_row_id,
             NativeCall.FfiCallback completion);
 
         private TableHandle? _handle;
@@ -1362,6 +1364,10 @@ namespace lancedb
         /// </summary>
         /// <remarks>
         /// <para>
+        /// Returns a <see cref="TakeQuery"/> builder that can be used to configure
+        /// the take operation before executing it.
+        /// </para>
+        /// <para>
         /// Offsets are 0-indexed and relative to the current version of the table. Offsets
         /// are not stable. A row with an offset of N may have a different offset in a
         /// different version of the table (e.g., if an earlier row is deleted).
@@ -1372,46 +1378,20 @@ namespace lancedb
         /// </para>
         /// </remarks>
         /// <param name="offsets">The offset positions of the rows to retrieve.</param>
-        /// <param name="columns">
-        /// Optional list of column names to return. If <c>null</c>, all columns are returned.
-        /// </param>
-        /// <returns>A <see cref="RecordBatch"/> containing the requested rows.</returns>
-        public async Task<RecordBatch> TakeOffsets(
-            IReadOnlyList<ulong> offsets, IReadOnlyList<string>? columns = null)
+        /// <returns>A <see cref="TakeQuery"/> builder for configuring and executing the take.</returns>
+        public TakeQuery TakeOffsets(IReadOnlyList<ulong> offsets)
         {
-            ulong[] offsetArray = offsets is ulong[] arr ? arr : offsets.ToArray();
-            byte[]? columnsBytes = columns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
-
-            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
-            {
-                unsafe
-                {
-                    fixed (ulong* pOffsets = offsetArray)
-                    fixed (byte* pColumns = columnsBytes)
-                    {
-                        table_take_offsets(
-                            _handle!.DangerousGetHandle(),
-                            (IntPtr)pOffsets, (nuint)offsetArray.Length,
-                            (IntPtr)pColumns, completion);
-                    }
-                }
-            }).ConfigureAwait(false);
-
-            try
-            {
-                return ReadRecordBatchFromCData(ffiCDataPtr);
-            }
-            finally
-            {
-                NativeCall.free_ffi_cdata(ffiCDataPtr);
-            }
+            return new TakeQuery(this, offsets, isByRowId: false);
         }
 
         /// <summary>
         /// Take rows with the given row IDs from the table.
         /// </summary>
         /// <remarks>
+        /// <para>
+        /// Returns a <see cref="TakeQuery"/> builder that can be used to configure
+        /// the take operation before executing it.
+        /// </para>
         /// <para>
         /// Row IDs are not stable and are relative to the current version of the table.
         /// They can change due to compaction and updates.
@@ -1427,14 +1407,15 @@ namespace lancedb
         /// </para>
         /// </remarks>
         /// <param name="rowIds">The row IDs of the rows to retrieve.</param>
-        /// <param name="columns">
-        /// Optional list of column names to return. If <c>null</c>, all columns are returned.
-        /// </param>
-        /// <returns>A <see cref="RecordBatch"/> containing the requested rows.</returns>
-        public async Task<RecordBatch> TakeRowIds(
-            IReadOnlyList<ulong> rowIds, IReadOnlyList<string>? columns = null)
+        /// <returns>A <see cref="TakeQuery"/> builder for configuring and executing the take.</returns>
+        public TakeQuery TakeRowIds(IReadOnlyList<ulong> rowIds)
         {
-            ulong[] idArray = rowIds is ulong[] arr ? arr : rowIds.ToArray();
+            return new TakeQuery(this, rowIds, isByRowId: true);
+        }
+
+        internal async Task<RecordBatch> ExecuteTake(
+            ulong[] ids, bool isByRowId, IReadOnlyList<string>? columns, bool withRowId)
+        {
             byte[]? columnsBytes = columns != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
 
@@ -1442,13 +1423,23 @@ namespace lancedb
             {
                 unsafe
                 {
-                    fixed (ulong* pRowIds = idArray)
+                    fixed (ulong* pIds = ids)
                     fixed (byte* pColumns = columnsBytes)
                     {
-                        table_take_row_ids(
-                            _handle!.DangerousGetHandle(),
-                            (IntPtr)pRowIds, (nuint)idArray.Length,
-                            (IntPtr)pColumns, completion);
+                        if (isByRowId)
+                        {
+                            table_take_row_ids(
+                                _handle!.DangerousGetHandle(),
+                                (IntPtr)pIds, (nuint)ids.Length,
+                                (IntPtr)pColumns, withRowId, completion);
+                        }
+                        else
+                        {
+                            table_take_offsets(
+                                _handle!.DangerousGetHandle(),
+                                (IntPtr)pIds, (nuint)ids.Length,
+                                (IntPtr)pColumns, withRowId, completion);
+                        }
                     }
                 }
             }).ConfigureAwait(false);
