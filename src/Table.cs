@@ -397,11 +397,11 @@ namespace lancedb
         /// the filter will be updated. Otherwise all rows will be updated.
         /// </para>
         /// <para>
-        /// The values are expressed as SQL expression strings. Keys are column names,
-        /// values are SQL expressions or literal values (e.g., <c>"x + 1"</c> or <c>"'hello'"</c>).
+        /// The keys are column names, and the values are SQL expressions describing
+        /// the updated value (e.g., <c>"x + 1"</c> or <c>"'hello'"</c>).
         /// </para>
         /// </remarks>
-        /// <param name="values">
+        /// <param name="updatesSql">
         /// A dictionary mapping column names to SQL expressions describing the
         /// updated value. For example, <c>new Dictionary&lt;string, string&gt;
         /// { { "x", "x + 1" } }</c>.
@@ -414,10 +414,10 @@ namespace lancedb
         /// An <see cref="UpdateResult"/> containing the number of rows updated and the
         /// commit version of the operation.
         /// </returns>
-        public async Task<UpdateResult> Update(Dictionary<string, string> values, string? @where = null)
+        public async Task<UpdateResult> Update(Dictionary<string, string> updatesSql, string? @where = null)
         {
-            var columns = values.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
-            byte[] utf8Columns = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
+            var columnSqlExprs = updatesSql.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
+            byte[] utf8ColumnSqlExprs = NativeCall.ToUtf8(JsonSerializer.Serialize(columnSqlExprs));
 
             IntPtr resultPtr;
             if (@where == null)
@@ -426,7 +426,7 @@ namespace lancedb
                 {
                     unsafe
                     {
-                        fixed (byte* pc = utf8Columns)
+                        fixed (byte* pc = utf8ColumnSqlExprs)
                         {
                             table_update(
                                 _handle!.DangerousGetHandle(), IntPtr.Zero, (IntPtr)pc,
@@ -443,7 +443,7 @@ namespace lancedb
                     unsafe
                     {
                         fixed (byte* pw = utf8Where)
-                        fixed (byte* pc = utf8Columns)
+                        fixed (byte* pc = utf8ColumnSqlExprs)
                         {
                             table_update(
                                 _handle!.DangerousGetHandle(), (IntPtr)pw, (IntPtr)pc,

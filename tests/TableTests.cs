@@ -176,6 +176,51 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Update all rows changes every row's value.
+        /// </summary>
+        [Fact]
+        public async Task Update_AllRows_UpdatesEveryRow()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_all",
+                CreateTestBatch(5));
+
+            var result = await fixture.Table.Update(
+                new Dictionary<string, string> { { "id", "99" } });
+
+            Assert.Equal(5UL, result.RowsUpdated);
+            Assert.True(result.Version > 0);
+
+            var batch = await fixture.Table.ToArrow();
+            var idCol = batch.Column("id") as Apache.Arrow.Int32Array;
+            for (int i = 0; i < batch.Length; i++)
+            {
+                Assert.Equal(99, idCol!.GetValue(i));
+            }
+        }
+
+        /// <summary>
+        /// Update with a filter only modifies matching rows.
+        /// </summary>
+        [Fact]
+        public async Task Update_WithFilter_OnlyUpdatesMatchingRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_filter",
+                CreateTestBatch(5));
+
+            var result = await fixture.Table.Update(
+                new Dictionary<string, string> { { "id", "99" } },
+                @where: "id >= 3");
+
+            Assert.Equal(2UL, result.RowsUpdated);
+
+            long count = await fixture.Table.CountRows("id = 99");
+            Assert.Equal(2, count);
+
+            long unchanged = await fixture.Table.CountRows("id < 3");
+            Assert.Equal(3, unchanged);
+        }
+
+        /// <summary>
         /// Add a single RecordBatch and verify row count increases.
         /// </summary>
         [Fact]

@@ -88,13 +88,13 @@ pub extern "C" fn table_delete(
     });
 }
 
-/// Updates rows in the table. columns_json is a JSON array of [name, expr] pairs.
+/// Updates rows in the table. column_sqlexprs_json is a JSON array of [name, expr] pairs.
 /// filter is an optional SQL predicate (null for all rows).
 #[unsafe(no_mangle)]
 pub extern "C" fn table_update(
     table_ptr: *const Table,
     filter: *const c_char,
-    columns_json: *const c_char,
+    column_sqlexprs_json: *const c_char,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -103,10 +103,10 @@ pub extern "C" fn table_update(
     } else {
         Some(crate::ffi::to_string(filter))
     };
-    let columns_str = crate::ffi::to_string(columns_json);
+    let column_sqlexprs_str = crate::ffi::to_string(column_sqlexprs_json);
 
     crate::spawn(async move {
-        let columns: Vec<(String, String)> = match sonic_rs::from_str(&columns_str) {
+        let column_sqlexprs: Vec<(String, String)> = match sonic_rs::from_str(&column_sqlexprs_str) {
             Ok(c) => c,
             Err(e) => {
                 callback_error(completion, e);
@@ -118,8 +118,8 @@ pub extern "C" fn table_update(
         if let Some(f) = filter {
             builder = builder.only_if(f);
         }
-        for (name, expr) in columns {
-            builder = builder.column(name, expr);
+        for (column, expr) in column_sqlexprs {
+            builder = builder.column(column, expr);
         }
 
         match builder.execute().await {
@@ -1102,8 +1102,6 @@ pub extern "C" fn table_wait_for_index(
     });
 }
 
-/// Get statistics about an index. Returns a JSON string or null if the index doesn't exist.
-#[unsafe(no_mangle)]
 /// C-compatible struct for index statistics, passed across FFI without JSON.
 #[repr(C)]
 pub struct FfiIndexStats {
@@ -1118,7 +1116,7 @@ pub struct FfiIndexStats {
     pub num_indices: u32,
 }
 
-
+/// Get statistics about an index. Returns a JSON string or null if the index doesn't exist.
 #[unsafe(no_mangle)]
 pub extern "C" fn table_index_stats(
     table_ptr: *const Table,
