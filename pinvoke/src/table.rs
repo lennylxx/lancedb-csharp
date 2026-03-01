@@ -206,6 +206,56 @@ pub extern "C" fn table_version(
     });
 }
 
+/// Returns whether the table uses V2 manifest paths (1 = true, 0 = false).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_uses_v2_manifest_paths(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.as_native() {
+            Some(native) => match native.uses_v2_manifest_paths().await {
+                Ok(uses_v2) => {
+                    completion(uses_v2 as usize as *const std::ffi::c_void, std::ptr::null());
+                }
+                Err(e) => callback_error(completion, e),
+            },
+            None => callback_error(
+                completion,
+                lancedb::Error::NotSupported {
+                    message: "uses_v2_manifest_paths is only supported for local tables".into(),
+                },
+            ),
+        }
+    });
+}
+
+/// Migrates the table to use V2 manifest paths.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_migrate_manifest_paths_v2(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.as_native() {
+            Some(native) => match native.migrate_manifest_paths_v2().await {
+                Ok(()) => {
+                    completion(1 as *const std::ffi::c_void, std::ptr::null());
+                }
+                Err(e) => callback_error(completion, e),
+            },
+            None => callback_error(
+                completion,
+                lancedb::Error::NotSupported {
+                    message: "migrate_manifest_paths_v2 is only supported for local tables".into(),
+                },
+            ),
+        }
+    });
+}
+
 /// Returns the table versions as a JSON string.
 /// Caller must free the returned string with free_string().
 #[unsafe(no_mangle)]

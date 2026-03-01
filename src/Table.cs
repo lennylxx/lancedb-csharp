@@ -60,6 +60,14 @@ namespace lancedb
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_uses_v2_manifest_paths(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_migrate_manifest_paths_v2(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_versions(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
@@ -568,6 +576,38 @@ namespace lancedb
                 table_version(_handle!.DangerousGetHandle(), completion);
             }).ConfigureAwait(false);
             return (ulong)result.ToInt64();
+        }
+
+        /// <summary>
+        /// Check whether the table uses V2 manifest paths.
+        /// </summary>
+        /// <remarks>
+        /// See <see cref="MigrateManifestPathsV2"/> to migrate to V2 manifest paths.
+        /// </remarks>
+        /// <returns><c>true</c> if the table uses V2 manifest paths; otherwise, <c>false</c>.</returns>
+        public async Task<bool> UsesV2ManifestPaths()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_uses_v2_manifest_paths(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+            return result.ToInt64() != 0;
+        }
+
+        /// <summary>
+        /// Migrate the table to use the new V2 manifest path scheme.
+        /// </summary>
+        /// <remarks>
+        /// This renames all V1 manifests to V2 manifest paths. It is safe to run
+        /// this migration multiple times. Use <see cref="UsesV2ManifestPaths"/> to
+        /// check if the table is already using V2 manifest paths.
+        /// </remarks>
+        public async Task MigrateManifestPathsV2()
+        {
+            await NativeCall.Async(completion =>
+            {
+                table_migrate_manifest_paths_v2(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
         }
 
         /// <summary>

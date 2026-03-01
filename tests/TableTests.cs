@@ -273,6 +273,36 @@ namespace lancedb.tests
             Assert.Equal(10, result.Length);
         }
 
+        /// <summary>
+        /// UsesV2ManifestPaths returns a boolean value.
+        /// </summary>
+        [Fact]
+        public async Task UsesV2ManifestPaths_ReturnsBoolean()
+        {
+            using var fixture = await TestFixture.CreateWithTable("v2_manifest");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            var result = await fixture.Table.UsesV2ManifestPaths();
+
+            // New tables may or may not use V2 paths depending on Lance version.
+            Assert.IsType<bool>(result);
+        }
+
+        /// <summary>
+        /// MigrateManifestPathsV2 completes without error.
+        /// </summary>
+        [Fact]
+        public async Task MigrateManifestPathsV2_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("migrate_manifest");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            await fixture.Table.MigrateManifestPathsV2();
+
+            var usesV2 = await fixture.Table.UsesV2ManifestPaths();
+            Assert.True(usesV2);
+        }
+
         private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
         {
             var idArray = new Apache.Arrow.Int32Array.Builder();
