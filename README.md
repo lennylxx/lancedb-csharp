@@ -73,7 +73,7 @@ await table.Add(batch);
 // Create a vector index
 await table.CreateIndex(new[] { "vector" }, new HnswSqIndex
 {
-    DistanceType = "cosine",
+    DistanceType = DistanceType.Cosine,
     NumPartitions = 4,
 });
 
@@ -126,15 +126,14 @@ connection.Dispose();
 
 ```csharp
 var connection = new Connection();
-await connection.Connect(uri, options);          // Connect to a database
-string? uri = connection.Uri;                    // Get the connected URI
-TimeSpan? rci = connection.ReadConsistencyInterval; // Get consistency interval
+await connection.Connect(uri, options);          // Connect to a local/cloud database
+await connection.ConnectNamespace(nsImpl, props); // Connect to a LanceDB namespace
 bool open = connection.IsOpen();                 // Check connection state
 
 // Table management
 var table = await connection.OpenTable("name");
 var table = await connection.CreateTable("name", recordBatch);
-var table = await connection.CreateEmptyTable("name");
+var table = await connection.CreateEmptyTable("name", options);
 var response = await connection.ListTables();    // Paginated table listing
 var names = await connection.TableNames();       // List table names
 await connection.RenameTable("old", "new");      // Rename a table
@@ -153,6 +152,8 @@ await connection.DropNamespace(new[] { "ns" });
 
 ```csharp
 string name = table.Name;                        // Table name
+var head = await table.Head(10);                 // First N rows
+var all = await table.ToArrow();                 // All rows as RecordBatch
 await table.Add(recordBatch);                    // Append data
 await table.Add(recordBatch, "overwrite");       // Overwrite data
 await table.Update(values, where);               // Update rows (SQL expressions)
@@ -185,7 +186,9 @@ await table.AddColumns(arrowSchema);             // Add null-filled columns
 await table.AlterColumns(alterations);
 await table.DropColumns(new[] { "old_column" });
 await table.ReplaceFieldMetadata("field", metadata);
-var stats = await table.Optimize();              // Compact and cleanup
+bool usesV2 = await table.UsesV2ManifestPaths(); // Check manifest path version
+await table.MigrateManifestPathsV2();            // Migrate to V2 manifest paths
+var stats = await table.Optimize(cleanupOlderThan: TimeSpan.FromDays(7));
 ```
 
 ### Querying
@@ -223,11 +226,23 @@ var results = await table.Query()
     .Limit(10)
     .ToList();
 
+// Full-text search on specific columns
+var results = await table.Query()
+    .NearestToText("search query", new[] { "title", "body" })
+    .Limit(10)
+    .ToList();
+
 // Hybrid search (vector + FTS with reranking)
 var results = await table.Query()
     .NearestTo(vector)
     .NearestToText("search query")
     .Rerank(new RRFReranker())                   // or LinearCombinationReranker, MRRReranker
+    .Limit(10)
+    .ToArrow();
+
+// Hybrid search (direct)
+var results = await table.HybridSearch("search query", vector)
+    .Rerank(new LinearCombinationReranker(weight: 0.7f))
     .Limit(10)
     .ToArrow();
 
@@ -262,12 +277,16 @@ await table.CreateIndex(new[] { "text" }, new FtsIndex
 });
 
 // Vector indexes
-await table.CreateIndex(new[] { "vector" }, new IvfPqIndex { DistanceType = "cosine" });
+await table.CreateIndex(new[] { "vector" }, new IvfPqIndex { DistanceType = DistanceType.Cosine });
 await table.CreateIndex(new[] { "vector" }, new IvfFlatIndex());
 await table.CreateIndex(new[] { "vector" }, new IvfSqIndex());
 await table.CreateIndex(new[] { "vector" }, new IvfRqIndex());
 await table.CreateIndex(new[] { "vector" }, new HnswPqIndex());
 await table.CreateIndex(new[] { "vector" }, new HnswSqIndex());
+
+// Wait for index to finish building
+await table.CreateIndex(new[] { "vector" }, new IvfPqIndex(),
+    waitTimeout: TimeSpan.FromSeconds(60));
 
 // Index management
 var indices = await table.ListIndices();
@@ -286,6 +305,8 @@ await table.Checkout(version);                   // Checkout by version
 await table.Checkout("v1.0");                    // Checkout by tag
 await table.CheckoutLatest();
 await table.Restore();                           // Restore checked-out version
+await table.Restore(version);                    // Restore specific version
+await table.Restore("v1.0");                     // Restore by tag
 
 // Tags
 await table.CreateTag("v1.0", version);
