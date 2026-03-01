@@ -445,6 +445,44 @@ namespace lancedb.tests
             Assert.NotEmpty(rows);
         }
 
+        /// <summary>
+        /// NearestToText with columns parameter should only search specified columns.
+        /// </summary>
+        [Fact]
+        public async Task NearestToText_WithColumns_SearchesSpecifiedColumns()
+        {
+            using var fixture = await CreateMultiTextFixture("ntt_columns");
+
+            await fixture.Table.CreateIndex(new[] { "title" }, new FtsIndex());
+            await fixture.Table.CreateIndex(new[] { "body" }, new FtsIndex());
+
+            using var query = fixture.Table.Query()
+                .NearestToText("apple", new[] { "title" });
+            var rows = await query.ToList();
+
+            Assert.Single(rows);
+            Assert.Equal("apple pie", rows[0]["title"]);
+        }
+
+        /// <summary>
+        /// FullTextSearch with columns parameter should only search specified columns.
+        /// </summary>
+        [Fact]
+        public async Task FullTextSearch_WithColumns_SearchesSpecifiedColumns()
+        {
+            using var fixture = await CreateMultiTextFixture("fts_columns");
+
+            await fixture.Table.CreateIndex(new[] { "title" }, new FtsIndex());
+            await fixture.Table.CreateIndex(new[] { "body" }, new FtsIndex());
+
+            using var query = fixture.Table.Query()
+                .FullTextSearch("apple", new[] { "body" });
+            var rows = await query.ToList();
+
+            Assert.Single(rows);
+            Assert.Equal("apple sauce recipe", rows[0]["body"]);
+        }
+
         // -----------------------------------------------------------------------
         // Helpers
         // -----------------------------------------------------------------------
@@ -479,6 +517,32 @@ namespace lancedb.tests
                 "cherry date",
                 "elderberry fig"
             });
+            var table = await connection.CreateTable(tableName, batch);
+            return new TestFixture(connection, table, tmpDir);
+        }
+
+        private static async Task<TestFixture> CreateMultiTextFixture(string tableName)
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var idBuilder = new Apache.Arrow.Int32Array.Builder();
+            var titleBuilder = new Apache.Arrow.StringArray.Builder();
+            var bodyBuilder = new Apache.Arrow.StringArray.Builder();
+
+            idBuilder.Append(0); titleBuilder.Append("apple pie"); bodyBuilder.Append("cherry tart recipe");
+            idBuilder.Append(1); titleBuilder.Append("banana bread"); bodyBuilder.Append("apple sauce recipe");
+            idBuilder.Append(2); titleBuilder.Append("cherry cake"); bodyBuilder.Append("fig jam recipe");
+
+            var schema = new Apache.Arrow.Schema.Builder()
+                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
+                .Field(new Apache.Arrow.Field("title", Apache.Arrow.Types.StringType.Default, nullable: false))
+                .Field(new Apache.Arrow.Field("body", Apache.Arrow.Types.StringType.Default, nullable: false))
+                .Build();
+
+            var batch = new Apache.Arrow.RecordBatch(schema,
+                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), titleBuilder.Build(), bodyBuilder.Build() }, 3);
             var table = await connection.CreateTable(tableName, batch);
             return new TestFixture(connection, table, tmpDir);
         }

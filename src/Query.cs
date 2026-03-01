@@ -134,8 +134,12 @@ namespace lancedb
         /// </para>
         /// </remarks>
         /// <param name="query">The search query string.</param>
+        /// <param name="columns">
+        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
+        /// columns are searched.
+        /// </param>
         /// <returns>A new <see cref="Query"/> with full-text search applied.</returns>
-        public Query NearestToText(string query)
+        public Query NearestToText(string query, string[]? columns = null)
         {
             var newQuery = new Query(TablePtr);
             newQuery.SelectJson = SelectJson;
@@ -146,6 +150,7 @@ namespace lancedb
             newQuery.StoredFastSearch = StoredFastSearch;
             newQuery.StoredPostfilter = StoredPostfilter;
             newQuery.FullTextSearchQuery = query;
+            newQuery.FullTextSearchColumns = columns;
             return newQuery;
         }
     }

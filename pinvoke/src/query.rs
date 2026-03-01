@@ -52,6 +52,7 @@ pub(crate) struct QueryParams {
     pub offset: Option<u64>,
     pub with_row_id: Option<bool>,
     pub full_text_search: Option<String>,
+    pub full_text_search_columns: Option<Vec<String>>,
     pub fast_search: Option<bool>,
     pub postfilter: Option<bool>,
     // Vector-specific
@@ -99,7 +100,11 @@ pub(crate) fn apply_base_params(mut query: Query, params: &QueryParams) -> Resul
         query = query.with_row_id();
     }
     if let Some(ref text) = params.full_text_search {
-        query = query.full_text_search(FullTextSearchQuery::new(text.clone()));
+        let mut fts = FullTextSearchQuery::new(text.clone());
+        if let Some(ref cols) = params.full_text_search_columns {
+            fts = fts.with_columns(cols).map_err(|e| e.to_string())?;
+        }
+        query = query.full_text_search(fts);
     }
     if params.fast_search == Some(true) {
         query = query.fast_search();
@@ -132,7 +137,11 @@ pub(crate) fn apply_vector_params(
         vq = vq.with_row_id();
     }
     if let Some(ref text) = params.full_text_search {
-        vq = vq.full_text_search(FullTextSearchQuery::new(text.clone()));
+        let mut fts = FullTextSearchQuery::new(text.clone());
+        if let Some(ref cols) = params.full_text_search_columns {
+            fts = fts.with_columns(cols).map_err(|e| e.to_string())?;
+        }
+        vq = vq.full_text_search(fts);
     }
     if params.fast_search == Some(true) {
         vq = vq.fast_search();

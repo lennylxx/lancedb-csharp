@@ -38,6 +38,7 @@ namespace lancedb
         internal int? StoredOffset;
         internal bool StoredWithRowId;
         internal string? FullTextSearchQuery;
+        internal string[]? FullTextSearchColumns;
         internal bool StoredFastSearch;
         internal bool StoredPostfilter;
 
@@ -76,6 +77,10 @@ namespace lancedb
             if (FullTextSearchQuery != null)
             {
                 dict["full_text_search"] = FullTextSearchQuery;
+            }
+            if (FullTextSearchColumns != null)
+            {
+                dict["full_text_search_columns"] = FullTextSearchColumns;
             }
             if (StoredFastSearch)
             {
@@ -132,6 +137,7 @@ namespace lancedb
             StoredOffset = source.StoredOffset;
             StoredWithRowId = source.StoredWithRowId;
             FullTextSearchQuery = source.FullTextSearchQuery;
+            FullTextSearchColumns = source.FullTextSearchColumns;
             StoredFastSearch = source.StoredFastSearch;
             StoredPostfilter = source.StoredPostfilter;
         }
@@ -246,10 +252,15 @@ namespace lancedb
         /// </para>
         /// </remarks>
         /// <param name="query">The search query string.</param>
+        /// <param name="columns">
+        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
+        /// columns are searched.
+        /// </param>
         /// <returns>This query instance for method chaining.</returns>
-        public T FullTextSearch(string query)
+        public T FullTextSearch(string query, string[]? columns = null)
         {
             FullTextSearchQuery = query;
+            FullTextSearchColumns = columns;
             return (T)this;
         }
 
