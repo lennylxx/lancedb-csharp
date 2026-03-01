@@ -137,6 +137,10 @@ namespace lancedb
             IntPtr table_ptr, IntPtr transforms_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern unsafe void table_add_columns_null(
+            IntPtr table_ptr, CArrowSchema* schema, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_alter_columns(
             IntPtr table_ptr, IntPtr alterations_json, NativeCall.FfiCallback completion);
 
@@ -1142,6 +1146,40 @@ namespace lancedb
                     {
                         table_add_columns(
                             _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                    }
+                }
+            }).ConfigureAwait(false);
+
+            return new AddColumnsResult { Version = (ulong)resultPtr.ToInt64() };
+        }
+
+        /// <summary>
+        /// Add new null-filled columns defined by an Arrow schema.
+        /// </summary>
+        /// <remarks>
+        /// Each field in the schema becomes a new column in the table, with all
+        /// existing rows filled with <c>null</c>. This is useful for schema evolution
+        /// when you want to add columns that will be populated later.
+        /// </remarks>
+        /// <param name="schema">
+        /// An Arrow <see cref="Apache.Arrow.Schema"/> whose fields define the new columns
+        /// to add. Each field's name, data type, and nullability are preserved.
+        /// </param>
+        /// <returns>
+        /// An <see cref="AddColumnsResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<AddColumnsResult> AddColumns(Apache.Arrow.Schema schema)
+        {
+            IntPtr resultPtr = await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    var cSchema = new CArrowSchema[1];
+                    fixed (CArrowSchema* pSchema = cSchema)
+                    {
+                        CArrowSchemaExporter.ExportSchema(schema, pSchema);
+                        table_add_columns_null(
+                            _handle!.DangerousGetHandle(), pSchema, completion);
                     }
                 }
             }).ConfigureAwait(false);

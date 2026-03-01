@@ -795,6 +795,36 @@ pub extern "C" fn table_add_columns(
     });
 }
 
+/// Add new null-filled columns to the table from an Arrow schema (via C Data Interface).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_add_columns_null(
+    table_ptr: *const Table,
+    schema_ptr: *mut arrow_schema::ffi::FFI_ArrowSchema,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+
+    let schema = match unsafe {
+        arrow_schema::Schema::try_from(&*schema_ptr)
+    } {
+        Ok(s) => s,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
+
+    crate::spawn(async move {
+        let transform = NewColumnTransform::AllNulls(std::sync::Arc::new(schema));
+        match table.add_columns(transform, None).await {
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
 /// Alter existing columns (rename, set nullable, cast type).
 /// alterations_json is a JSON array of objects with "path", optional "rename",
 /// optional "nullable", optional "data_type" (as Arrow DataType string).

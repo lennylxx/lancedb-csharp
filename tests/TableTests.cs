@@ -568,6 +568,44 @@ namespace lancedb.tests
             }
         }
 
+        [Fact]
+        public async Task AddColumns_NullFields_AddsNullColumns()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+                var batch = CreateTestBatch(3);
+                var table = await connection.CreateTable("add_null_cols", batch);
+
+                var fields = new Apache.Arrow.Schema.Builder()
+                    .Field(new Apache.Arrow.Field("score", Apache.Arrow.Types.FloatType.Default, true))
+                    .Field(new Apache.Arrow.Field("label", Apache.Arrow.Types.StringType.Default, true))
+                    .Build();
+
+                var addResult = await table.AddColumns(fields);
+
+                Assert.True(addResult.Version > 0);
+
+                var schema = await table.Schema();
+                Assert.Equal(3, schema.FieldsList.Count);
+                Assert.Equal("id", schema.FieldsList[0].Name);
+                Assert.Equal("score", schema.FieldsList[1].Name);
+                Assert.Equal("label", schema.FieldsList[2].Name);
+
+                table.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
         /// <summary>
         /// AlterColumns should rename a column.
         /// </summary>

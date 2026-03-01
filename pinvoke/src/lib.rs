@@ -22,7 +22,7 @@ pub use query::{
     vector_query_explain_plan, vector_query_output_schema,
 };
 pub use table::{
-    table_add, table_add_columns, table_alter_columns,
+    table_add, table_add_columns, table_add_columns_null, table_alter_columns,
     table_checkout, table_checkout_latest, table_checkout_tag, table_close, table_count_rows,
     table_create_index, table_delete, table_drop_columns, table_drop_index, table_get_name,
     table_index_stats, table_index_stats_free, table_is_open, table_list_indices,
