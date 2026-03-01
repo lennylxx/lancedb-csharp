@@ -380,7 +380,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == "BTREE");
+            Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == IndexType.BTree);
         }
 
         /// <summary>
@@ -395,7 +395,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "id" }, new BitmapIndex());
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == "BITMAP");
+            Assert.Contains(indices, i => i.Columns.Contains("id") && i.IndexType == IndexType.Bitmap);
         }
 
         /// <summary>
@@ -1313,7 +1313,7 @@ namespace lancedb.tests
 
             Assert.NotNull(stats);
             Assert.Equal(100, (int)stats!.NumIndexedRows);
-            Assert.Equal("BTREE", stats.IndexType);
+            Assert.Equal(IndexType.BTree, stats.IndexType);
         }
 
         /// <summary>
@@ -1438,7 +1438,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfFlatIndex());
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_FLAT");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfFlat);
         }
 
         /// <summary>
@@ -1452,14 +1452,14 @@ namespace lancedb.tests
 
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfFlatIndex
             {
-                DistanceType = "cosine",
+                DistanceType = lancedb.DistanceType.Cosine,
                 NumPartitions = 2,
                 MaxIterations = 10,
                 SampleRate = 128,
             });
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_FLAT");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfFlat);
         }
 
         /// <summary>
@@ -1474,7 +1474,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfSqIndex());
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_SQ");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfSq);
         }
 
         /// <summary>
@@ -1488,14 +1488,14 @@ namespace lancedb.tests
 
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfSqIndex
             {
-                DistanceType = "dot",
+                DistanceType = lancedb.DistanceType.Dot,
                 NumPartitions = 2,
                 MaxIterations = 10,
                 SampleRate = 128,
             });
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_SQ");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfSq);
         }
 
         /// <summary>
@@ -1510,7 +1510,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfRqIndex());
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_RQ");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfRq);
         }
 
         /// <summary>
@@ -1524,7 +1524,7 @@ namespace lancedb.tests
 
             await fixture.Table.CreateIndex(new[] { "vector" }, new IvfRqIndex
             {
-                DistanceType = "cosine",
+                DistanceType = lancedb.DistanceType.Cosine,
                 NumPartitions = 2,
                 NumBits = 1,
                 MaxIterations = 10,
@@ -1532,7 +1532,7 @@ namespace lancedb.tests
             });
 
             var indices = await fixture.Table.ListIndices();
-            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == "IVF_RQ");
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfRq);
         }
 
         /// <summary>

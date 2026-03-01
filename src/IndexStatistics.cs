@@ -1,6 +1,19 @@
 namespace lancedb
 {
-    using System.Text.Json.Serialization;
+    using System.Runtime.InteropServices;
+
+    /// <summary>
+    /// Native FFI struct matching Rust FfiIndexStats layout.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct FfiIndexStats
+    {
+        public ulong NumIndexedRows;
+        public ulong NumUnindexedRows;
+        public int IndexType;
+        public int DistanceType;
+        public uint NumIndices;
+    }
 
     /// <summary>
     /// Statistics about a specific index on a table.
@@ -11,33 +24,38 @@ namespace lancedb
         /// <summary>
         /// The number of rows in the table that are covered by this index.
         /// </summary>
-        [JsonPropertyName("num_indexed_rows")]
-        public ulong NumIndexedRows { get; set; }
+        public ulong NumIndexedRows { get; }
 
         /// <summary>
         /// The number of rows in the table that are not covered by this index.
         /// These are rows that haven't yet been added to the index.
         /// </summary>
-        [JsonPropertyName("num_unindexed_rows")]
-        public ulong NumUnindexedRows { get; set; }
+        public ulong NumUnindexedRows { get; }
 
         /// <summary>
-        /// The type of the index (e.g. "BTREE", "BITMAP", "IVF_PQ", "IVF_HNSW_PQ", "FTS").
+        /// The type of the index (e.g. IvfPq, BTree, Bitmap, Fts).
         /// </summary>
-        [JsonPropertyName("index_type")]
-        public string IndexType { get; set; } = "";
+        public IndexType IndexType { get; }
 
         /// <summary>
-        /// The distance type used by the index (e.g. "l2", "cosine", "dot").
+        /// The distance type used by the index (e.g. L2, Cosine, Dot).
         /// Only present for vector indices; <c>null</c> for scalar and FTS indices.
         /// </summary>
-        [JsonPropertyName("distance_type")]
-        public string? DistanceType { get; set; }
+        public DistanceType? DistanceType { get; }
 
         /// <summary>
         /// The number of parts this index is split into.
+        /// Zero if not available.
         /// </summary>
-        [JsonPropertyName("num_indices")]
-        public uint? NumIndices { get; set; }
+        public uint NumIndices { get; }
+
+        internal IndexStatistics(FfiIndexStats ffi)
+        {
+            NumIndexedRows = ffi.NumIndexedRows;
+            NumUnindexedRows = ffi.NumUnindexedRows;
+            IndexType = (IndexType)ffi.IndexType;
+            DistanceType = ffi.DistanceType >= 0 ? (DistanceType?)ffi.DistanceType : null;
+            NumIndices = ffi.NumIndices;
+        }
     }
 }

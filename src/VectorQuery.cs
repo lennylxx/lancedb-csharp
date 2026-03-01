@@ -40,7 +40,7 @@ namespace lancedb
 
         // Vector-specific stored parameters
         private string? _column;
-        private string? _distanceType;
+        private int? _distanceType;
         private int? _nprobes;
         private int? _refineFactor;
         private bool _bypassVectorIndex;
@@ -74,9 +74,9 @@ namespace lancedb
             {
                 dict["column"] = _column;
             }
-            if (_distanceType != null)
+            if (_distanceType.HasValue)
             {
-                dict["distance_type"] = _distanceType;
+                dict["distance_type"] = _distanceType.Value;
             }
             if (_nprobes.HasValue)
             {
@@ -164,15 +164,14 @@ namespace lancedb
         /// Set the distance metric to use for the vector search.
         /// </summary>
         /// <remarks>
-        /// Supported values are <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, and <c>"hamming"</c>.
         /// If not specified, the distance type is inferred from the vector column's metadata
-        /// or defaults to <c>"l2"</c>.
+        /// or defaults to <see cref="lancedb.DistanceType.L2"/>.
         /// </remarks>
         /// <param name="distanceType">The distance metric to use.</param>
         /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
-        public VectorQuery DistanceType(string distanceType)
+        public VectorQuery DistanceType(DistanceType distanceType)
         {
-            _distanceType = distanceType;
+            _distanceType = (int)distanceType;
             return this;
         }
 

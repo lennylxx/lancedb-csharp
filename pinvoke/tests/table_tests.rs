@@ -385,14 +385,13 @@ fn test_create_index_with_name_ffi() {
     common::add_sync(table_ptr, vec![create_test_batch(100)]);
 
     let columns_json = std::ffi::CString::new(r#"["id"]"#).unwrap();
-    let index_type = std::ffi::CString::new("BTree").unwrap();
     let config_json = std::ffi::CString::new("{}").unwrap();
     let name = std::ffi::CString::new("my_named_idx").unwrap();
 
     table_create_index(
         table_ptr,
         columns_json.as_ptr(),
-        index_type.as_ptr(),
+        6, // BTree
         config_json.as_ptr(),
         true,
         name.as_ptr(),
@@ -419,13 +418,12 @@ fn test_create_index_train_false_ffi() {
     common::add_sync(table_ptr, vec![create_test_batch(100)]);
 
     let columns_json = std::ffi::CString::new(r#"["id"]"#).unwrap();
-    let index_type = std::ffi::CString::new("BTree").unwrap();
     let config_json = std::ffi::CString::new("{}").unwrap();
 
     table_create_index(
         table_ptr,
         columns_json.as_ptr(),
-        index_type.as_ptr(),
+        6, // BTree
         config_json.as_ptr(),
         true,
         ptr::null(),

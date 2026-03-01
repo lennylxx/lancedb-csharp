@@ -85,7 +85,7 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_create_index(
-            IntPtr table_ptr, IntPtr columns_json, IntPtr index_type, IntPtr config_json,
+            IntPtr table_ptr, IntPtr columns_json, int index_type, IntPtr config_json,
             bool replace, IntPtr name, bool train, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -108,6 +108,9 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_index_stats(
             IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_index_stats_free(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_add_columns(
@@ -771,7 +774,7 @@ namespace lancedb
         {
             string columnsJson = JsonSerializer.Serialize(columns);
             byte[] columnsBytes = NativeCall.ToUtf8(columnsJson);
-            byte[] typeBytes = NativeCall.ToUtf8(index.IndexType);
+            int indexType = (int)index.IndexType;
             byte[] configBytes = NativeCall.ToUtf8(index.ToConfigJson());
             byte[]? nameBytes = name != null ? NativeCall.ToUtf8(name) : null;
 
@@ -780,13 +783,12 @@ namespace lancedb
                 unsafe
                 {
                     fixed (byte* pColumns = columnsBytes)
-                    fixed (byte* pType = typeBytes)
                     fixed (byte* pConfig = configBytes)
                     fixed (byte* pName = nameBytes)
                     {
                         table_create_index(
                             _handle!.DangerousGetHandle(),
-                            (IntPtr)pColumns, (IntPtr)pType, (IntPtr)pConfig,
+                            (IntPtr)pColumns, indexType, (IntPtr)pConfig,
                             replace, (IntPtr)pName, train, completion);
                     }
                 }
@@ -796,16 +798,16 @@ namespace lancedb
         /// <summary>
         /// List all indices that have been created on this table.
         /// </summary>
-        /// <returns>A list of <see cref="IndexInfo"/> describing each index.</returns>
-        public async Task<IReadOnlyList<IndexInfo>> ListIndices()
+        /// <returns>A list of <see cref="IndexConfig"/> describing each index.</returns>
+        public async Task<IReadOnlyList<IndexConfig>> ListIndices()
         {
             IntPtr result = await NativeCall.Async(completion =>
             {
                 table_list_indices(_handle!.DangerousGetHandle(), completion);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
-            return JsonSerializer.Deserialize<List<IndexInfo>>(json)
-                ?? new List<IndexInfo>();
+            return JsonSerializer.Deserialize<List<IndexConfig>>(json)
+                ?? new List<IndexConfig>();
         }
 
         /// <summary>
@@ -939,8 +941,15 @@ namespace lancedb
                 return null;
             }
 
-            string json = NativeCall.ReadStringAndFree(result);
-            return JsonSerializer.Deserialize<IndexStatistics>(json);
+            try
+            {
+                var ffi = Marshal.PtrToStructure<FfiIndexStats>(result);
+                return new IndexStatistics(ffi);
+            }
+            finally
+            {
+                table_index_stats_free(result);
+            }
         }
 
         /// <summary>

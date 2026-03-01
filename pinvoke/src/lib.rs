@@ -25,11 +25,11 @@ pub use table::{
     table_add, table_add_columns, table_alter_columns,
     table_checkout, table_checkout_latest, table_checkout_tag, table_close, table_count_rows,
     table_create_index, table_delete, table_drop_columns, table_drop_index, table_get_name,
-    table_index_stats, table_is_open, table_list_indices, table_list_versions, table_merge_insert,
-    table_optimize, table_prewarm_index, table_restore, table_schema, table_stats,
-    table_stats_free, table_tags_create, table_tags_delete, table_tags_get_version, table_tags_list,
-    table_tags_update, table_take_offsets, table_take_row_ids, table_update, table_uri,
-    table_version, table_wait_for_index,
+    table_index_stats, table_index_stats_free, table_is_open, table_list_indices,
+    table_list_versions, table_merge_insert, table_optimize, table_prewarm_index, table_restore,
+    table_schema, table_stats, table_stats_free, table_tags_create, table_tags_delete,
+    table_tags_get_version, table_tags_list, table_tags_update, table_take_offsets,
+    table_take_row_ids, table_update, table_uri, table_version, table_wait_for_index,
 };
 pub use ffi::{free_ffi_cdata, free_ffi_schema, free_string, FfiCData};
 

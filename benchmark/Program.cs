@@ -108,7 +108,7 @@ public static class Program
                     new[] { "vector" },
                     new IvfPqIndex
                     {
-                        DistanceType = "l2",
+                        DistanceType = lancedb.DistanceType.L2,
                         NumPartitions = NumPartitions,
                         NumSubVectors = NumSubVectors,
                     });

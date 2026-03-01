@@ -7,7 +7,6 @@ use std::ffi::CString;
 
 use crate::ffi::{callback_error, FfiCallback};
 use crate::ffi;
-use crate::ffi::parse_distance_type;
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
 #[unsafe(no_mangle)]
@@ -329,7 +328,7 @@ pub extern "C" fn table_uri(
 
 /// Creates an index on the table.
 /// columns_json: JSON array of column names, e.g. '["vector"]'.
-/// index_type: one of "BTree", "Bitmap", "LabelList", "FTS", "IvfPq", "HnswPq", "HnswSq".
+/// index_type: integer matching IndexType enum (0=IvfFlat, 1=IvfSq, ..., 9=FTS).
 /// config_json: JSON object with index-specific parameters (can be null for defaults).
 /// replace: whether to replace an existing index on the same columns.
 /// name: optional custom index name (null for auto-generated).
@@ -338,7 +337,7 @@ pub extern "C" fn table_uri(
 pub extern "C" fn table_create_index(
     table_ptr: *const Table,
     columns_json: *const c_char,
-    index_type: *const c_char,
+    index_type: i32,
     config_json: *const c_char,
     replace: bool,
     name: *const c_char,
@@ -347,7 +346,6 @@ pub extern "C" fn table_create_index(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
     let columns_str = crate::ffi::to_string(columns_json);
-    let index_type_str = crate::ffi::to_string(index_type);
     let config_str = if config_json.is_null() {
         "{}".to_string()
     } else {
@@ -376,7 +374,7 @@ pub extern "C" fn table_create_index(
             }
         };
 
-        let index = match build_index(&index_type_str, &config) {
+        let index = match build_index(index_type, &config) {
             Ok(idx) => idx,
             Err(e) => {
                 callback_error(completion, e);
@@ -401,15 +399,18 @@ pub extern "C" fn table_create_index(
     });
 }
 
-fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex, String> {
+fn build_index(index_type: i32, config: &sonic_rs::Value) -> Result<LanceIndex, String> {
     use lancedb::index::scalar::*;
     use lancedb::index::vector::*;
+    use lancedb::index::IndexType;
 
-    match index_type {
-        "BTree" => Ok(LanceIndex::BTree(BTreeIndexBuilder::default())),
-        "Bitmap" => Ok(LanceIndex::Bitmap(BitmapIndexBuilder::default())),
-        "LabelList" => Ok(LanceIndex::LabelList(LabelListIndexBuilder::default())),
-        "FTS" => {
+    let idx_type = ffi::ffi_to_index_type(index_type)?;
+
+    match idx_type {
+        IndexType::BTree => Ok(LanceIndex::BTree(BTreeIndexBuilder::default())),
+        IndexType::Bitmap => Ok(LanceIndex::Bitmap(BitmapIndexBuilder::default())),
+        IndexType::LabelList => Ok(LanceIndex::LabelList(LabelListIndexBuilder::default())),
+        IndexType::FTS => {
             let mut builder = FtsIndexBuilder::default();
             if let Some(v) = config.get("with_position").and_then(|v| v.as_bool()) {
                 builder = builder.with_position(v);
@@ -446,10 +447,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::FTS(builder))
         }
-        "IvfPq" => {
+        IndexType::IvfPq => {
             let mut builder = IvfPqIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -471,10 +472,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfPq(builder))
         }
-        "HnswPq" => {
+        IndexType::IvfHnswPq => {
             let mut builder = IvfHnswPqIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -502,10 +503,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfHnswPq(builder))
         }
-        "HnswSq" => {
+        IndexType::IvfHnswSq => {
             let mut builder = IvfHnswSqIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -527,10 +528,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfHnswSq(builder))
         }
-        "IvfFlat" => {
+        IndexType::IvfFlat => {
             let mut builder = IvfFlatIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -546,10 +547,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfFlat(builder))
         }
-        "IvfSq" => {
+        IndexType::IvfSq => {
             let mut builder = IvfSqIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -565,10 +566,10 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfSq(builder))
         }
-        "IvfRq" => {
+        IndexType::IvfRq => {
             let mut builder = IvfRqIndexBuilder::default();
-            if let Some(v) = config.get("distance_type").and_then(|v| v.as_str()) {
-                builder = builder.distance_type(parse_distance_type(v)?);
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
             }
             if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
                 builder = builder.num_partitions(v as u32);
@@ -587,7 +588,6 @@ fn build_index(index_type: &str, config: &sonic_rs::Value) -> Result<LanceIndex,
             }
             Ok(LanceIndex::IvfRq(builder))
         }
-        _ => Err(format!("Unknown index type: {}", index_type)),
     }
 }
 
@@ -607,7 +607,7 @@ pub extern "C" fn table_list_indices(
                     .map(|idx| {
                         sonic_rs::json!({
                             "name": idx.name,
-                            "index_type": idx.index_type.to_string(),
+                            "index_type": ffi::index_type_to_ffi(&idx.index_type),
                             "columns": idx.columns,
                         })
                     })
@@ -951,6 +951,22 @@ pub extern "C" fn table_wait_for_index(
 
 /// Get statistics about an index. Returns a JSON string or null if the index doesn't exist.
 #[unsafe(no_mangle)]
+/// C-compatible struct for index statistics, passed across FFI without JSON.
+#[repr(C)]
+pub struct FfiIndexStats {
+    pub num_indexed_rows: u64,
+    pub num_unindexed_rows: u64,
+    /// Maps to IndexType enum: 0=IvfFlat, 1=IvfSq, 2=IvfPq, 3=IvfRq,
+    /// 4=IvfHnswPq, 5=IvfHnswSq, 6=BTree, 7=Bitmap, 8=LabelList, 9=FTS
+    pub index_type: i32,
+    /// Maps to DistanceType enum: 0=L2, 1=Cosine, 2=Dot, 3=Hamming, -1=None
+    pub distance_type: i32,
+    /// Number of index parts. 0 if not available.
+    pub num_indices: u32,
+}
+
+
+#[unsafe(no_mangle)]
 pub extern "C" fn table_index_stats(
     table_ptr: *const Table,
     index_name: *const c_char,
@@ -961,16 +977,15 @@ pub extern "C" fn table_index_stats(
     crate::spawn(async move {
         match table.index_stats(&name).await {
             Ok(Some(stats)) => {
-                let json = sonic_rs::json!({
-                    "num_indexed_rows": stats.num_indexed_rows,
-                    "num_unindexed_rows": stats.num_unindexed_rows,
-                    "index_type": format!("{}", stats.index_type),
-                    "distance_type": stats.distance_type.map(|d| format!("{}", d)),
-                    "num_indices": stats.num_indices,
+                let ffi_stats = Box::new(FfiIndexStats {
+                    num_indexed_rows: stats.num_indexed_rows as u64,
+                    num_unindexed_rows: stats.num_unindexed_rows as u64,
+                    index_type: ffi::index_type_to_ffi(&stats.index_type),
+                    distance_type: ffi::distance_type_to_ffi(stats.distance_type),
+                    num_indices: stats.num_indices.unwrap_or(0),
                 });
-                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
-                let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                let ptr = Box::into_raw(ffi_stats);
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
             }
             Ok(None) => {
                 completion(std::ptr::null(), std::ptr::null());
@@ -978,6 +993,14 @@ pub extern "C" fn table_index_stats(
             Err(e) => callback_error(completion, e),
         }
     });
+}
+
+/// Frees an FfiIndexStats pointer returned by table_index_stats.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_index_stats_free(ptr: *mut FfiIndexStats) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)); }
+    }
 }
 
 /// Closes the table and frees the underlying Arc.

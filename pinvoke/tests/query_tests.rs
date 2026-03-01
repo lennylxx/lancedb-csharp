@@ -215,7 +215,7 @@ fn test_vector_query_execute_with_all_params() {
     let params = CString::new(r#"{
         "select": ["id"],
         "limit": 3,
-        "distance_type": "l2",
+        "distance_type": 0,
         "column": "vector",
         "with_row_id": true
     }"#).unwrap();

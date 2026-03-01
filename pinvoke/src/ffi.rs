@@ -58,14 +58,65 @@ pub fn minimal_schema() -> Arc<Schema> {
     Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]))
 }
 
-/// Parses a distance type string into a LanceDB DistanceType enum.
-pub fn parse_distance_type(s: &str) -> Result<lancedb::DistanceType, String> {
-    match s.to_lowercase().as_str() {
-        "l2" => Ok(lancedb::DistanceType::L2),
-        "cosine" => Ok(lancedb::DistanceType::Cosine),
-        "dot" => Ok(lancedb::DistanceType::Dot),
-        "hamming" => Ok(lancedb::DistanceType::Hamming),
-        _ => Err(format!("Unknown distance type: {}", s)),
+/// Converts an FFI integer to a LanceDB DistanceType.
+/// L2=0, Cosine=1, Dot=2, Hamming=3.
+pub fn ffi_to_distance_type(i: i32) -> Result<lancedb::DistanceType, String> {
+    match i {
+        0 => Ok(lancedb::DistanceType::L2),
+        1 => Ok(lancedb::DistanceType::Cosine),
+        2 => Ok(lancedb::DistanceType::Dot),
+        3 => Ok(lancedb::DistanceType::Hamming),
+        _ => Err(format!("Unknown distance type: {}", i)),
+    }
+}
+
+/// Converts an FFI integer to a LanceDB IndexType.
+/// IvfFlat=0, IvfSq=1, IvfPq=2, IvfRq=3, IvfHnswPq=4, IvfHnswSq=5,
+/// BTree=6, Bitmap=7, LabelList=8, Fts=9.
+pub fn ffi_to_index_type(i: i32) -> Result<lancedb::index::IndexType, String> {
+    use lancedb::index::IndexType;
+    match i {
+        0 => Ok(IndexType::IvfFlat),
+        1 => Ok(IndexType::IvfSq),
+        2 => Ok(IndexType::IvfPq),
+        3 => Ok(IndexType::IvfRq),
+        4 => Ok(IndexType::IvfHnswPq),
+        5 => Ok(IndexType::IvfHnswSq),
+        6 => Ok(IndexType::BTree),
+        7 => Ok(IndexType::Bitmap),
+        8 => Ok(IndexType::LabelList),
+        9 => Ok(IndexType::FTS),
+        _ => Err(format!("Unknown index type: {}", i)),
+    }
+}
+
+/// Converts a LanceDB IndexType to an FFI integer.
+pub fn index_type_to_ffi(t: &lancedb::index::IndexType) -> i32 {
+    use lancedb::index::IndexType;
+    match t {
+        IndexType::IvfFlat => 0,
+        IndexType::IvfSq => 1,
+        IndexType::IvfPq => 2,
+        IndexType::IvfRq => 3,
+        IndexType::IvfHnswPq => 4,
+        IndexType::IvfHnswSq => 5,
+        IndexType::BTree => 6,
+        IndexType::Bitmap => 7,
+        IndexType::LabelList => 8,
+        IndexType::FTS => 9,
+    }
+}
+
+/// Converts an optional LanceDB DistanceType to an FFI integer.
+/// Returns -1 for None (sentinel value).
+pub fn distance_type_to_ffi(d: Option<lancedb::DistanceType>) -> i32 {
+    match d {
+        Some(lancedb::DistanceType::L2) => 0,
+        Some(lancedb::DistanceType::Cosine) => 1,
+        Some(lancedb::DistanceType::Dot) => 2,
+        Some(lancedb::DistanceType::Hamming) => 3,
+        None => -1,
+        _ => -1,
     }
 }
 

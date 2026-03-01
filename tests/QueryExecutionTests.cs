@@ -843,38 +843,6 @@ namespace lancedb.tests
         // ----- FFI Error Surfacing Tests -----
 
         /// <summary>
-        /// VectorQuery.DistanceType with an invalid type should throw LanceDbException at execution time.
-        /// </summary>
-        [Fact]
-        public async Task VectorQuery_InvalidDistanceType_ThrowsLanceDbException()
-        {
-            using var fixture = await CreateVectorTextFixture("vq_bad_distance");
-
-            using var query = fixture.Table.Query()
-                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
-                .DistanceType("invalid_type");
-
-            var ex = await Assert.ThrowsAsync<LanceDbException>(() => query.ToArrow());
-            Assert.Contains("Unknown distance type", ex.Message);
-        }
-
-        /// <summary>
-        /// VectorQuery.DistanceType error message should contain the invalid type name.
-        /// </summary>
-        [Fact]
-        public async Task VectorQuery_InvalidDistanceType_ErrorMessageContainsTypeName()
-        {
-            using var fixture = await CreateVectorTextFixture("vq_bad_distance_msg");
-
-            using var query = fixture.Table.Query()
-                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
-                .DistanceType("manhattan");
-
-            var ex = await Assert.ThrowsAsync<LanceDbException>(() => query.ToArrow());
-            Assert.Contains("manhattan", ex.Message);
-        }
-
-        /// <summary>
         /// Executing a query with an invalid WHERE filter should throw LanceDbException.
         /// The error is raised asynchronously during query execution on the Rust side.
         /// </summary>

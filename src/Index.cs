@@ -9,7 +9,7 @@ namespace lancedb
     /// </summary>
     public abstract class Index
     {
-        internal abstract string IndexType { get; }
+        internal abstract IndexType IndexType { get; }
         internal abstract string ToConfigJson();
     }
 
@@ -27,7 +27,7 @@ namespace lancedb
     /// </remarks>
     public class BTreeIndex : Index
     {
-        internal override string IndexType => "BTree";
+        internal override IndexType IndexType => IndexType.BTree;
         internal override string ToConfigJson() => "{}";
     }
 
@@ -48,7 +48,7 @@ namespace lancedb
     /// </remarks>
     public class BitmapIndex : Index
     {
-        internal override string IndexType => "Bitmap";
+        internal override IndexType IndexType => IndexType.Bitmap;
         internal override string ToConfigJson() => "{}";
     }
 
@@ -61,7 +61,7 @@ namespace lancedb
     /// </remarks>
     public class LabelListIndex : Index
     {
-        internal override string IndexType => "LabelList";
+        internal override IndexType IndexType => IndexType.LabelList;
         internal override string ToConfigJson() => "{}";
     }
 
@@ -138,7 +138,7 @@ namespace lancedb
         /// </summary>
         public bool PrefixOnly { get; set; } = false;
 
-        internal override string IndexType => "FTS";
+        internal override IndexType IndexType => IndexType.FTS;
 
         internal override string ToConfigJson()
         {
@@ -189,23 +189,13 @@ namespace lancedb
     {
         /// <summary>
         /// The distance metric used to train the index.
-        /// Default is <c>"l2"</c>.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
         /// <remarks>
         /// The distance type used to train an index MUST match the distance type
         /// used to search the index. Failure to do so will yield inaccurate results.
-        /// <list type="bullet">
-        /// <item><description><c>"l2"</c>: Euclidean distance. Accounts for both magnitude and direction.
-        /// Range is [0, ∞).</description></item>
-        /// <item><description><c>"cosine"</c>: Cosine distance. Not affected by the magnitude of the
-        /// vectors. Range is [0, 2]. Undefined when one or both vectors are all zeros.</description></item>
-        /// <item><description><c>"dot"</c>: Dot product. Range is (-∞, ∞). Equivalent to cosine distance
-        /// when vectors are normalized (l2 norm is 1).</description></item>
-        /// <item><description><c>"hamming"</c>: Hamming distance. Counts the number of differing
-        /// dimensions. Useful for binary vectors.</description></item>
-        /// </list>
         /// </remarks>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions to create.
@@ -270,13 +260,13 @@ namespace lancedb
         /// </remarks>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "IvfPq";
+        internal override IndexType IndexType => IndexType.IvfPq;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["num_bits"] = NumBits,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
@@ -299,10 +289,10 @@ namespace lancedb
     public class HnswPqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
-        /// Default is <c>"l2"</c>.
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -346,13 +336,13 @@ namespace lancedb
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "HnswPq";
+        internal override IndexType IndexType => IndexType.IvfHnswPq;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["num_bits"] = NumBits,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
@@ -383,10 +373,10 @@ namespace lancedb
     public class IvfFlatIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
-        /// Default is <c>"l2"</c>.
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -408,13 +398,13 @@ namespace lancedb
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "IvfFlat";
+        internal override IndexType IndexType => IndexType.IvfFlat;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
             };
@@ -435,10 +425,10 @@ namespace lancedb
     public class IvfSqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
-        /// Default is <c>"l2"</c>.
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -460,13 +450,13 @@ namespace lancedb
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "IvfSq";
+        internal override IndexType IndexType => IndexType.IvfSq;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
             };
@@ -488,10 +478,10 @@ namespace lancedb
     public class IvfRqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
-        /// Default is <c>"l2"</c>.
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -518,13 +508,13 @@ namespace lancedb
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "IvfRq";
+        internal override IndexType IndexType => IndexType.IvfRq;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["num_bits"] = NumBits,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
@@ -545,10 +535,10 @@ namespace lancedb
     public class HnswSqIndex : Index
     {
         /// <summary>
-        /// The distance metric. One of <c>"l2"</c>, <c>"cosine"</c>, <c>"dot"</c>, <c>"hamming"</c>.
-        /// Default is <c>"l2"</c>.
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
         /// </summary>
-        public string DistanceType { get; set; } = "l2";
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
 
         /// <summary>
         /// The number of IVF partitions. Default is the square root of the number of rows.
@@ -582,13 +572,13 @@ namespace lancedb
         /// </summary>
         public int? TargetPartitionSize { get; set; }
 
-        internal override string IndexType => "HnswSq";
+        internal override IndexType IndexType => IndexType.IvfHnswSq;
 
         internal override string ToConfigJson()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
-                ["distance_type"] = DistanceType,
+                ["distance_type"] = (int)DistanceType,
                 ["max_iterations"] = MaxIterations,
                 ["sample_rate"] = SampleRate,
                 ["num_edges"] = NumEdges,

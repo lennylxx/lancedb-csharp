@@ -7,7 +7,7 @@ namespace lancedb
     /// Metadata about an existing index on a table.
     /// Returned by <see cref="Table.ListIndices"/>.
     /// </summary>
-    public class IndexInfo
+    public class IndexConfig
     {
         /// <summary>
         /// The name of the index.
@@ -16,10 +16,10 @@ namespace lancedb
         public string Name { get; set; } = "";
 
         /// <summary>
-        /// The type of the index (e.g. "BTREE", "BITMAP", "IVF_PQ", "IVF_HNSW_PQ").
+        /// The type of the index.
         /// </summary>
         [JsonPropertyName("index_type")]
-        public string IndexType { get; set; } = "";
+        public IndexType IndexType { get; set; }
 
         /// <summary>
         /// The columns covered by this index.

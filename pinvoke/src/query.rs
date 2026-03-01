@@ -56,7 +56,7 @@ pub(crate) struct QueryParams {
     pub postfilter: Option<bool>,
     // Vector-specific
     pub column: Option<String>,
-    pub distance_type: Option<String>,
+    pub distance_type: Option<i32>,
     pub nprobes: Option<u64>,
     pub refine_factor: Option<u32>,
     pub bypass_vector_index: Option<bool>,
@@ -143,8 +143,8 @@ pub(crate) fn apply_vector_params(
     if let Some(ref col) = params.column {
         vq = vq.column(col);
     }
-    if let Some(ref dt) = params.distance_type {
-        let dt = ffi::parse_distance_type(dt)?;
+    if let Some(dt) = params.distance_type {
+        let dt = ffi::ffi_to_distance_type(dt)?;
         vq = vq.distance_type(dt);
     }
     if let Some(nprobes) = params.nprobes {
