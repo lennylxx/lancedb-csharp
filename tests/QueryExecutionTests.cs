@@ -998,5 +998,60 @@ namespace lancedb.tests
             Assert.Contains("lance error: Invalid user input", ex.Message);
             Assert.Contains("Error during planning: Invalid function 'abc'", ex.Message);
         }
+
+        [Fact]
+        public async Task ToBatches_Query_StreamsAllRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("tobatches_query");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            using var query = fixture.Table.Query();
+            using var reader = await query.ToBatches();
+
+            int totalRows = 0;
+            await foreach (var batch in reader)
+            {
+                Assert.NotNull(batch);
+                totalRows += batch.Length;
+            }
+
+            Assert.Equal(10, totalRows);
+        }
+
+        [Fact]
+        public async Task ToBatches_EmptyTable_StreamsZeroBatches()
+        {
+            using var fixture = await TestFixture.CreateWithTable("tobatches_empty");
+
+            using var query = fixture.Table.Query();
+            using var reader = await query.ToBatches();
+
+            int batchCount = 0;
+            await foreach (var batch in reader)
+            {
+                batchCount++;
+            }
+
+            Assert.Equal(0, batchCount);
+        }
+
+        [Fact]
+        public async Task ToBatches_VectorQuery_StreamsResults()
+        {
+            using var fixture = await CreateVectorTextFixture("tobatches_vq");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 });
+            using var reader = await query.ToBatches();
+
+            int totalRows = 0;
+            await foreach (var batch in reader)
+            {
+                Assert.NotNull(batch);
+                totalRows += batch.Length;
+            }
+
+            Assert.True(totalRows > 0);
+        }
     }
 }

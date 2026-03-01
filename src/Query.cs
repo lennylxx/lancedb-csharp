@@ -26,6 +26,11 @@ namespace lancedb
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void query_execute_stream(
+            IntPtr table_ptr, IntPtr params_json, long timeout_ms, uint max_batch_length,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_explain_plan(
             IntPtr table_ptr, IntPtr params_json,
             [MarshalAs(UnmanagedType.U1)] bool verbose,
@@ -64,6 +69,12 @@ namespace lancedb
         private protected override void NativeConsolidatedOutputSchema(
             IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
             => query_output_schema(tablePtr, paramsJson, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeConsolidatedExecuteStream(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback)
+            => query_execute_stream(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback);
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.

@@ -22,6 +22,11 @@ namespace lancedb
             long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void vector_query_execute_stream(
+            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_explain_plan(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
             [MarshalAs(UnmanagedType.U1)] bool verbose, NativeCall.FfiCallback completion);
@@ -142,6 +147,14 @@ namespace lancedb
             IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
             => vector_query_output_schema(
                 tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback);
+
+        /// <inheritdoc/>
+        private protected override void NativeConsolidatedExecuteStream(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback)
+            => vector_query_execute_stream(
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson,
+                timeoutMs, maxBatchLength, callback);
 
         /// <summary>
         /// Set the vector column to query.

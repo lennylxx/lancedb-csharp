@@ -127,6 +127,13 @@ namespace lancedb
             IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback);
 
         /// <summary>
+        /// Calls the native consolidated execute_stream FFI function.
+        /// </summary>
+        private protected abstract void NativeConsolidatedExecuteStream(
+            IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
+            NativeCall.FfiCallback callback);
+
+        /// <summary>
         /// Copies base parameters from another query builder.
         /// </summary>
         internal void CopyBaseParams(QueryBase<T> source)
@@ -357,6 +364,39 @@ namespace lancedb
         {
             var batch = await ToArrow(timeout, maxBatchLength).ConfigureAwait(false);
             return RecordBatchToList(batch);
+        }
+
+        /// <summary>
+        /// Execute the query and return the results as a streaming
+        /// <see cref="AsyncRecordBatchReader"/>.
+        /// </summary>
+        /// <remarks>
+        /// The reader yields one batch at a time, reducing peak memory usage for
+        /// large result sets. Use <c>await foreach</c> to consume the stream.
+        /// The returned reader must be disposed after use to release the
+        /// underlying native stream handle.
+        /// </remarks>
+        /// <param name="timeout">
+        /// Optional maximum time for the query to run. If <c>null</c>, no timeout is applied.
+        /// </param>
+        /// <param name="maxBatchLength">
+        /// Optional maximum number of rows per batch. If <c>null</c>, uses the default (1024).
+        /// </param>
+        /// <returns>An <see cref="AsyncRecordBatchReader"/> that yields batches incrementally.</returns>
+        public async Task<AsyncRecordBatchReader> ToBatches(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
+        {
+            long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
+            uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
+            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
+
+            IntPtr streamPtr = await CallWithPinnedJson(jsonHandle, completion =>
+            {
+                NativeConsolidatedExecuteStream(_tablePtr, pJson, timeoutMs, batchLen, completion);
+            }).ConfigureAwait(false);
+
+            return new AsyncRecordBatchReader(streamPtr);
         }
 
         /// <summary>

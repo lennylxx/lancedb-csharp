@@ -615,3 +615,144 @@ pub extern "C" fn vector_query_output_schema(
     };
     output_schema_impl(Arc::new(vq), completion);
 }
+
+// ---------------------------------------------------------------------------
+// Record Batch Stream FFI
+// ---------------------------------------------------------------------------
+
+type StreamHandle = tokio::sync::Mutex<lancedb::arrow::SendableRecordBatchStream>;
+
+/// Shared helper: execute any query and return a stream handle via callback.
+fn execute_stream_impl<Q>(
+    query: Arc<Q>,
+    options: QueryExecutionOptions,
+    completion: FfiCallback,
+) where
+    Q: ExecutableQuery + Send + Sync + 'static,
+{
+    crate::spawn(async move {
+        match query.execute_with_options(options).await {
+            Ok(stream) => {
+                let handle = Arc::new(tokio::sync::Mutex::new(stream));
+                let ptr = Arc::into_raw(handle);
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+/// Execute a Query and return a stream handle for incremental batch retrieval.
+#[unsafe(no_mangle)]
+pub extern "C" fn query_execute_stream(
+    table_ptr: *const Table,
+    params_json: *const c_char,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
+    let query = match build_query(table, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_stream_impl(Arc::new(query), options, completion);
+}
+
+/// Execute a VectorQuery and return a stream handle for incremental batch retrieval.
+#[unsafe(no_mangle)]
+pub extern "C" fn vector_query_execute_stream(
+    table_ptr: *const Table,
+    vector_ptr: *const c_double,
+    vector_len: size_t,
+    params_json: *const c_char,
+    timeout_ms: i64,
+    max_batch_length: u32,
+    completion: FfiCallback,
+) {
+    let table = ffi_borrow!(table_ptr, Table);
+    let vector = unsafe {
+        if vector_ptr.is_null() {
+            callback_error(completion, "Vector pointer is null");
+            return;
+        }
+        slice::from_raw_parts(vector_ptr, vector_len as usize)
+    };
+    let params = match parse_query_params(params_json) {
+        Ok(p) => p,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
+    let vq = match build_vector_query(table, vector, &params) {
+        Ok(q) => q,
+        Err(e) => {
+            callback_error(completion, e);
+            return;
+        }
+    };
+    let options = build_execution_options(timeout_ms, max_batch_length);
+    execute_stream_impl(Arc::new(vq), options, completion);
+}
+
+/// Get the next batch from a stream. Returns FfiCData via callback, or null
+/// pointer (with no error) when the stream is exhausted.
+#[unsafe(no_mangle)]
+pub extern "C" fn stream_next(
+    stream_ptr: *const StreamHandle,
+    completion: FfiCallback,
+) {
+    let stream = ffi_clone_arc!(stream_ptr, StreamHandle);
+    crate::spawn(async move {
+        use arrow_array::Array;
+        use arrow_array::StructArray;
+        use arrow_array::ffi::{FFI_ArrowArray, FFI_ArrowSchema};
+        use futures::StreamExt;
+
+        let mut guard = stream.lock().await;
+        match guard.next().await {
+            Some(Ok(batch)) => {
+                let struct_array: StructArray = batch.into();
+                let data = struct_array.to_data();
+                let ffi_array = FFI_ArrowArray::new(&data);
+                let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
+                    Ok(s) => s,
+                    Err(e) => {
+                        callback_error(completion, e);
+                        return;
+                    }
+                };
+                let cdata = Box::new(ffi::FfiCData {
+                    array: Box::into_raw(Box::new(ffi_array)),
+                    schema: Box::into_raw(Box::new(ffi_schema)),
+                });
+                completion(Box::into_raw(cdata) as *const std::ffi::c_void, std::ptr::null());
+            }
+            Some(Err(e)) => callback_error(completion, e),
+            None => {
+                // Stream exhausted — signal with null pointer and no error
+                completion(std::ptr::null(), std::ptr::null());
+            }
+        }
+    });
+}
+
+/// Close and free a stream handle.
+#[unsafe(no_mangle)]
+pub extern "C" fn stream_close(stream_ptr: *const StreamHandle) {
+    if !stream_ptr.is_null() {
+        unsafe { drop(Arc::from_raw(stream_ptr)); }
+    }
+}
