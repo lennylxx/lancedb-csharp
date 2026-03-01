@@ -38,6 +38,9 @@ namespace lancedb
         private static extern void database_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void database_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void database_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -399,24 +402,58 @@ namespace lancedb
         }
 
         /// <summary>
-        /// List the names of all tables in the database.
+        /// List tables in the database with pagination support.
         /// </summary>
         /// <remarks>
-        /// This is a convenience method equivalent to <see cref="TableNames"/>
-        /// with a different parameter name for pagination. Use <paramref name="pageToken"/>
-        /// (the last table name from the previous page) to paginate through results.
+        /// Returns a <see cref="ListTablesResponse"/> containing table names and an opaque
+        /// page token for retrieving subsequent pages. When the response's
+        /// <see cref="ListTablesResponse.PageToken"/> is not <c>null</c>, pass it as
+        /// <paramref name="pageToken"/> to retrieve the next page.
         /// </remarks>
         /// <param name="pageToken">
-        /// If present, only return names that come lexicographically after this value.
-        /// Pass the last name from the previous page to get the next page.
+        /// An opaque token from a previous <see cref="ListTablesResponse.PageToken"/>
+        /// to continue pagination. <c>null</c> starts from the beginning.
         /// </param>
         /// <param name="limit">
         /// The maximum number of table names to return. If 0, all names are returned.
         /// </param>
-        /// <returns>A list of table names in lexicographical order.</returns>
-        public Task<IReadOnlyList<string>> ListTables(string? pageToken = null, uint limit = 0)
+        /// <param name="ns">
+        /// The namespace to list tables from, specified as a hierarchical path.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
+        /// <returns>
+        /// A <see cref="ListTablesResponse"/> containing the table names and an optional
+        /// page token for the next page.
+        /// </returns>
+        public async Task<ListTablesResponse> ListTables(string? pageToken = null, uint limit = 0, IReadOnlyList<string>? ns = null)
         {
-            return TableNames(startAfter: pageToken, limit: limit);
+            byte[]? pageTokenBytes = pageToken != null ? NativeCall.ToUtf8(pageToken) : null;
+            byte[]? namespaceJson = ns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                : null;
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pPageToken = pageTokenBytes)
+                    fixed (byte* pNamespace = namespaceJson)
+                    {
+                        database_list_tables(
+                            _handle!.DangerousGetHandle(),
+                            pageTokenBytes != null ? new IntPtr(pPageToken) : IntPtr.Zero,
+                            limit,
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                            callback);
+                    }
+                }
+            });
+            string json = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(json))
+            {
+                return new ListTablesResponse();
+            }
+            return JsonSerializer.Deserialize<ListTablesResponse>(json) ?? new ListTablesResponse();
         }
 
         /// <summary>

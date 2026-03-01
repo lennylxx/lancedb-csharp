@@ -10,6 +10,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 lancedb = "0.26.2"
+lance-namespace = "=2.0.0"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 libc = "0.2"
 arrow-schema = "57"

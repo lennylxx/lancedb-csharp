@@ -1,3 +1,4 @@
+use lance_namespace::models::ListTablesRequest;
 use lancedb::connection::Connection;
 use lancedb::database::CreateTableMode;
 use libc::c_char;
@@ -351,6 +352,41 @@ pub extern "C" fn database_table_names(
             Ok(names) => {
                 let joined = names.join("\n");
                 let c_str = CString::new(joined).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn database_list_tables(
+    connection_ptr: *const Connection,
+    page_token: *const c_char,
+    limit: u32,
+    namespace_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    let page_token_str = ffi::parse_optional_string(page_token);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
+    crate::spawn(async move {
+        let mut request = ListTablesRequest::new();
+        request.page_token = page_token_str;
+        if limit > 0 {
+            request.limit = Some(limit as i32);
+        }
+        if let Some(ns) = namespace_list {
+            request.id = Some(ns);
+        }
+        match connection.list_tables(request).await {
+            Ok(response) => {
+                let json = sonic_rs::json!({
+                    "tables": response.tables,
+                    "page_token": response.page_token,
+                });
+                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),

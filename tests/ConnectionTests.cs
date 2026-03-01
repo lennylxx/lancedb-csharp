@@ -778,38 +778,40 @@ namespace lancedb.tests
         // -----------------------------------------------------------------------
 
         /// <summary>
-        /// ListTables should return all table names.
+        /// ListTables should return a ListTablesResponse with all table names.
         /// </summary>
         [Fact]
-        public async Task ListTables_WithTables_ReturnsNames()
+        public async Task ListTables_WithTables_ReturnsResponse()
         {
             using var fixture = await TestFixture.CreateWithTable("lt_main");
             await fixture.Connection.CreateEmptyTable("lt_extra");
 
-            var names = await fixture.Connection.ListTables();
+            var response = await fixture.Connection.ListTables();
 
-            Assert.Equal(2, names.Count);
-            Assert.Contains("lt_main", names);
-            Assert.Contains("lt_extra", names);
+            Assert.Equal(2, response.Tables.Count);
+            Assert.Contains("lt_main", response.Tables);
+            Assert.Contains("lt_extra", response.Tables);
+            Assert.Null(response.PageToken);
         }
 
         /// <summary>
-        /// ListTables with limit should restrict results.
+        /// ListTables with limit should restrict results and return a page token.
         /// </summary>
         [Fact]
-        public async Task ListTables_WithLimit_RestrictsResults()
+        public async Task ListTables_WithLimit_ReturnsPageToken()
         {
             using var fixture = await TestFixture.CreateWithTable("ltl_a");
             await fixture.Connection.CreateEmptyTable("ltl_b");
             await fixture.Connection.CreateEmptyTable("ltl_c");
 
-            var names = await fixture.Connection.ListTables(limit: 2);
+            var response = await fixture.Connection.ListTables(limit: 2);
 
-            Assert.Equal(2, names.Count);
+            Assert.Equal(2, response.Tables.Count);
+            Assert.NotNull(response.PageToken);
         }
 
         /// <summary>
-        /// ListTables with pageToken should paginate.
+        /// ListTables with pageToken should paginate through results.
         /// </summary>
         [Fact]
         public async Task ListTables_WithPageToken_Paginates()
@@ -817,13 +819,48 @@ namespace lancedb.tests
             using var fixture = await TestFixture.CreateWithTable("ltp_a");
             await fixture.Connection.CreateEmptyTable("ltp_b");
             await fixture.Connection.CreateEmptyTable("ltp_c");
+            await fixture.Connection.CreateEmptyTable("ltp_d");
 
             var firstPage = await fixture.Connection.ListTables(limit: 2);
-            Assert.Equal(2, firstPage.Count);
+            Assert.Equal(2, firstPage.Tables.Count);
+            Assert.NotNull(firstPage.PageToken);
 
             var secondPage = await fixture.Connection.ListTables(
-                pageToken: firstPage[firstPage.Count - 1], limit: 10);
-            Assert.Single(secondPage);
+                pageToken: firstPage.PageToken, limit: 10);
+            Assert.True(secondPage.Tables.Count > 0);
+            // Second page should not contain items from the first page
+            foreach (var name in firstPage.Tables)
+            {
+                Assert.DoesNotContain(name, secondPage.Tables);
+            }
+        }
+
+        /// <summary>
+        /// ListTables on an empty database should return empty tables and no page token.
+        /// </summary>
+        [Fact]
+        public async Task ListTables_EmptyDatabase_ReturnsEmptyResponse()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var response = await connection.ListTables();
+
+                Assert.Empty(response.Tables);
+                Assert.Null(response.PageToken);
+
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
         }
 
         // -----------------------------------------------------------------------
