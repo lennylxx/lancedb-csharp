@@ -5,7 +5,7 @@ use libc::c_char;
 use sonic_rs::JsonValueTrait;
 use std::ffi::CString;
 
-use crate::FfiCallback;
+use crate::ffi::{callback_error, FfiCallback};
 use crate::ffi;
 use crate::ffi::parse_distance_type;
 
@@ -48,7 +48,7 @@ pub extern "C" fn table_count_rows(
             Ok(count) => {
                 completion(count as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -67,7 +67,7 @@ pub extern "C" fn table_delete(
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -93,7 +93,7 @@ pub extern "C" fn table_update(
         let columns: Vec<(String, String)> = match sonic_rs::from_str(&columns_str) {
             Ok(c) => c,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -110,7 +110,7 @@ pub extern "C" fn table_update(
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -134,10 +134,10 @@ pub extern "C" fn table_schema(
                         let ptr = Box::into_raw(Box::new(ffi_schema));
                         completion(ptr as *const std::ffi::c_void, std::ptr::null());
                     }
-                    Err(e) => crate::callback_error(completion, e),
+                    Err(e) => callback_error(completion, e),
                 }
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -161,7 +161,7 @@ pub extern "C" fn table_add(
     let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -185,7 +185,7 @@ pub extern "C" fn table_add(
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -202,7 +202,7 @@ pub extern "C" fn table_version(
             Ok(version) => {
                 completion(version as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -232,7 +232,7 @@ pub extern "C" fn table_list_versions(
                 let c_str = CString::new(json).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -250,7 +250,7 @@ pub extern "C" fn table_checkout(
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -269,7 +269,7 @@ pub extern "C" fn table_checkout_tag(
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -286,7 +286,7 @@ pub extern "C" fn table_checkout_latest(
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -303,7 +303,7 @@ pub extern "C" fn table_restore(
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -322,7 +322,7 @@ pub extern "C" fn table_uri(
                 let c_str = CString::new(uri).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -363,7 +363,7 @@ pub extern "C" fn table_create_index(
         let columns: Vec<String> = match sonic_rs::from_str(&columns_str) {
             Ok(c) => c,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -371,7 +371,7 @@ pub extern "C" fn table_create_index(
         let config: sonic_rs::Value = match sonic_rs::from_str(&config_str) {
             Ok(c) => c,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -379,7 +379,7 @@ pub extern "C" fn table_create_index(
         let index = match build_index(&index_type_str, &config) {
             Ok(idx) => idx,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -396,7 +396,7 @@ pub extern "C" fn table_create_index(
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -616,7 +616,7 @@ pub extern "C" fn table_list_indices(
                 let c_str = CString::new(json).unwrap_or_default();
                 completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -637,7 +637,7 @@ pub extern "C" fn table_add_columns(
         let transform = NewColumnTransform::SqlExpressions(pairs);
         match table.add_columns(transform, None).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -673,7 +673,7 @@ pub extern "C" fn table_alter_columns(
     crate::spawn(async move {
         match table.alter_columns(&alterations).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -694,7 +694,7 @@ pub extern "C" fn table_drop_columns(
         let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
         match table.drop_columns(&col_refs).await {
             Ok(_) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -724,7 +724,7 @@ pub extern "C" fn table_optimize(
         {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -746,7 +746,7 @@ pub extern "C" fn table_optimize(
         {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -756,7 +756,7 @@ pub extern "C" fn table_optimize(
             .optimize(OptimizeAction::Index(Default::default()))
             .await
         {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
 
@@ -799,9 +799,9 @@ pub extern "C" fn table_tags_list(
                     let c_str = CString::new(json).unwrap_or_default();
                     completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
                 }
-                Err(e) => crate::callback_error(completion, e),
+                Err(e) => callback_error(completion, e),
             },
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -820,9 +820,9 @@ pub extern "C" fn table_tags_create(
         match table.tags().await {
             Ok(mut tags) => match tags.create(&tag_name, version).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => crate::callback_error(completion, e),
+                Err(e) => callback_error(completion, e),
             },
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -840,9 +840,9 @@ pub extern "C" fn table_tags_delete(
         match table.tags().await {
             Ok(mut tags) => match tags.delete(&tag_name).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => crate::callback_error(completion, e),
+                Err(e) => callback_error(completion, e),
             },
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -861,9 +861,9 @@ pub extern "C" fn table_tags_update(
         match table.tags().await {
             Ok(mut tags) => match tags.update(&tag_name, version).await {
                 Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => crate::callback_error(completion, e),
+                Err(e) => callback_error(completion, e),
             },
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -883,9 +883,9 @@ pub extern "C" fn table_tags_get_version(
                 Ok(version) => {
                     completion(version as *const std::ffi::c_void, std::ptr::null());
                 }
-                Err(e) => crate::callback_error(completion, e),
+                Err(e) => callback_error(completion, e),
             },
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -902,7 +902,7 @@ pub extern "C" fn table_drop_index(
     crate::spawn(async move {
         match table.drop_index(&index_name).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -919,7 +919,7 @@ pub extern "C" fn table_prewarm_index(
     crate::spawn(async move {
         match table.prewarm_index(&index_name).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -944,7 +944,7 @@ pub extern "C" fn table_wait_for_index(
         let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
         match table.wait_for_index(&name_refs, timeout).await {
             Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -975,7 +975,7 @@ pub extern "C" fn table_index_stats(
             Ok(None) => {
                 completion(std::ptr::null(), std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -1028,7 +1028,7 @@ pub extern "C" fn table_merge_insert(
     let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -1037,7 +1037,7 @@ pub extern "C" fn table_merge_insert(
         let on_columns: Vec<String> = match sonic_rs::from_str(&on_columns_str) {
             Ok(c) => c,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1069,7 +1069,7 @@ pub extern "C" fn table_merge_insert(
             Ok(_) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -1105,7 +1105,7 @@ pub extern "C" fn table_take_offsets(
             let columns: Vec<String> = match sonic_rs::from_str(&cols) {
                 Ok(c) => c,
                 Err(e) => {
-                    crate::callback_error(completion, e);
+                    callback_error(completion, e);
                     return;
                 }
             };
@@ -1117,7 +1117,7 @@ pub extern "C" fn table_take_offsets(
         let stream = match query.execute().await {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1126,7 +1126,7 @@ pub extern "C" fn table_take_offsets(
         let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1139,7 +1139,7 @@ pub extern "C" fn table_take_offsets(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    crate::callback_error(completion, e);
+                    callback_error(completion, e);
                     return;
                 }
             }
@@ -1152,7 +1152,7 @@ pub extern "C" fn table_take_offsets(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1197,7 +1197,7 @@ pub extern "C" fn table_take_row_ids(
             let columns: Vec<String> = match sonic_rs::from_str(&cols) {
                 Ok(c) => c,
                 Err(e) => {
-                    crate::callback_error(completion, e);
+                    callback_error(completion, e);
                     return;
                 }
             };
@@ -1209,7 +1209,7 @@ pub extern "C" fn table_take_row_ids(
         let stream = match query.execute().await {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1218,7 +1218,7 @@ pub extern "C" fn table_take_row_ids(
         let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -1231,7 +1231,7 @@ pub extern "C" fn table_take_row_ids(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    crate::callback_error(completion, e);
+                    callback_error(completion, e);
                     return;
                 }
             }
@@ -1244,7 +1244,7 @@ pub extern "C" fn table_take_row_ids(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };

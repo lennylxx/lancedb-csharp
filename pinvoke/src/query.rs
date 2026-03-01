@@ -8,7 +8,7 @@ use std::slice;
 use std::sync::Arc;
 
 use crate::ffi;
-use crate::FfiCallback;
+use crate::ffi::{callback_error, FfiCallback};
 
 /// Parses a JSON string into a Select enum.
 /// JSON array of strings → Select::Columns, JSON object → Select::Dynamic.
@@ -240,7 +240,7 @@ fn execute_to_cdata_with_options<Q>(
         let stream = match query.execute_with_options(options).await {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -249,7 +249,7 @@ fn execute_to_cdata_with_options<Q>(
         let batches: Vec<RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -263,7 +263,7 @@ fn execute_to_cdata_with_options<Q>(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    crate::callback_error(completion, e);
+                    callback_error(completion, e);
                     return;
                 }
             }
@@ -277,7 +277,7 @@ fn execute_to_cdata_with_options<Q>(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                crate::callback_error(completion, e);
+                callback_error(completion, e);
                 return;
             }
         };
@@ -306,7 +306,7 @@ where
                     std::ptr::null(),
                 );
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -326,7 +326,7 @@ where
                     std::ptr::null(),
                 );
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -347,10 +347,10 @@ where
                         let ptr = Box::into_raw(Box::new(ffi_schema));
                         completion(ptr as *const std::ffi::c_void, std::ptr::null());
                     }
-                    Err(e) => crate::callback_error(completion, e),
+                    Err(e) => callback_error(completion, e),
                 }
             }
-            Err(e) => crate::callback_error(completion, e),
+            Err(e) => callback_error(completion, e),
         }
     });
 }
@@ -372,14 +372,14 @@ pub extern "C" fn query_execute(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -399,14 +399,14 @@ pub extern "C" fn query_explain_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -424,14 +424,14 @@ pub extern "C" fn query_analyze_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -449,14 +449,14 @@ pub extern "C" fn query_output_schema(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -481,7 +481,7 @@ pub extern "C" fn vector_query_execute(
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            crate::callback_error(completion, "Vector pointer is null");
+            callback_error(completion, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -489,14 +489,14 @@ pub extern "C" fn vector_query_execute(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -517,7 +517,7 @@ pub extern "C" fn vector_query_explain_plan(
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            crate::callback_error(completion, "Vector pointer is null");
+            callback_error(completion, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -525,14 +525,14 @@ pub extern "C" fn vector_query_explain_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -551,7 +551,7 @@ pub extern "C" fn vector_query_analyze_plan(
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            crate::callback_error(completion, "Vector pointer is null");
+            callback_error(completion, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -559,14 +559,14 @@ pub extern "C" fn vector_query_analyze_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
@@ -585,7 +585,7 @@ pub extern "C" fn vector_query_output_schema(
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            crate::callback_error(completion, "Vector pointer is null");
+            callback_error(completion, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -593,14 +593,14 @@ pub extern "C" fn vector_query_output_schema(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            crate::callback_error(completion, e);
+            callback_error(completion, e);
             return;
         }
     };

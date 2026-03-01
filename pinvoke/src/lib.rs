@@ -1,5 +1,3 @@
-use libc::c_char;
-use std::ffi::CString;
 use std::sync::LazyLock;
 use tokio::runtime::Runtime;
 
@@ -82,16 +80,5 @@ where
         RUNTIME_LOAD[idx].fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         result
     })
-}
-
-/// Callback type for async FFI operations.
-/// On success: result is non-null, error is null.
-/// On error: result is null, error is a UTF-8 C string (caller must free with free_string).
-type FfiCallback = extern "C" fn(result: *const std::ffi::c_void, error: *const c_char);
-
-/// Helper to invoke a callback with an error string.
-fn callback_error(completion: FfiCallback, err: impl std::fmt::Display) {
-    let msg = CString::new(err.to_string()).unwrap_or_default();
-    completion(std::ptr::null(), msg.into_raw());
 }
 

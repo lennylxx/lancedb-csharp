@@ -5,7 +5,7 @@ use libc::c_char;
 use std::ffi::CString;
 
 use crate::ffi;
-use crate::{callback_error, FfiCallback};
+use crate::ffi::{callback_error, FfiCallback};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn connection_connect(

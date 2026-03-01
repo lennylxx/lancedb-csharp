@@ -6,6 +6,17 @@ use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::sync::Arc;
 
+/// Callback type for async FFI operations.
+/// On success: result is non-null, error is null.
+/// On error: result is null, error is a UTF-8 C string (caller must free with free_string).
+pub type FfiCallback = extern "C" fn(result: *const std::ffi::c_void, error: *const c_char);
+
+/// Helper to invoke a callback with an error string.
+pub fn callback_error(completion: FfiCallback, err: impl std::fmt::Display) {
+    let msg = CString::new(err.to_string()).unwrap_or_default();
+    completion(std::ptr::null(), msg.into_raw());
+}
+
 thread_local! {
     static LAST_ERROR: RefCell<Option<CString>> = RefCell::new(None);
 }
