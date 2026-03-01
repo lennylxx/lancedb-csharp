@@ -1,4 +1,7 @@
-use lance_namespace::models::ListTablesRequest;
+use lance_namespace::models::{
+    CreateNamespaceRequest, DescribeNamespaceRequest, DropNamespaceRequest,
+    ListNamespacesRequest, ListTablesRequest,
+};
 use lancedb::connection::Connection;
 use lancedb::database::CreateTableMode;
 use libc::c_char;
@@ -51,6 +54,41 @@ pub extern "C" fn connection_connect(
                 std::sync::Arc::new(lancedb::ObjectStoreRegistry::default()),
             );
             builder = builder.session(std::sync::Arc::new(session));
+        }
+        match builder.execute().await {
+            Ok(conn) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(conn));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_connect_namespace(
+    ns_impl: *const c_char,
+    properties_json: *const c_char,
+    storage_options_json: *const c_char,
+    read_consistency_interval_secs: f64,
+    completion: FfiCallback,
+) {
+    let ns_impl_str = ffi::to_string(ns_impl);
+    let properties = ffi::parse_optional_json_map(properties_json).unwrap_or_default();
+    let storage_opts = ffi::parse_optional_json_map(storage_options_json);
+    let rci_secs = if read_consistency_interval_secs.is_nan() {
+        None
+    } else {
+        Some(read_consistency_interval_secs)
+    };
+
+    crate::spawn(async move {
+        let mut builder = lancedb::connection::connect_namespace(&ns_impl_str, properties);
+        if let Some(opts) = storage_opts {
+            builder = builder.storage_options(opts);
+        }
+        if let Some(secs) = rci_secs {
+            builder = builder.read_consistency_interval(std::time::Duration::from_secs_f64(secs));
         }
         match builder.execute().await {
             Ok(conn) => {
@@ -312,12 +350,15 @@ pub extern "C" fn connection_list_tables(
 pub extern "C" fn connection_drop_table(
     connection_ptr: *const Connection,
     table_name: *const c_char,
+    namespace_json: *const c_char,
     completion: FfiCallback,
 ) {
     let table_name = ffi::to_string(table_name);
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     crate::spawn(async move {
-        match connection.drop_table(&table_name, &[]).await {
+        let ns = namespace_list.unwrap_or_default();
+        match connection.drop_table(&table_name, &ns).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
             }
@@ -329,13 +370,162 @@ pub extern "C" fn connection_drop_table(
 #[unsafe(no_mangle)]
 pub extern "C" fn connection_drop_all_tables(
     connection_ptr: *const Connection,
+    namespace_json: *const c_char,
     completion: FfiCallback,
 ) {
+    let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     crate::spawn(async move {
-        match connection.drop_all_tables(&[]).await {
+        let ns = namespace_list.unwrap_or_default();
+        match connection.drop_all_tables(&ns).await {
             Ok(()) => {
                 completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_rename_table(
+    connection_ptr: *const Connection,
+    old_name: *const c_char,
+    new_name: *const c_char,
+    cur_namespace_json: *const c_char,
+    new_namespace_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let old_name = ffi::to_string(old_name);
+    let new_name = ffi::to_string(new_name);
+    let cur_ns = ffi::parse_optional_json_list(cur_namespace_json).unwrap_or_default();
+    let new_ns = ffi::parse_optional_json_list(new_namespace_json).unwrap_or_default();
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        match connection.rename_table(&old_name, &new_name, &cur_ns, &new_ns).await {
+            Ok(()) => {
+                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_list_namespaces(
+    connection_ptr: *const Connection,
+    namespace_json: *const c_char,
+    page_token: *const c_char,
+    limit: i32,
+    completion: FfiCallback,
+) {
+    let parent_ns = ffi::parse_optional_json_list(namespace_json);
+    let page_token_str = ffi::parse_optional_string(page_token);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        let mut request = ListNamespacesRequest::new();
+        request.id = Some(parent_ns.unwrap_or_default());
+        request.page_token = page_token_str;
+        if limit > 0 {
+            request.limit = Some(limit);
+        }
+        match connection.list_namespaces(request).await {
+            Ok(response) => {
+                let json = sonic_rs::json!({
+                    "namespaces": response.namespaces,
+                    "page_token": response.page_token,
+                });
+                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_create_namespace(
+    connection_ptr: *const Connection,
+    namespace_json: *const c_char,
+    mode: *const c_char,
+    properties_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let ns = ffi::parse_optional_json_list(namespace_json);
+    let mode_str = ffi::parse_optional_string(mode);
+    let props = ffi::parse_optional_json_map(properties_json);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        let mut request = CreateNamespaceRequest::new();
+        request.id = Some(ns.unwrap_or_default());
+        request.mode = mode_str;
+        request.properties = props;
+        match connection.create_namespace(request).await {
+            Ok(response) => {
+                let json = sonic_rs::json!({
+                    "properties": response.properties,
+                    "transaction_id": response.transaction_id,
+                });
+                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_drop_namespace(
+    connection_ptr: *const Connection,
+    namespace_json: *const c_char,
+    mode: *const c_char,
+    behavior: *const c_char,
+    completion: FfiCallback,
+) {
+    let ns = ffi::parse_optional_json_list(namespace_json);
+    let mode_str = ffi::parse_optional_string(mode);
+    let behavior_str = ffi::parse_optional_string(behavior);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        let mut request = DropNamespaceRequest::new();
+        request.id = Some(ns.unwrap_or_default());
+        request.mode = mode_str;
+        request.behavior = behavior_str;
+        match connection.drop_namespace(request).await {
+            Ok(response) => {
+                let json = sonic_rs::json!({
+                    "properties": response.properties,
+                    "transaction_id": response.transaction_id,
+                });
+                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_describe_namespace(
+    connection_ptr: *const Connection,
+    namespace_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let ns = ffi::parse_optional_json_list(namespace_json);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        let mut request = DescribeNamespaceRequest::new();
+        request.id = Some(ns.unwrap_or_default());
+        match connection.describe_namespace(request).await {
+            Ok(response) => {
+                let json = sonic_rs::json!({
+                    "properties": response.properties,
+                });
+                let json_str = sonic_rs::to_string(&json).unwrap_or_default();
+                let c_str = CString::new(json_str).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }

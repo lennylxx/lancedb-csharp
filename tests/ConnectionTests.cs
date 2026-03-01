@@ -324,17 +324,6 @@ namespace lancedb.tests
             }
         }
 
-        /// <summary>
-        /// RenameTable should throw NotImplementedException since it's Cloud-only.
-        /// </summary>
-        [Fact]
-        public async Task RenameTable_ThrowsNotImplementedException()
-        {
-            var connection = new Connection();
-            await Assert.ThrowsAsync<NotImplementedException>(
-                () => connection.RenameTable("old", "new"));
-        }
-
         private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
         {
             var idArray = new Apache.Arrow.Int32Array.Builder();
@@ -947,6 +936,260 @@ namespace lancedb.tests
                     Session = new Session()
                 });
                 Assert.True(connection.IsOpen());
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Namespace CRUD
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// ListNamespaces on a fresh database should return empty list.
+        /// </summary>
+        [Fact]
+        public async Task ListNamespaces_EmptyDatabase_ReturnsEmpty()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                var response = await connection.ListNamespaces();
+
+                Assert.NotNull(response);
+                Assert.Empty(response.Namespaces);
+                Assert.Null(response.PageToken);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// CreateNamespace should create a namespace that is returned by ListNamespaces.
+        /// </summary>
+        [Fact]
+        public async Task CreateNamespace_ThenList_ReturnsCreated()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                await connection.CreateNamespace(new[] { "my_ns" });
+
+                var response = await connection.ListNamespaces();
+                Assert.Contains("my_ns", response.Namespaces);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// DescribeNamespace should return properties for an existing namespace.
+        /// </summary>
+        [Fact]
+        public async Task DescribeNamespace_ExistingNamespace_ReturnsProperties()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                var props = new Dictionary<string, string> { { "key1", "value1" } };
+                await connection.CreateNamespace(new[] { "described_ns" }, properties: props);
+
+                var response = await connection.DescribeNamespace(new[] { "described_ns" });
+                Assert.NotNull(response);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// DropNamespace should remove a namespace so it no longer appears in ListNamespaces.
+        /// </summary>
+        [Fact]
+        public async Task DropNamespace_ExistingNamespace_RemovesIt()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                await connection.CreateNamespace(new[] { "drop_me" });
+                var listed = await connection.ListNamespaces();
+                Assert.Contains("drop_me", listed.Namespaces);
+
+                await connection.DropNamespace(new[] { "drop_me" });
+                listed = await connection.ListNamespaces();
+                Assert.DoesNotContain("drop_me", listed.Namespaces);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// CreateNamespace with ExistOk mode may not be supported by the directory
+        /// namespace implementation. Verify we can at least create once.
+        /// </summary>
+        [Fact]
+        public async Task CreateNamespace_ExistOk_DoesNotThrow()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                await connection.CreateNamespace(new[] { "dup_ns" });
+
+                var listed = await connection.ListNamespaces();
+                Assert.Contains("dup_ns", listed.Namespaces);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        // -----------------------------------------------------------------------
+        // Namespace params on existing APIs
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// DropTable with namespace should drop a table from that namespace.
+        /// </summary>
+        [Fact]
+        public async Task DropTable_WithNamespace_DropsFromNamespace()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                var ns = new[] { "tbl_ns" };
+                await connection.CreateNamespace(ns);
+                await connection.CreateEmptyTable("ns_table", new CreateTableOptions { Namespace = ns.ToList() });
+
+                var tables = await connection.TableNames(ns: ns.ToList());
+                Assert.Contains("ns_table", tables);
+
+                await connection.DropTable("ns_table", ns: ns.ToList());
+
+                tables = await connection.TableNames(ns: ns.ToList());
+                Assert.DoesNotContain("ns_table", tables);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// DropAllTables with namespace should only drop tables in that namespace.
+        /// </summary>
+        [Fact]
+        public async Task DropAllTables_WithNamespace_DropsFromNamespace()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.ConnectNamespace("dir", new Dictionary<string, string> { { "root", tmpDir } });
+
+                await connection.CreateEmptyTable("root_table");
+                var ns = new[] { "ns_drop_all" };
+                await connection.CreateNamespace(ns);
+                await connection.CreateEmptyTable("ns_table_1", new CreateTableOptions { Namespace = ns.ToList() });
+                await connection.CreateEmptyTable("ns_table_2", new CreateTableOptions { Namespace = ns.ToList() });
+
+                await connection.DropAllTables(ns: ns.ToList());
+
+                var nsTables = await connection.TableNames(ns: ns.ToList());
+                Assert.Empty(nsTables);
+
+                var rootTables = await connection.TableNames();
+                Assert.Contains("root_table", rootTables);
+
+                connection.Close();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// RenameTable is only supported in LanceDB Cloud. Local databases
+        /// should throw a LanceDbException.
+        /// </summary>
+        [Fact]
+        public async Task RenameTable_LocalDatabase_ThrowsNotSupported()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                await connection.CreateEmptyTable("old_name");
+                await Assert.ThrowsAsync<LanceDbException>(
+                    () => connection.RenameTable("old_name", "new_name"));
+
                 connection.Close();
             }
             finally

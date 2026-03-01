@@ -26,6 +26,9 @@ namespace lancedb
         private static extern void connection_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_connect_namespace(IntPtr ns_impl, IntPtr properties_json, IntPtr storage_options_json, double read_consistency_interval_secs, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void connection_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -41,10 +44,25 @@ namespace lancedb
         private static extern void connection_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_drop_table(IntPtr connection_ptr, IntPtr table_name, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_table(IntPtr connection_ptr, IntPtr table_name, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_drop_all_tables(IntPtr connection_ptr, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_all_tables(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_rename_table(IntPtr connection_ptr, IntPtr old_name, IntPtr new_name, IntPtr cur_namespace_json, IntPtr new_namespace_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_list_namespaces(IntPtr connection_ptr, IntPtr namespace_json, IntPtr page_token, int limit, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_create_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr properties_json, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_drop_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr behavior, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_describe_namespace(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion);
 
         private ConnectionHandle? _handle;
 
@@ -94,6 +112,58 @@ namespace lancedb
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
                             indexCacheSizeBytes,
                             metadataCacheSizeBytes,
+                            callback);
+                    }
+                }
+            });
+            _handle = new ConnectionHandle(ptr);
+        }
+
+        /// <summary>
+        /// Connect to a LanceDB database through a namespace.
+        /// </summary>
+        /// <remarks>
+        /// Namespace connections support namespace CRUD operations (create, list, drop,
+        /// describe namespaces) and allow organizing tables into hierarchical namespaces.
+        /// Use this instead of <see cref="Connect"/> when you need namespace functionality.
+        /// </remarks>
+        /// <param name="nsImpl">
+        /// The namespace implementation to use:
+        /// <list type="bullet">
+        /// <item><description><c>"dir"</c> — directory-based namespace for local storage.</description></item>
+        /// <item><description><c>"rest"</c> — REST API namespace for LanceDB Cloud.</description></item>
+        /// </list>
+        /// </param>
+        /// <param name="properties">
+        /// Configuration properties for the namespace implementation.
+        /// For <c>"dir"</c>, use <c>{"root": "/path/to/db"}</c>.
+        /// </param>
+        /// <param name="options">Options to control the connection behavior.</param>
+        /// <returns>A task that completes when the connection is established.</returns>
+        public async Task ConnectNamespace(string nsImpl, Dictionary<string, string> properties, ConnectionOptions? options = null)
+        {
+            byte[] nsImplBytes = NativeCall.ToUtf8(nsImpl);
+            byte[] propsJson = NativeCall.ToUtf8(JsonSerializer.Serialize(properties));
+            double rciSecs = options?.ReadConsistencyInterval.HasValue == true
+                ? options.ReadConsistencyInterval!.Value.TotalSeconds
+                : double.NaN;
+            byte[]? storageJson = options?.StorageOptions != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                : null;
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pNsImpl = nsImplBytes)
+                    fixed (byte* pProps = propsJson)
+                    fixed (byte* pStorage = storageJson)
+                    {
+                        connection_connect_namespace(
+                            new IntPtr(pNsImpl),
+                            new IntPtr(pProps),
+                            storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
+                            rciSecs,
                             callback);
                     }
                 }
@@ -460,6 +530,10 @@ namespace lancedb
         /// Drop a table from the database.
         /// </summary>
         /// <param name="name">The name of the table to drop.</param>
+        /// <param name="ns">
+        /// The namespace to drop the table from.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
         /// <param name="ignoreMissing">
         /// If <c>true</c>, ignore if the table does not exist.
         /// If <c>false</c> (default), a <see cref="LanceDbException"/> is thrown.
@@ -467,18 +541,26 @@ namespace lancedb
         /// <exception cref="LanceDbException">
         /// Thrown if the table does not exist and <paramref name="ignoreMissing"/> is <c>false</c>.
         /// </exception>
-        public async Task DropTable(string name, bool ignoreMissing = false)
+        public async Task DropTable(string name, IReadOnlyList<string>? ns = null, bool ignoreMissing = false)
         {
             try
             {
                 byte[] nameBytes = NativeCall.ToUtf8(name);
+                byte[]? namespaceJson = ns != null
+                    ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                    : null;
                 await NativeCall.Async(callback =>
                 {
                     unsafe
                     {
                         fixed (byte* p = nameBytes)
+                        fixed (byte* pNamespace = namespaceJson)
                         {
-                            connection_drop_table(_handle!.DangerousGetHandle(), new IntPtr(p), callback);
+                            connection_drop_table(
+                                _handle!.DangerousGetHandle(),
+                                new IntPtr(p),
+                                namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                                callback);
                         }
                     }
                 });
@@ -492,26 +574,273 @@ namespace lancedb
         /// Rename a table in the database.
         /// </summary>
         /// <param name="currentName">The current name of the table.</param>
-        /// <param name="newName">The new name for the table.</param>
-        /// <remarks>
-        /// This operation is only supported in LanceDB Cloud. Calling this method
-        /// on a local (OSS) database will throw <see cref="NotImplementedException"/>.
-        /// </remarks>
-        /// <exception cref="NotImplementedException">Always thrown. LanceDB OSS does not support this operation.</exception>
-        public Task RenameTable(string currentName, string newName)
+        /// <param name="newName">The new name of the table.</param>
+        /// <param name="curNamespace">
+        /// The namespace of the current table.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
+        /// <param name="newNamespace">
+        /// The namespace to move the table to. If not specified, defaults
+        /// to the same as <paramref name="curNamespace"/>.
+        /// </param>
+        public async Task RenameTable(string currentName, string newName, IReadOnlyList<string>? curNamespace = null, IReadOnlyList<string>? newNamespace = null)
         {
-            return Task.FromException(new NotImplementedException("RenameTable is only supported in LanceDB Cloud."));
+            byte[] oldNameBytes = NativeCall.ToUtf8(currentName);
+            byte[] newNameBytes = NativeCall.ToUtf8(newName);
+            byte[]? curNsJson = curNamespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(curNamespace))
+                : null;
+            byte[]? newNsJson = newNamespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(newNamespace))
+                : null;
+
+            await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pOld = oldNameBytes)
+                    fixed (byte* pNew = newNameBytes)
+                    fixed (byte* pCurNs = curNsJson)
+                    fixed (byte* pNewNs = newNsJson)
+                    {
+                        connection_rename_table(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pOld),
+                            new IntPtr(pNew),
+                            curNsJson != null ? new IntPtr(pCurNs) : IntPtr.Zero,
+                            newNsJson != null ? new IntPtr(pNewNs) : IntPtr.Zero,
+                            callback);
+                    }
+                }
+            });
         }
 
         /// <summary>
         /// Drop all tables from the database.
         /// </summary>
-        public async Task DropAllTables()
+        /// <param name="ns">
+        /// The namespace to drop all tables from.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
+        public async Task DropAllTables(IReadOnlyList<string>? ns = null)
         {
+            byte[]? namespaceJson = ns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                : null;
             await NativeCall.Async(callback =>
             {
-                connection_drop_all_tables(_handle!.DangerousGetHandle(), callback);
+                unsafe
+                {
+                    fixed (byte* pNamespace = namespaceJson)
+                    {
+                        connection_drop_all_tables(
+                            _handle!.DangerousGetHandle(),
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                            callback);
+                    }
+                }
             });
+        }
+
+        /// <summary>
+        /// List immediate child namespace names in the given namespace.
+        /// </summary>
+        /// <param name="ns">
+        /// The parent namespace to list namespaces in.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
+        /// <param name="pageToken">
+        /// Token for pagination. Use the token from a previous response
+        /// to get the next page of results.
+        /// </param>
+        /// <param name="limit">
+        /// The maximum number of namespaces to return. 0 or negative means no limit.
+        /// </param>
+        /// <returns>
+        /// A <see cref="ListNamespacesResponse"/> containing the namespace names and
+        /// an optional page token for the next page.
+        /// </returns>
+        public async Task<ListNamespacesResponse> ListNamespaces(IReadOnlyList<string>? ns = null, string? pageToken = null, int limit = 0)
+        {
+            byte[]? namespaceJson = ns != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                : null;
+            byte[]? pageTokenBytes = pageToken != null
+                ? NativeCall.ToUtf8(pageToken)
+                : null;
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pNamespace = namespaceJson)
+                    fixed (byte* pPageToken = pageTokenBytes)
+                    {
+                        connection_list_namespaces(
+                            _handle!.DangerousGetHandle(),
+                            namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
+                            pageTokenBytes != null ? new IntPtr(pPageToken) : IntPtr.Zero,
+                            limit,
+                            callback);
+                    }
+                }
+            });
+            string json = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(json))
+            {
+                return new ListNamespacesResponse();
+            }
+            return JsonSerializer.Deserialize<ListNamespacesResponse>(json) ?? new ListNamespacesResponse();
+        }
+
+        /// <summary>
+        /// Create a new namespace.
+        /// </summary>
+        /// <param name="ns">
+        /// The namespace identifier to create, specified as a hierarchical path.
+        /// For example, <c>["parent", "child"]</c> creates a nested namespace.
+        /// </param>
+        /// <param name="mode">
+        /// The creation mode. Case insensitive:
+        /// <list type="bullet">
+        /// <item><description><c>"Create"</c> (default) — Fail if the namespace already exists.</description></item>
+        /// <item><description><c>"ExistOk"</c> — Succeed even if the namespace already exists.</description></item>
+        /// <item><description><c>"Overwrite"</c> — Overwrite the namespace if it exists.</description></item>
+        /// </list>
+        /// </param>
+        /// <param name="properties">
+        /// Optional key-value properties to set on the namespace.
+        /// </param>
+        /// <returns>
+        /// A <see cref="CreateNamespaceResponse"/> containing the properties of the
+        /// created namespace.
+        /// </returns>
+        public async Task<CreateNamespaceResponse> CreateNamespace(IReadOnlyList<string> ns, string? mode = null, Dictionary<string, string>? properties = null)
+        {
+            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+            byte[]? modeBytes = mode != null
+                ? NativeCall.ToUtf8(mode)
+                : null;
+            byte[]? propsJson = properties != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(properties))
+                : null;
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pNamespace = namespaceJson)
+                    fixed (byte* pMode = modeBytes)
+                    fixed (byte* pProps = propsJson)
+                    {
+                        connection_create_namespace(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pNamespace),
+                            modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
+                            propsJson != null ? new IntPtr(pProps) : IntPtr.Zero,
+                            callback);
+                    }
+                }
+            });
+            string json = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(json))
+            {
+                return new CreateNamespaceResponse();
+            }
+            return JsonSerializer.Deserialize<CreateNamespaceResponse>(json) ?? new CreateNamespaceResponse();
+        }
+
+        /// <summary>
+        /// Drop a namespace.
+        /// </summary>
+        /// <param name="ns">
+        /// The namespace identifier to drop, specified as a hierarchical path.
+        /// </param>
+        /// <param name="mode">
+        /// Whether to skip if not exists or fail. Case insensitive:
+        /// <list type="bullet">
+        /// <item><description><c>"Fail"</c> (default) — Fail if the namespace does not exist.</description></item>
+        /// <item><description><c>"Skip"</c> — Succeed even if the namespace does not exist.</description></item>
+        /// </list>
+        /// </param>
+        /// <param name="behavior">
+        /// Whether to restrict drop if not empty or cascade. Case insensitive:
+        /// <list type="bullet">
+        /// <item><description><c>"Restrict"</c> (default) — Fail if the namespace is not empty.</description></item>
+        /// <item><description><c>"Cascade"</c> — Drop all child namespaces and tables.</description></item>
+        /// </list>
+        /// </param>
+        /// <returns>
+        /// A <see cref="DropNamespaceResponse"/> containing properties and
+        /// transaction ID if applicable.
+        /// </returns>
+        public async Task<DropNamespaceResponse> DropNamespace(IReadOnlyList<string> ns, string? mode = null, string? behavior = null)
+        {
+            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+            byte[]? modeBytes = mode != null
+                ? NativeCall.ToUtf8(mode)
+                : null;
+            byte[]? behaviorBytes = behavior != null
+                ? NativeCall.ToUtf8(behavior)
+                : null;
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pNamespace = namespaceJson)
+                    fixed (byte* pMode = modeBytes)
+                    fixed (byte* pBehavior = behaviorBytes)
+                    {
+                        connection_drop_namespace(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pNamespace),
+                            modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
+                            behaviorBytes != null ? new IntPtr(pBehavior) : IntPtr.Zero,
+                            callback);
+                    }
+                }
+            });
+            string json = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(json))
+            {
+                return new DropNamespaceResponse();
+            }
+            return JsonSerializer.Deserialize<DropNamespaceResponse>(json) ?? new DropNamespaceResponse();
+        }
+
+        /// <summary>
+        /// Describe a namespace.
+        /// </summary>
+        /// <param name="ns">
+        /// The namespace identifier to describe, specified as a hierarchical path.
+        /// </param>
+        /// <returns>
+        /// A <see cref="DescribeNamespaceResponse"/> containing the namespace properties.
+        /// </returns>
+        public async Task<DescribeNamespaceResponse> DescribeNamespace(IReadOnlyList<string> ns)
+        {
+            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+
+            IntPtr ptr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pNamespace = namespaceJson)
+                    {
+                        connection_describe_namespace(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pNamespace),
+                            callback);
+                    }
+                }
+            });
+            string json = NativeCall.ReadStringAndFree(ptr);
+            if (string.IsNullOrEmpty(json))
+            {
+                return new DescribeNamespaceResponse();
+            }
+            return JsonSerializer.Deserialize<DescribeNamespaceResponse>(json) ?? new DescribeNamespaceResponse();
         }
     }
 }
