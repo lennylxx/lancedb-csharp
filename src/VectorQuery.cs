@@ -36,19 +36,19 @@ namespace lancedb
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
             NativeCall.FfiCallback completion);
 
-        private readonly double[] _vector;
+        internal readonly double[] _vector;
 
         // Vector-specific stored parameters
-        private string? _column;
-        private int? _distanceType;
-        private int? _nprobes;
-        private int? _refineFactor;
-        private bool _bypassVectorIndex;
-        private int? _ef;
+        internal string? _column;
+        internal int? _distanceType;
+        internal int? _nprobes;
+        internal int? _refineFactor;
+        internal bool _bypassVectorIndex;
+        internal int? _ef;
         private float? _distanceRangeLower;
         private float? _distanceRangeUpper;
-        private int? _minimumNprobes;
-        private int? _maximumNprobes;
+        internal int? _minimumNprobes;
+        internal int? _maximumNprobes;
         private List<float[]>? _additionalVectors;
 
         internal VectorQuery(IntPtr tablePtr, Query parentQuery, double[] vector)
@@ -56,14 +56,14 @@ namespace lancedb
         {
             _vector = vector;
             // Copy base params from the parent query
-            SelectJson = parentQuery.SelectJson;
-            Predicate = parentQuery.Predicate;
-            StoredLimit = parentQuery.StoredLimit;
-            StoredOffset = parentQuery.StoredOffset;
-            StoredWithRowId = parentQuery.StoredWithRowId;
-            FullTextSearchQuery = parentQuery.FullTextSearchQuery;
-            StoredFastSearch = parentQuery.StoredFastSearch;
-            StoredPostfilter = parentQuery.StoredPostfilter;
+            _selectJson = parentQuery._selectJson;
+            _predicate = parentQuery._predicate;
+            _limit = parentQuery._limit;
+            _offset = parentQuery._offset;
+            _withRowId = parentQuery._withRowId;
+            _fullTextSearchQuery = parentQuery._fullTextSearchQuery;
+            _fastSearch = parentQuery._fastSearch;
+            _postfilter = parentQuery._postfilter;
         }
 
         /// <inheritdoc/>
@@ -307,6 +307,26 @@ namespace lancedb
             }
             _additionalVectors.Add(vector);
             return this;
+        }
+
+        /// <summary>
+        /// Combine this vector search with a full-text search to create a hybrid query.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The resulting <see cref="HybridQuery"/> executes both vector and FTS searches
+        /// independently and merges the results using a reranker (default: <see cref="RRFReranker"/>).
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The full-text search query string.</param>
+        /// <param name="columns">
+        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
+        /// columns are searched.
+        /// </param>
+        /// <returns>A <see cref="HybridQuery"/> that can be further parameterized.</returns>
+        public HybridQuery NearestToText(string query, string[]? columns = null)
+        {
+            return new HybridQuery(this, query, columns);
         }
     }
 }

@@ -266,6 +266,32 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Create a hybrid search query that combines vector search and full-text search.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method that creates a <see cref="HybridQuery"/> directly.
+        /// The hybrid query executes both a vector search and a full-text search independently,
+        /// then merges the results using a reranker (default: <see cref="RRFReranker"/>).
+        /// </para>
+        /// <para>
+        /// This is equivalent to:
+        /// <c>table.Query().NearestToText(text).NearestTo(vector)</c>
+        /// </para>
+        /// </remarks>
+        /// <param name="text">The full-text search query string.</param>
+        /// <param name="vector">The query vector to search for nearest neighbors.</param>
+        /// <param name="ftsColumns">
+        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
+        /// columns are searched.
+        /// </param>
+        /// <returns>A <see cref="HybridQuery"/> that can be further parameterized.</returns>
+        public HybridQuery HybridSearch(string text, double[] vector, string[]? ftsColumns = null)
+        {
+            return new HybridQuery(_handle!.DangerousGetHandle(), text, vector, ftsColumns);
+        }
+
+        /// <summary>
         /// Return the first <paramref name="n"/> rows of the table.
         /// </summary>
         /// <param name="n">The number of rows to return. Defaults to 5.</param>

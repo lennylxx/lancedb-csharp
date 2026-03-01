@@ -280,10 +280,20 @@ namespace lancedb
                     }
                     return builder.Build();
                 }
+                case FixedSizeListType fslType:
+                {
+                    var src = (FixedSizeListArray)array;
+                    int listSize = fslType.ListSize;
+                    var valueField = fslType.ValueField;
+                    var builder = new FixedSizeListArray.Builder(valueField, listSize);
+                    var indexList = new List<int>(indices);
+                    AppendFixedListEntries(builder, src, indexList, listSize, valueField.DataType);
+                    return builder.Build();
+                }
                 default:
                     throw new NotSupportedException(
                         $"Reranker does not support Arrow type '{dataType.Name}'. " +
-                        $"Supported types: UInt64, Float, String, Int32, Int64, Double, Boolean.");
+                        $"Supported types: UInt64, Float, String, Int32, Int64, Double, Boolean, FixedSizeList.");
             }
         }
 
@@ -413,10 +423,17 @@ namespace lancedb
                     }
                     return builder.Build();
                 }
+                case FixedSizeListType fslType:
+                {
+                    return ConcatFixedSizeList(
+                        (FixedSizeListArray)first, firstIndices,
+                        (FixedSizeListArray)second, secondIndices,
+                        fslType);
+                }
                 default:
                     throw new NotSupportedException(
                         $"Reranker does not support Arrow type '{dataType.Name}'. " +
-                        $"Supported types: UInt64, Float, String, Int32, Int64, Double, Boolean.");
+                        $"Supported types: UInt64, Float, String, Int32, Int64, Double, Boolean, FixedSizeList.");
             }
         }
 
@@ -437,6 +454,62 @@ namespace lancedb
             columns.Add(new FloatArray.Builder().AppendRange(values).Build());
 
             return new RecordBatch(schema, columns, batch.Length);
+        }
+
+        private static IArrowArray ConcatFixedSizeList(
+            FixedSizeListArray first, List<int> firstIndices,
+            FixedSizeListArray second, List<int> secondIndices,
+            FixedSizeListType fslType)
+        {
+            int listSize = fslType.ListSize;
+            var valueField = fslType.ValueField;
+            var builder = new FixedSizeListArray.Builder(valueField, listSize);
+
+            AppendFixedListEntries(builder, first, firstIndices, listSize, valueField.DataType);
+            AppendFixedListEntries(builder, second, secondIndices, listSize, valueField.DataType);
+            return builder.Build();
+        }
+
+        private static void AppendFixedListEntries(
+            FixedSizeListArray.Builder builder, FixedSizeListArray source,
+            List<int> indices, int listSize, IArrowType valueType)
+        {
+            foreach (var idx in indices)
+            {
+                if (source.IsNull(idx))
+                {
+                    builder.AppendNull();
+                    continue;
+                }
+                builder.Append();
+                int offset = idx * listSize;
+                switch (valueType)
+                {
+                    case FloatType _:
+                    {
+                        var vb = (FloatArray.Builder)builder.ValueBuilder;
+                        var vals = (FloatArray)source.Values;
+                        for (int k = 0; k < listSize; k++)
+                        {
+                            vb.Append(vals.GetValue(offset + k)!.Value);
+                        }
+                        break;
+                    }
+                    case DoubleType _:
+                    {
+                        var vb = (DoubleArray.Builder)builder.ValueBuilder;
+                        var vals = (DoubleArray)source.Values;
+                        for (int k = 0; k < listSize; k++)
+                        {
+                            vb.Append(vals.GetValue(offset + k)!.Value);
+                        }
+                        break;
+                    }
+                    default:
+                        throw new NotSupportedException(
+                            $"FixedSizeList with value type '{valueType.Name}' is not supported.");
+                }
+            }
         }
     }
 }

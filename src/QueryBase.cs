@@ -29,22 +29,22 @@ namespace lancedb
         /// <summary>
         /// Raw pointer to the native Table (not owned — the Table must outlive the query).
         /// </summary>
-        internal IntPtr TablePtr;
+        internal IntPtr _tablePtr;
 
         // Stored builder parameters (applied lazily at execution time)
-        internal string? SelectJson;
-        internal string? Predicate;
-        internal int? StoredLimit;
-        internal int? StoredOffset;
-        internal bool StoredWithRowId;
-        internal string? FullTextSearchQuery;
-        internal string[]? FullTextSearchColumns;
-        internal bool StoredFastSearch;
-        internal bool StoredPostfilter;
+        internal string? _selectJson;
+        internal string? _predicate;
+        internal int? _limit;
+        internal int? _offset;
+        internal bool _withRowId;
+        internal string? _fullTextSearchQuery;
+        internal string[]? _fullTextSearchColumns;
+        internal bool _fastSearch;
+        internal bool _postfilter;
 
         internal QueryBase(IntPtr tablePtr)
         {
-            TablePtr = tablePtr;
+            _tablePtr = tablePtr;
         }
 
         /// <summary>
@@ -54,39 +54,39 @@ namespace lancedb
         internal virtual Dictionary<string, object> BuildParamsDict()
         {
             var dict = new Dictionary<string, object>();
-            if (SelectJson != null)
+            if (_selectJson != null)
             {
-                dict["select"] = JsonSerializer.Deserialize<object>(SelectJson)!;
+                dict["select"] = JsonSerializer.Deserialize<object>(_selectJson)!;
             }
-            if (Predicate != null)
+            if (_predicate != null)
             {
-                dict["where"] = Predicate;
+                dict["where"] = _predicate;
             }
-            if (StoredLimit.HasValue)
+            if (_limit.HasValue)
             {
-                dict["limit"] = StoredLimit.Value;
+                dict["limit"] = _limit.Value;
             }
-            if (StoredOffset.HasValue)
+            if (_offset.HasValue)
             {
-                dict["offset"] = StoredOffset.Value;
+                dict["offset"] = _offset.Value;
             }
-            if (StoredWithRowId)
+            if (_withRowId)
             {
                 dict["with_row_id"] = true;
             }
-            if (FullTextSearchQuery != null)
+            if (_fullTextSearchQuery != null)
             {
-                dict["full_text_search"] = FullTextSearchQuery;
+                dict["full_text_search"] = _fullTextSearchQuery;
             }
-            if (FullTextSearchColumns != null)
+            if (_fullTextSearchColumns != null)
             {
-                dict["full_text_search_columns"] = FullTextSearchColumns;
+                dict["full_text_search_columns"] = _fullTextSearchColumns;
             }
-            if (StoredFastSearch)
+            if (_fastSearch)
             {
                 dict["fast_search"] = true;
             }
-            if (StoredPostfilter)
+            if (_postfilter)
             {
                 dict["postfilter"] = true;
             }
@@ -131,15 +131,15 @@ namespace lancedb
         /// </summary>
         internal void CopyBaseParams(QueryBase<T> source)
         {
-            SelectJson = source.SelectJson;
-            Predicate = source.Predicate;
-            StoredLimit = source.StoredLimit;
-            StoredOffset = source.StoredOffset;
-            StoredWithRowId = source.StoredWithRowId;
-            FullTextSearchQuery = source.FullTextSearchQuery;
-            FullTextSearchColumns = source.FullTextSearchColumns;
-            StoredFastSearch = source.StoredFastSearch;
-            StoredPostfilter = source.StoredPostfilter;
+            _selectJson = source._selectJson;
+            _predicate = source._predicate;
+            _limit = source._limit;
+            _offset = source._offset;
+            _withRowId = source._withRowId;
+            _fullTextSearchQuery = source._fullTextSearchQuery;
+            _fullTextSearchColumns = source._fullTextSearchColumns;
+            _fastSearch = source._fastSearch;
+            _postfilter = source._postfilter;
         }
 
         /// <summary>
@@ -154,7 +154,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(IReadOnlyList<string> columns)
         {
-            SelectJson = JsonSerializer.Serialize(columns);
+            _selectJson = JsonSerializer.Serialize(columns);
             return (T)this;
         }
 
@@ -170,7 +170,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(Dictionary<string, string> columns)
         {
-            SelectJson = JsonSerializer.Serialize(columns);
+            _selectJson = JsonSerializer.Serialize(columns);
             return (T)this;
         }
 
@@ -188,7 +188,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Where(string predicate)
         {
-            Predicate = predicate;
+            _predicate = predicate;
             return (T)this;
         }
 
@@ -203,7 +203,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Limit(int limit)
         {
-            StoredLimit = limit;
+            _limit = limit;
             return (T)this;
         }
 
@@ -217,7 +217,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Offset(int offset)
         {
-            StoredOffset = offset;
+            _offset = offset;
             return (T)this;
         }
 
@@ -227,7 +227,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T WithRowId()
         {
-            StoredWithRowId = true;
+            _withRowId = true;
             return (T)this;
         }
 
@@ -259,8 +259,8 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T FullTextSearch(string query, string[]? columns = null)
         {
-            FullTextSearchQuery = query;
-            FullTextSearchColumns = columns;
+            _fullTextSearchQuery = query;
+            _fullTextSearchColumns = columns;
             return (T)this;
         }
 
@@ -281,7 +281,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T FastSearch()
         {
-            StoredFastSearch = true;
+            _fastSearch = true;
             return (T)this;
         }
 
@@ -301,7 +301,7 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Postfilter()
         {
-            StoredPostfilter = true;
+            _postfilter = true;
             return (T)this;
         }
 
@@ -325,7 +325,7 @@ namespace lancedb
 
             IntPtr ffiCDataPtr = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeConsolidatedExecute(TablePtr, pJson, timeoutMs, batchLen, completion);
+                NativeConsolidatedExecute(_tablePtr, pJson, timeoutMs, batchLen, completion);
             }).ConfigureAwait(false);
 
             try
@@ -376,7 +376,7 @@ namespace lancedb
 
             IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeConsolidatedExplainPlan(TablePtr, pJson, verbose, completion);
+                NativeConsolidatedExplainPlan(_tablePtr, pJson, verbose, completion);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -396,7 +396,7 @@ namespace lancedb
 
             IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeConsolidatedAnalyzePlan(TablePtr, pJson, completion);
+                NativeConsolidatedAnalyzePlan(_tablePtr, pJson, completion);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -416,7 +416,7 @@ namespace lancedb
 
             IntPtr ffiSchemaPtr = await CallWithPinnedJson(jsonHandle, completion =>
             {
-                NativeConsolidatedOutputSchema(TablePtr, pJson, completion);
+                NativeConsolidatedOutputSchema(_tablePtr, pJson, completion);
             }).ConfigureAwait(false);
 
             try

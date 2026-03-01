@@ -104,7 +104,7 @@ namespace lancedb
         /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
         public VectorQuery NearestTo(double[] vector)
         {
-            return new VectorQuery(TablePtr, this, vector);
+            return new VectorQuery(_tablePtr, this, vector);
         }
 
         /// <summary>
@@ -112,11 +112,7 @@ namespace lancedb
         /// </summary>
         /// <remarks>
         /// <para>
-        /// This is equivalent to calling <see cref="QueryBase{T}.FullTextSearch"/>
-        /// but returns a new <see cref="Query"/> instead of mutating the current one,
-        /// leaving the original query unchanged.
-        /// </para>
-        /// <para>
+        /// This creates a new <see cref="FTSQuery"/> with the full-text search configured.
         /// The results will be returned in order of relevance (BM25 scores).
         /// </para>
         /// <para>
@@ -129,7 +125,7 @@ namespace lancedb
         /// </para>
         /// <para>
         /// To combine full-text search with vector search (hybrid search), chain
-        /// with <see cref="NearestTo"/>:
+        /// with <see cref="FTSQuery.NearestTo"/>:
         /// <c>table.Query().NearestToText("search terms").NearestTo(vector)</c>
         /// </para>
         /// </remarks>
@@ -138,20 +134,20 @@ namespace lancedb
         /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
         /// columns are searched.
         /// </param>
-        /// <returns>A new <see cref="Query"/> with full-text search applied.</returns>
-        public Query NearestToText(string query, string[]? columns = null)
+        /// <returns>A <see cref="FTSQuery"/> with full-text search applied.</returns>
+        public FTSQuery NearestToText(string query, string[]? columns = null)
         {
-            var newQuery = new Query(TablePtr);
-            newQuery.SelectJson = SelectJson;
-            newQuery.Predicate = Predicate;
-            newQuery.StoredLimit = StoredLimit;
-            newQuery.StoredOffset = StoredOffset;
-            newQuery.StoredWithRowId = StoredWithRowId;
-            newQuery.StoredFastSearch = StoredFastSearch;
-            newQuery.StoredPostfilter = StoredPostfilter;
-            newQuery.FullTextSearchQuery = query;
-            newQuery.FullTextSearchColumns = columns;
-            return newQuery;
+            var ftsQuery = new FTSQuery(_tablePtr);
+            ftsQuery._selectJson = _selectJson;
+            ftsQuery._predicate = _predicate;
+            ftsQuery._limit = _limit;
+            ftsQuery._offset = _offset;
+            ftsQuery._withRowId = _withRowId;
+            ftsQuery._fastSearch = _fastSearch;
+            ftsQuery._postfilter = _postfilter;
+            ftsQuery._fullTextSearchQuery = query;
+            ftsQuery._fullTextSearchColumns = columns;
+            return ftsQuery;
         }
     }
 }

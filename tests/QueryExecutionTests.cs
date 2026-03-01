@@ -418,7 +418,7 @@ namespace lancedb.tests
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
-            using var query = fixture.Table.Query()
+            var query = fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
             var rows = await query.ToList();
