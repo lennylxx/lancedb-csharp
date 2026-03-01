@@ -68,6 +68,11 @@ namespace lancedb
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_replace_field_metadata(
+            IntPtr table_ptr, IntPtr field_name, IntPtr metadata_json,
+            NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_versions(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
@@ -607,6 +612,31 @@ namespace lancedb
             await NativeCall.Async(completion =>
             {
                 table_migrate_manifest_paths_v2(_handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Replace the metadata of a field in the table schema.
+        /// </summary>
+        /// <param name="fieldName">The name of the field to replace the metadata for.</param>
+        /// <param name="metadata">The new metadata key-value pairs to set on the field.</param>
+        public async Task ReplaceFieldMetadata(string fieldName, Dictionary<string, string> metadata)
+        {
+            byte[] fieldBytes = NativeCall.ToUtf8(fieldName);
+            byte[] metaBytes = NativeCall.ToUtf8(JsonSerializer.Serialize(metadata));
+            await NativeCall.Async(completion =>
+            {
+                unsafe
+                {
+                    fixed (byte* pField = fieldBytes)
+                    fixed (byte* pMeta = metaBytes)
+                    {
+                        table_replace_field_metadata(
+                            _handle!.DangerousGetHandle(),
+                            (IntPtr)pField, (IntPtr)pMeta,
+                            completion);
+                    }
+                }
             }).ConfigureAwait(false);
         }
 

@@ -303,6 +303,29 @@ namespace lancedb.tests
             Assert.True(usesV2);
         }
 
+        /// <summary>
+        /// ReplaceFieldMetadata updates field metadata and is reflected in schema.
+        /// </summary>
+        [Fact]
+        public async Task ReplaceFieldMetadata_UpdatesSchema()
+        {
+            using var fixture = await TestFixture.CreateWithTable("replace_meta");
+            await fixture.Table.Add(CreateTestBatch(3));
+
+            var metadata = new Dictionary<string, string>
+            {
+                { "description", "The row identifier" },
+                { "unit", "count" },
+            };
+            await fixture.Table.ReplaceFieldMetadata("id", metadata);
+
+            var schema = await fixture.Table.Schema();
+            var field = schema.GetFieldByName("id");
+            Assert.True(field.HasMetadata);
+            Assert.Equal("The row identifier", field.Metadata["description"]);
+            Assert.Equal("count", field.Metadata["unit"]);
+        }
+
         private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
         {
             var idArray = new Apache.Arrow.Int32Array.Builder();

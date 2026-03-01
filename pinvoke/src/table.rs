@@ -256,6 +256,74 @@ pub extern "C" fn table_migrate_manifest_paths_v2(
     });
 }
 
+/// Replaces the metadata of a field in the table schema.
+/// field_name: UTF-8 field name.
+/// metadata_json: JSON object with string key-value pairs.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_replace_field_metadata(
+    table_ptr: *const Table,
+    field_name: *const c_char,
+    metadata_json: *const c_char,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let field_name = ffi::to_string(field_name);
+    let metadata: std::collections::HashMap<String, String> =
+        match ffi::parse_optional_json_map(metadata_json) {
+            Some(m) => m,
+            None => {
+                callback_error(
+                    completion,
+                    lancedb::Error::InvalidInput {
+                        message: "metadata_json must be a valid JSON object".into(),
+                    },
+                );
+                return;
+            }
+        };
+    crate::spawn(async move {
+        match table.as_native() {
+            Some(native) => {
+                let manifest = match native.manifest().await {
+                    Ok(m) => m,
+                    Err(e) => {
+                        callback_error(completion, e);
+                        return;
+                    }
+                };
+                let field = match manifest.schema.field(&field_name) {
+                    Some(f) => f,
+                    None => {
+                        callback_error(
+                            completion,
+                            lancedb::Error::InvalidInput {
+                                message: format!("Field '{}' not found in schema", field_name),
+                            },
+                        );
+                        return;
+                    }
+                };
+                let field_id = field.id as u32;
+                match native
+                    .replace_field_metadata(vec![(field_id, metadata)])
+                    .await
+                {
+                    Ok(()) => {
+                        completion(1 as *const std::ffi::c_void, std::ptr::null());
+                    }
+                    Err(e) => callback_error(completion, e),
+                }
+            }
+            None => callback_error(
+                completion,
+                lancedb::Error::NotSupported {
+                    message: "replace_field_metadata is only supported for local tables".into(),
+                },
+            ),
+        }
+    });
+}
+
 /// Returns the table versions as a JSON string.
 /// Caller must free the returned string with free_string().
 #[unsafe(no_mangle)]
