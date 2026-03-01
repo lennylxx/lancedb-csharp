@@ -1,6 +1,7 @@
 namespace lancedb
 {
     using System.Runtime.InteropServices;
+    using System.Text.Json.Serialization;
 
     /// <summary>
     /// Native FFI struct matching Rust FfiIndexStats layout.
@@ -24,30 +25,40 @@ namespace lancedb
         /// <summary>
         /// The number of rows in the table that are covered by this index.
         /// </summary>
-        public ulong NumIndexedRows { get; }
+        [JsonPropertyName("num_indexed_rows")]
+        public ulong NumIndexedRows { get; set; }
 
         /// <summary>
         /// The number of rows in the table that are not covered by this index.
         /// These are rows that haven't yet been added to the index.
         /// </summary>
-        public ulong NumUnindexedRows { get; }
+        [JsonPropertyName("num_unindexed_rows")]
+        public ulong NumUnindexedRows { get; set; }
 
         /// <summary>
-        /// The type of the index (e.g. IvfPq, BTree, Bitmap, Fts).
+        /// The type of the index (e.g. IvfPq, BTree, Bitmap, FTS).
         /// </summary>
-        public IndexType IndexType { get; }
+        [JsonPropertyName("index_type")]
+        public IndexType IndexType { get; set; }
 
         /// <summary>
         /// The distance type used by the index (e.g. L2, Cosine, Dot).
         /// Only present for vector indices; <c>null</c> for scalar and FTS indices.
         /// </summary>
-        public DistanceType? DistanceType { get; }
+        [JsonPropertyName("distance_type")]
+        public DistanceType? DistanceType { get; set; }
 
         /// <summary>
         /// The number of parts this index is split into.
         /// Zero if not available.
         /// </summary>
-        public uint NumIndices { get; }
+        [JsonPropertyName("num_indices")]
+        public uint NumIndices { get; set; }
+
+        /// <summary>
+        /// Parameterless constructor for JSON deserialization.
+        /// </summary>
+        public IndexStatistics() { }
 
         internal IndexStatistics(FfiIndexStats ffi)
         {
