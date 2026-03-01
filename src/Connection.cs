@@ -53,6 +53,9 @@ namespace lancedb
         private static extern void connection_rename_table(IntPtr connection_ptr, IntPtr old_name, IntPtr new_name, IntPtr cur_namespace_json, IntPtr new_namespace_json, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void connection_clone_table(IntPtr connection_ptr, IntPtr target_table_name, IntPtr source_uri, IntPtr target_namespace_json, long source_version, IntPtr source_tag, [MarshalAs(UnmanagedType.U1)] bool is_shallow, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void connection_list_namespaces(IntPtr connection_ptr, IntPtr namespace_json, IntPtr page_token, int limit, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -613,6 +616,76 @@ namespace lancedb
                     }
                 }
             });
+        }
+
+        /// <summary>
+        /// Clone a table from a source table.
+        /// </summary>
+        /// <remarks>
+        /// A shallow clone creates a new table that shares the underlying data files
+        /// with the source table but has its own independent manifest. This allows
+        /// both the source and cloned tables to evolve independently while initially
+        /// sharing the same data, deletion, and index files.
+        /// </remarks>
+        /// <param name="targetTableName">The name of the target table to create.</param>
+        /// <param name="sourceUri">The URI of the source table to clone from.</param>
+        /// <param name="targetNamespace">
+        /// The namespace for the target table.
+        /// <c>null</c> or an empty list represents the root namespace.
+        /// </param>
+        /// <param name="sourceVersion">
+        /// The version of the source table to clone. If not specified, the latest
+        /// version is used.
+        /// </param>
+        /// <param name="sourceTag">
+        /// The tag of the source table to clone. Cannot be combined with
+        /// <paramref name="sourceVersion"/>.
+        /// </param>
+        /// <param name="isShallow">
+        /// Whether to perform a shallow clone (<c>true</c>) or deep clone (<c>false</c>).
+        /// Currently only shallow clone is supported. Defaults to <c>true</c>.
+        /// </param>
+        /// <returns>A <see cref="Table"/> object representing the cloned table.</returns>
+        public async Task<Table> CloneTable(
+            string targetTableName,
+            string sourceUri,
+            IReadOnlyList<string>? targetNamespace = null,
+            long? sourceVersion = null,
+            string? sourceTag = null,
+            bool isShallow = true)
+        {
+            byte[] targetNameBytes = NativeCall.ToUtf8(targetTableName);
+            byte[] sourceUriBytes = NativeCall.ToUtf8(sourceUri);
+            byte[]? targetNsJson = targetNamespace != null
+                ? NativeCall.ToUtf8(JsonSerializer.Serialize(targetNamespace))
+                : null;
+            byte[]? sourceTagBytes = sourceTag != null
+                ? NativeCall.ToUtf8(sourceTag)
+                : null;
+            long versionSentinel = sourceVersion.HasValue ? (long)sourceVersion.Value : -1;
+
+            IntPtr tablePtr = await NativeCall.Async(callback =>
+            {
+                unsafe
+                {
+                    fixed (byte* pTarget = targetNameBytes)
+                    fixed (byte* pSourceUri = sourceUriBytes)
+                    fixed (byte* pTargetNs = targetNsJson)
+                    fixed (byte* pSourceTag = sourceTagBytes)
+                    {
+                        connection_clone_table(
+                            _handle!.DangerousGetHandle(),
+                            new IntPtr(pTarget),
+                            new IntPtr(pSourceUri),
+                            targetNsJson != null ? new IntPtr(pTargetNs) : IntPtr.Zero,
+                            versionSentinel,
+                            sourceTagBytes != null ? new IntPtr(pSourceTag) : IntPtr.Zero,
+                            isShallow,
+                            callback);
+                    }
+                }
+            });
+            return new Table(tablePtr);
         }
 
         /// <summary>

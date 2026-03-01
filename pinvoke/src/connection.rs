@@ -531,3 +531,43 @@ pub extern "C" fn connection_describe_namespace(
         }
     });
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn connection_clone_table(
+    connection_ptr: *const Connection,
+    target_table_name: *const c_char,
+    source_uri: *const c_char,
+    target_namespace_json: *const c_char,
+    source_version: i64,
+    source_tag: *const c_char,
+    is_shallow: bool,
+    completion: FfiCallback,
+) {
+    let target_name = ffi::to_string(target_table_name);
+    let src_uri = ffi::to_string(source_uri);
+    let target_ns = ffi::parse_optional_json_list(target_namespace_json);
+    let src_tag = ffi::parse_optional_string(source_tag);
+    let connection = ffi_clone_arc!(connection_ptr, Connection);
+    crate::spawn(async move {
+        let mut builder = connection.clone_table(target_name, src_uri);
+        if let Some(ns) = target_ns {
+            builder = builder.target_namespace(ns);
+        }
+        if source_version >= 0 {
+            builder = builder.source_version(source_version as u64);
+        }
+        if let Some(tag) = src_tag {
+            builder = builder.source_tag(tag);
+        }
+        if !is_shallow {
+            builder = builder.is_shallow(false);
+        }
+        match builder.execute().await {
+            Ok(table) => {
+                let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
+                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
+    });
+}

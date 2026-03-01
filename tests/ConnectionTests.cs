@@ -1200,5 +1200,156 @@ namespace lancedb.tests
                 }
             }
         }
+
+        [Fact]
+        public async Task CloneTable_BasicShallowClone_CreatesNewTable()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var batch = CreateTestBatch(5);
+                var sourceTable = await connection.CreateTable("source_table", batch);
+                var sourceUri = await sourceTable.Uri();
+
+                var clonedTable = await connection.CloneTable("cloned_table", sourceUri);
+
+                Assert.Equal("cloned_table", clonedTable.Name);
+                long count = await clonedTable.CountRows();
+                Assert.Equal(5, count);
+
+                // Both tables should exist independently
+                var names = await connection.TableNames();
+                Assert.Contains("source_table", names);
+                Assert.Contains("cloned_table", names);
+
+                clonedTable.Dispose();
+                sourceTable.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task CloneTable_WithSourceVersion_ClonesSpecificVersion()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var batch = CreateTestBatch(3);
+                var sourceTable = await connection.CreateTable("versioned_source", batch);
+                var sourceUri = await sourceTable.Uri();
+
+                // Get current version (version 1 after create)
+                ulong version = await sourceTable.Version();
+
+                // Add more data to create version 2
+                await sourceTable.Add(CreateTestBatch(2));
+
+                // Clone from version 1 (should have 3 rows, not 5)
+                var clonedTable = await connection.CloneTable(
+                    "versioned_clone", sourceUri, sourceVersion: (long)version);
+
+                long count = await clonedTable.CountRows();
+                Assert.Equal(3, count);
+
+                clonedTable.Dispose();
+                sourceTable.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task CloneTable_WithSourceTag_ClonesTaggedVersion()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var batch = CreateTestBatch(4);
+                var sourceTable = await connection.CreateTable("tagged_source", batch);
+                var sourceUri = await sourceTable.Uri();
+
+                ulong version = await sourceTable.Version();
+                await sourceTable.CreateTag("v1", version);
+
+                // Add more data
+                await sourceTable.Add(CreateTestBatch(3));
+
+                // Clone from tag
+                var clonedTable = await connection.CloneTable(
+                    "tagged_clone", sourceUri, sourceTag: "v1");
+
+                long count = await clonedTable.CountRows();
+                Assert.Equal(4, count);
+
+                clonedTable.Dispose();
+                sourceTable.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        [Fact]
+        public async Task CloneTable_IndependentEvolution_TablesEvolveIndependently()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var batch = CreateTestBatch(3);
+                var sourceTable = await connection.CreateTable("evolve_source", batch);
+                var sourceUri = await sourceTable.Uri();
+
+                var clonedTable = await connection.CloneTable("evolve_clone", sourceUri);
+
+                // Add data to source only
+                await sourceTable.Add(CreateTestBatch(2));
+
+                long sourceCount = await sourceTable.CountRows();
+                long cloneCount = await clonedTable.CountRows();
+                Assert.Equal(5, sourceCount);
+                Assert.Equal(3, cloneCount);
+
+                clonedTable.Dispose();
+                sourceTable.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
     }
 }
