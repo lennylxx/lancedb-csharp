@@ -396,6 +396,7 @@ fn test_create_index_with_name_ffi() {
         true,
         name.as_ptr(),
         true,
+        -1,
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();
@@ -428,6 +429,7 @@ fn test_create_index_train_false_ffi() {
         true,
         ptr::null(),
         false,
+        -1,
         common::ffi_callback,
     );
     let result = common::ffi_wait_success();

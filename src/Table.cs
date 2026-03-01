@@ -105,7 +105,8 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_create_index(
             IntPtr table_ptr, IntPtr columns_json, int index_type, IntPtr config_json,
-            bool replace, IntPtr name, bool train, NativeCall.FfiCallback completion);
+            bool replace, IntPtr name, bool train, long wait_timeout_ms,
+            NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_indices(
@@ -919,15 +920,24 @@ namespace lancedb
         /// When <c>false</c>, an empty index is created that will be populated later
         /// by the optimize step.
         /// </param>
+        /// <param name="waitTimeout">
+        /// If specified, wait for the index to be fully built before returning,
+        /// timing out after the given duration. If <c>null</c> (default), index
+        /// creation returns immediately without waiting.
+        /// </param>
         public async Task CreateIndex(
             IReadOnlyList<string> columns, Index index,
-            bool replace = true, string? name = null, bool train = true)
+            bool replace = true, string? name = null, bool train = true,
+            TimeSpan? waitTimeout = null)
         {
             string columnsJson = JsonSerializer.Serialize(columns);
             byte[] columnsBytes = NativeCall.ToUtf8(columnsJson);
             int indexType = (int)index.IndexType;
             byte[] configBytes = NativeCall.ToUtf8(index.ToConfigJson());
             byte[]? nameBytes = name != null ? NativeCall.ToUtf8(name) : null;
+            long waitTimeoutMs = waitTimeout.HasValue
+                ? (long)waitTimeout.Value.TotalMilliseconds
+                : -1;
 
             await NativeCall.Async(completion =>
             {
@@ -940,7 +950,8 @@ namespace lancedb
                         table_create_index(
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pColumns, indexType, (IntPtr)pConfig,
-                            replace, (IntPtr)pName, train, completion);
+                            replace, (IntPtr)pName, train, waitTimeoutMs,
+                            completion);
                     }
                 }
             }).ConfigureAwait(false);

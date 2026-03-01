@@ -850,6 +850,19 @@ namespace lancedb.tests
         }
 
         [Fact]
+        public async Task CreateIndex_WithWaitTimeout_WaitsForCompletion()
+        {
+            using var fixture = await TestFixture.CreateWithTable("idx_wait_timeout");
+            await fixture.Table.Add(CreateTestBatch(10));
+            await fixture.Table.CreateIndex(
+                new[] { "id" }, new BTreeIndex(), replace: true,
+                waitTimeout: TimeSpan.FromSeconds(30));
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.NotEmpty(indices);
+        }
+
+        [Fact]
         public async Task Optimize_WithCleanupParams_Succeeds()
         {
             using var fixture = await TestFixture.CreateWithTable("opt_params");

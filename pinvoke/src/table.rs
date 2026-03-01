@@ -489,6 +489,7 @@ pub extern "C" fn table_create_index(
     replace: bool,
     name: *const c_char,
     train: bool,
+    wait_timeout_ms: i64,
     completion: FfiCallback,
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
@@ -536,6 +537,9 @@ pub extern "C" fn table_create_index(
             .train(train);
         if let Some(n) = index_name {
             builder = builder.name(n);
+        }
+        if wait_timeout_ms >= 0 {
+            builder = builder.wait_timeout(std::time::Duration::from_millis(wait_timeout_ms as u64));
         }
         match builder.execute().await {
             Ok(_) => {
