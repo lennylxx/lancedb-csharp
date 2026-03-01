@@ -362,6 +362,115 @@ namespace lancedb.tests
             Assert.Equal("a", names.GetString(1));
         }
 
+        // ===== MRR Reranker Tests =====
+
+        [Fact]
+        public async Task MRRReranker_HybridResults_RankedByWeightedMRR()
+        {
+            var vecResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().AppendRange(new[] { "foo", "bar", "baz" }).Build(),
+                    new UInt64Array.Builder().AppendRange(new ulong[] { 1, 2, 3 }).Build(),
+                }, 3);
+
+            var ftsResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().AppendRange(new[] { "bar", "baz", "qux" }).Build(),
+                    new UInt64Array.Builder().AppendRange(new ulong[] { 2, 3, 4 }).Build(),
+                }, 3);
+
+            var reranker = new MRRReranker(); // equal weights 0.5/0.5
+            var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
+
+            Assert.Equal(4, result.Length);
+
+            // "bar": vec rank=2 → 1/2=0.5, fts rank=1 → 1/1=1.0, score = 0.5*0.5 + 0.5*1.0 = 0.75
+            // "foo": vec rank=1 → 1/1=1.0, fts absent → 0, score = 0.5*1.0 + 0 = 0.5
+            // "baz": vec rank=3 → 1/3≈0.333, fts rank=2 → 1/2=0.5, score = 0.5*0.333 + 0.5*0.5 ≈ 0.417
+            // "qux": vec absent → 0, fts rank=3 → 1/3≈0.333, score = 0 + 0.5*0.333 ≈ 0.167
+            var names = (StringArray)result.Column(0);
+            Assert.Equal("bar", names.GetString(0));
+            Assert.Equal("foo", names.GetString(1));
+            Assert.Equal("baz", names.GetString(2));
+            Assert.Equal("qux", names.GetString(3));
+
+            var scores = (FloatArray)result.Column(result.Schema.GetFieldIndex("_relevance_score"));
+            Assert.Equal(0.75f, scores.GetValue(0), 4);
+            Assert.Equal(0.5f, scores.GetValue(1), 4);
+        }
+
+        [Fact]
+        public async Task MRRReranker_CustomWeights_VectorHeavy()
+        {
+            var vecResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().AppendRange(new[] { "a", "b" }).Build(),
+                    new UInt64Array.Builder().AppendRange(new ulong[] { 1, 2 }).Build(),
+                }, 2);
+
+            var ftsResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().AppendRange(new[] { "b", "c" }).Build(),
+                    new UInt64Array.Builder().AppendRange(new ulong[] { 2, 3 }).Build(),
+                }, 2);
+
+            // weight_vector=0.8, weight_fts=0.2
+            var reranker = new MRRReranker(weightVector: 0.8f, weightFts: 0.2f);
+            var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
+
+            Assert.Equal(3, result.Length);
+            // "a": 0.8*1.0 + 0 = 0.8
+            // "b": 0.8*0.5 + 0.2*1.0 = 0.6
+            // "c": 0 + 0.2*0.5 = 0.1
+            var names = (StringArray)result.Column(0);
+            Assert.Equal("a", names.GetString(0));
+            Assert.Equal("b", names.GetString(1));
+            Assert.Equal("c", names.GetString(2));
+        }
+
+        [Fact]
+        public async Task MRRReranker_EmptyVectorResults_ReturnsFtsOnly()
+        {
+            var vecResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().Build(),
+                    new UInt64Array.Builder().Build(),
+                }, 0);
+
+            var ftsResults = new RecordBatch(
+                CreateSchema("name", "_rowid"),
+                new IArrowArray[]
+                {
+                    new StringArray.Builder().AppendRange(new[] { "a", "b" }).Build(),
+                    new UInt64Array.Builder().AppendRange(new ulong[] { 1, 2 }).Build(),
+                }, 2);
+
+            var reranker = new MRRReranker();
+            var result = await reranker.RerankHybrid("", vecResults, ftsResults);
+
+            Assert.Equal(2, result.Length);
+        }
+
+        [Fact]
+        public void MRRReranker_InvalidWeights_Throws()
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(() => new MRRReranker(weightVector: -0.1f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new MRRReranker(weightVector: 1.1f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new MRRReranker(weightFts: -0.1f));
+            Assert.Throws<ArgumentOutOfRangeException>(() => new MRRReranker(weightFts: 1.1f));
+            Assert.Throws<ArgumentException>(() => new MRRReranker(weightVector: 0.3f, weightFts: 0.3f));
+        }
+
         // ===== MergeResults Tests =====
 
         [Fact]
