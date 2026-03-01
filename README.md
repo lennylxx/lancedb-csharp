@@ -5,14 +5,17 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 ## Features
 
 - **Connection management** — connect to local or cloud databases with configurable options
-- **Table CRUD** — create, open, rename, drop tables; add, update, delete, merge-insert rows
+- **Table CRUD** — create, open, rename, clone, drop tables; add, update, delete, merge-insert rows
 - **Vector search** — nearest-neighbor queries with distance metrics, nprobes, refine factor, multi-vector search
 - **Full-text search** — FTS indexing with configurable tokenization, stemming, and stop words
-- **Hybrid search** — combine vector and full-text search with automatic RRF reranking
+- **Hybrid search** — combine vector and full-text search with reranking (RRF, Linear Combination, MRR)
+- **Streaming results** — `ToBatches()` returns `AsyncRecordBatchReader` for memory-efficient iteration
 - **Indexing** — BTree, Bitmap, LabelList, FTS, IVF-PQ, IVF-Flat, IVF-SQ, IVF-RQ, HNSW-PQ, HNSW-SQ
-- **Schema management** — add, alter, drop columns; inspect schemas via Apache Arrow
+- **Schema management** — add, alter, drop columns; add null-filled columns from Arrow Schema
 - **Versioning** — checkout, restore, list versions; tag management
+- **Namespace management** — create, list, drop, describe namespaces for multi-tenant organization
 - **Query introspection** — explain plans, analyze plans, output schemas
+- **Direct row access** — `TakeQuery` builder with select and row ID support
 
 ## Performance
 
@@ -88,12 +91,29 @@ var ftsResults = await table.Query()
     .Limit(10)
     .ToList();
 
-// Hybrid search (vector + FTS with automatic RRF reranking)
+// Hybrid search (vector + FTS)
 var hybridResults = await table.Query()
     .NearestTo(queryVector)
-    .FullTextSearch("search terms")
+    .NearestToText("search terms")
+    .Rerank(new RRFReranker())
     .Limit(10)
-    .ToList();
+    .ToArrow();
+
+// Streaming results (memory-efficient)
+using var reader = await table.Query()
+    .NearestTo(queryVector)
+    .Limit(100)
+    .ToBatches();
+await foreach (var batch in reader)
+{
+    // Process each batch incrementally
+}
+
+// Direct row access with TakeQuery builder
+var rows = await table.TakeOffsets(new ulong[] { 0, 1, 2 })
+    .Select(new[] { "id", "text" })
+    .WithRowId()
+    .ToArrow();
 
 // Cleanup
 table.Dispose();
@@ -107,26 +127,40 @@ connection.Dispose();
 ```csharp
 var connection = new Connection();
 await connection.Connect(uri, options);          // Connect to a database
+string? uri = connection.Uri;                    // Get the connected URI
+TimeSpan? rci = connection.ReadConsistencyInterval; // Get consistency interval
 bool open = connection.IsOpen();                 // Check connection state
 
 // Table management
 var table = await connection.OpenTable("name");
 var table = await connection.CreateTable("name", recordBatch);
 var table = await connection.CreateEmptyTable("name");
+var response = await connection.ListTables();    // Paginated table listing
 var names = await connection.TableNames();       // List table names
+await connection.RenameTable("old", "new");      // Rename a table
 await connection.DropTable("name");              // Drop a table
 await connection.DropAllTables();                // Drop all tables
+var table = await connection.CloneTable("target", sourceUri); // Clone a table
+
+// Namespace management
+await connection.CreateNamespace(new[] { "ns" });
+var ns = await connection.ListNamespaces();
+var info = await connection.DescribeNamespace(new[] { "ns" });
+await connection.DropNamespace(new[] { "ns" });
 ```
 
 ### Table — Data Operations
 
 ```csharp
+string name = table.Name;                        // Table name
 await table.Add(recordBatch);                    // Append data
 await table.Add(recordBatch, "overwrite");       // Overwrite data
 await table.Update(values, where);               // Update rows (SQL expressions)
 await table.Delete("id > 10");                   // Delete rows
 long count = await table.CountRows("id < 5");    // Count with optional filter
 var schema = await table.Schema();               // Get Arrow schema
+var stats = await table.Stats();                 // Get table statistics
+string uri = await table.Uri();                  // Get table URI
 
 // Merge insert (upsert)
 await table.MergeInsert("id")
@@ -135,9 +169,23 @@ await table.MergeInsert("id")
     .WhenNotMatchedBySourceDelete()
     .Execute(newData);
 
-// Direct row access
-var batch = await table.TakeOffsets(offsets);
-var batch = await table.TakeRowIds(rowIds);
+// Direct row access (TakeQuery builder)
+var batch = await table.TakeOffsets(offsets)
+    .Select(new[] { "id", "text" })
+    .WithRowId()
+    .ToArrow();
+var batch = await table.TakeRowIds(rowIds).ToArrow();
+
+// Schema management
+await table.AddColumns(new Dictionary<string, string>
+{
+    { "doubled", "id * 2" }                      // SQL expression
+});
+await table.AddColumns(arrowSchema);             // Add null-filled columns
+await table.AlterColumns(alterations);
+await table.DropColumns(new[] { "old_column" });
+await table.ReplaceFieldMetadata("field", metadata);
+var stats = await table.Optimize();              // Compact and cleanup
 ```
 
 ### Querying
@@ -149,22 +197,48 @@ var results = await table.Query()
     .Where("id > 5")
     .Limit(10)
     .Offset(5)
+    .WithRowId()
     .ToArrow();                                  // Returns RecordBatch
 
 // Vector search
 var results = await table.Query()
     .NearestTo(vector)
-    .DistanceType("cosine")
+    .DistanceType(DistanceType.Cosine)
     .Nprobes(20)
     .RefineFactor(10)
+    .DistanceRange(lowerBound: 0.0f, upperBound: 1.0f)
     .Limit(10)
     .ToList();                                   // Returns List<Dictionary>
+
+// Multi-vector search
+var results = await table.Query()
+    .NearestTo(vector1)
+    .AddQueryVector(vector2)
+    .Limit(10)
+    .ToArrow();
 
 // Full-text search
 var results = await table.Query()
     .NearestToText("search query")
     .Limit(10)
     .ToList();
+
+// Hybrid search (vector + FTS with reranking)
+var results = await table.Query()
+    .NearestTo(vector)
+    .NearestToText("search query")
+    .Rerank(new RRFReranker())                   // or LinearCombinationReranker, MRRReranker
+    .Limit(10)
+    .ToArrow();
+
+// Streaming results
+using var reader = await table.Query()
+    .Limit(1000)
+    .ToBatches(maxBatchLength: 100);
+await foreach (var batch in reader)
+{
+    // Process incrementally
+}
 
 // Query introspection
 string plan = await query.ExplainPlan(verbose: true);
@@ -219,16 +293,4 @@ await table.UpdateTag("v1.0", newVersion);
 await table.DeleteTag("v1.0");
 var tags = await table.ListTags();
 ulong v = await table.GetTagVersion("v1.0");
-```
-
-### Schema Management
-
-```csharp
-await table.AddColumns(new Dictionary<string, string>
-{
-    { "doubled", "id * 2" }                      // SQL expression
-});
-await table.AlterColumns(alterations);
-await table.DropColumns(new[] { "old_column" });
-var stats = await table.Optimize();              // Compact and cleanup
 ```

@@ -239,39 +239,6 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Perform a full-text search on the table.
-        /// </summary>
-        /// <remarks>
-        /// <para>
-        /// The results will be returned in order of relevance (BM25 scores).
-        /// </para>
-        /// <para>
-        /// This method is only valid on tables that have a full-text search index.
-        /// Use <see cref="Table.CreateIndex"/> with <see cref="FtsIndex"/> to create one.
-        /// </para>
-        /// <para>
-        /// Full-text search always has a limit. If <see cref="Limit"/> has not
-        /// been called then a default limit of 10 will be used.
-        /// </para>
-        /// <para>
-        /// When called on a <see cref="VectorQuery"/>, this creates a hybrid query
-        /// that combines vector search with full-text search.
-        /// </para>
-        /// </remarks>
-        /// <param name="query">The search query string.</param>
-        /// <param name="columns">
-        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
-        /// columns are searched.
-        /// </param>
-        /// <returns>This query instance for method chaining.</returns>
-        public T FullTextSearch(string query, string[]? columns = null)
-        {
-            _fullTextSearchQuery = query;
-            _fullTextSearchColumns = columns;
-            return (T)this;
-        }
-
-        /// <summary>
         /// Skip searching unindexed data.
         /// </summary>
         /// <remarks>

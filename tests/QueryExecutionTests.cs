@@ -203,99 +203,6 @@ namespace lancedb.tests
         }
 
         // -----------------------------------------------------------------------
-        // Full-Text Search Tests
-        // -----------------------------------------------------------------------
-
-        /// <summary>
-        /// FullTextSearch should return matching rows from an FTS-indexed table.
-        /// </summary>
-        [Fact]
-        public async Task FullTextSearch_WithIndex_ReturnsMatchingRows()
-        {
-            using var fixture = await CreateTextFixture("fts_basic");
-
-            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            using var query = fixture.Table.Query().FullTextSearch("apple");
-            var rows = await query.ToList();
-
-            Assert.Single(rows);
-            Assert.Equal("apple banana", rows[0]["content"]);
-        }
-
-        /// <summary>
-        /// FullTextSearch should be chainable with other builder methods.
-        /// </summary>
-        [Fact]
-        public async Task FullTextSearch_WithChaining_Works()
-        {
-            using var fixture = await CreateTextFixture("fts_chain");
-
-            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            using var query = fixture.Table.Query()
-                .FullTextSearch("cherry")
-                .Select(new[] { "content" });
-            var batch = await query.ToArrow();
-
-            Assert.Equal(1, batch.Length);
-            Assert.Contains(batch.Schema.FieldsList, f => f.Name == "content");
-        }
-
-        /// <summary>
-        /// FullTextSearch with no matching term should return empty results.
-        /// </summary>
-        [Fact]
-        public async Task FullTextSearch_NoMatch_ReturnsEmpty()
-        {
-            using var fixture = await CreateTextFixture("fts_empty");
-
-            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            using var query = fixture.Table.Query().FullTextSearch("zzzznotfound");
-            var batch = await query.ToArrow();
-
-            Assert.Equal(0, batch.Length);
-        }
-
-        /// <summary>
-        /// FastSearch should be chainable with FullTextSearch.
-        /// </summary>
-        [Fact]
-        public async Task FastSearch_WithFts_IsChainable()
-        {
-            using var fixture = await CreateTextFixture("fts_fast");
-
-            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            using var query = fixture.Table.Query()
-                .FullTextSearch("apple")
-                .FastSearch();
-            var rows = await query.ToList();
-
-            Assert.Single(rows);
-        }
-
-        /// <summary>
-        /// Postfilter should be chainable on a regular Query with FTS.
-        /// </summary>
-        [Fact]
-        public async Task Postfilter_OnQuery_IsChainable()
-        {
-            using var fixture = await CreateTextFixture("fts_postfilter");
-
-            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            using var query = fixture.Table.Query()
-                .FullTextSearch("apple")
-                .Postfilter()
-                .Limit(10);
-            var rows = await query.ToList();
-
-            Assert.Single(rows);
-        }
-
-        // -----------------------------------------------------------------------
         // NearestToText Tests
         // -----------------------------------------------------------------------
 
@@ -427,7 +334,7 @@ namespace lancedb.tests
         }
 
         /// <summary>
-        /// Hybrid search via vector-first path (NearestTo then FullTextSearch)
+        /// Hybrid search via vector-first path (NearestTo then NearestToText)
         /// should also work.
         /// </summary>
         [Fact]
@@ -437,9 +344,9 @@ namespace lancedb.tests
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
-            using var query = fixture.Table.Query()
+            var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
-                .FullTextSearch("apple");
+                .NearestToText("apple");
             var rows = await query.ToList();
 
             Assert.NotEmpty(rows);
@@ -465,10 +372,10 @@ namespace lancedb.tests
         }
 
         /// <summary>
-        /// FullTextSearch with columns parameter should only search specified columns.
+        /// NearestToText with columns parameter should only search specified columns (body).
         /// </summary>
         [Fact]
-        public async Task FullTextSearch_WithColumns_SearchesSpecifiedColumns()
+        public async Task NearestToText_WithColumnsBody_SearchesSpecifiedColumns()
         {
             using var fixture = await CreateMultiTextFixture("fts_columns");
 
@@ -476,7 +383,7 @@ namespace lancedb.tests
             await fixture.Table.CreateIndex(new[] { "body" }, new FtsIndex());
 
             using var query = fixture.Table.Query()
-                .FullTextSearch("apple", new[] { "body" });
+                .NearestToText("apple", new[] { "body" });
             var rows = await query.ToList();
 
             Assert.Single(rows);

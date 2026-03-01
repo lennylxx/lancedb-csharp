@@ -314,7 +314,8 @@ namespace lancedb
         {
             // Execute FTS sub-query
             using var ftsSubQuery = new Query(_tablePtr);
-            ftsSubQuery.FullTextSearch(_ftsQuery, _ftsColumns);
+            ftsSubQuery._fullTextSearchQuery = _ftsQuery;
+            ftsSubQuery._fullTextSearchColumns = _ftsColumns;
             ftsSubQuery.WithRowId();
             ApplySharedConfig(ftsSubQuery);
             var ftsResults = await ftsSubQuery.ToArrow(timeout).ConfigureAwait(false);

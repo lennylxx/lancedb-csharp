@@ -70,8 +70,7 @@ namespace lancedb
     /// </summary>
     /// <remarks>
     /// Creates a full-text search index that enables text search capabilities using
-    /// BM25 scoring. Use with <see cref="QueryBase{T}.FullTextSearch"/> or
-    /// <see cref="Query.NearestToText"/> to search indexed columns.
+    /// BM25 scoring. Use with <see cref="Query.NearestToText"/> to search indexed columns.
     /// </remarks>
     public class FtsIndex : Index
     {
