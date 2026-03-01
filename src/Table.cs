@@ -47,6 +47,12 @@ namespace lancedb
             NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_update_result_free(IntPtr ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_merge_result_free(IntPtr ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_schema(
             IntPtr table_ptr, NativeCall.FfiCallback completion);
 
@@ -360,10 +366,13 @@ namespace lancedb
         /// For example, <c>"x = 2"</c> or <c>"x IN (1, 2, 3)"</c>.
         /// The filter must not be empty, or it will error.
         /// </param>
-        public async Task Delete(string predicate)
+        /// <returns>
+        /// A <see cref="DeleteResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<DeleteResult> Delete(string predicate)
         {
             byte[] utf8Predicate = NativeCall.ToUtf8(predicate);
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -374,6 +383,8 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            return new DeleteResult { Version = (ulong)resultPtr.ToInt64() };
         }
 
         /// <summary>
@@ -399,14 +410,19 @@ namespace lancedb
         /// An optional SQL filter that controls which rows are updated
         /// (e.g., <c>"x = 2"</c>). If <c>null</c>, all rows are updated.
         /// </param>
-        public async Task Update(Dictionary<string, string> values, string? @where = null)
+        /// <returns>
+        /// An <see cref="UpdateResult"/> containing the number of rows updated and the
+        /// commit version of the operation.
+        /// </returns>
+        public async Task<UpdateResult> Update(Dictionary<string, string> values, string? @where = null)
         {
             var columns = values.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
             byte[] utf8Columns = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
 
+            IntPtr resultPtr;
             if (@where == null)
             {
-                await NativeCall.Async(completion =>
+                resultPtr = await NativeCall.Async(completion =>
                 {
                     unsafe
                     {
@@ -422,7 +438,7 @@ namespace lancedb
             else
             {
                 byte[] utf8Where = NativeCall.ToUtf8(@where);
-                await NativeCall.Async(completion =>
+                resultPtr = await NativeCall.Async(completion =>
                 {
                     unsafe
                     {
@@ -435,6 +451,15 @@ namespace lancedb
                         }
                     }
                 }).ConfigureAwait(false);
+            }
+
+            try
+            {
+                return Marshal.PtrToStructure<UpdateResult>(resultPtr);
+            }
+            finally
+            {
+                table_update_result_free(resultPtr);
             }
         }
 
@@ -478,7 +503,10 @@ namespace lancedb
         /// <item><description><c>"overwrite"</c> — Replace the existing data with the new data.</description></item>
         /// </list>
         /// </param>
-        public Task Add(IReadOnlyList<RecordBatch> data, string mode = "append")
+        /// <returns>
+        /// An <see cref="AddResult"/> containing the commit version of the operation.
+        /// </returns>
+        public Task<AddResult> Add(IReadOnlyList<RecordBatch> data, string mode = "append")
         {
             return Add(data, new AddOptions { Mode = mode });
         }
@@ -492,7 +520,10 @@ namespace lancedb
         /// <param name="options">Options controlling the write mode and bad vector handling.
         /// See <see cref="AddOptions.OnBadVectors"/> for what to do if any of the vectors
         /// are not the same size or contain NaNs.</param>
-        public async Task Add(IReadOnlyList<RecordBatch> data, AddOptions options)
+        /// <returns>
+        /// An <see cref="AddResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<AddResult> Add(IReadOnlyList<RecordBatch> data, AddOptions options)
         {
             var processed = new RecordBatch[data.Count];
             for (int i = 0; i < data.Count; i++)
@@ -503,7 +534,7 @@ namespace lancedb
 
             byte[] utf8Mode = NativeCall.ToUtf8(options.Mode);
 
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -535,6 +566,8 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            return new AddResult { Version = (ulong)resultPtr.ToInt64() };
         }
 
         /// <summary>
@@ -548,7 +581,10 @@ namespace lancedb
         /// <item><description><c>"overwrite"</c> — Replace the existing data with the new data.</description></item>
         /// </list>
         /// </param>
-        public Task Add(RecordBatch data, string mode = "append")
+        /// <returns>
+        /// An <see cref="AddResult"/> containing the commit version of the operation.
+        /// </returns>
+        public Task<AddResult> Add(RecordBatch data, string mode = "append")
         {
             return Add(new[] { data }, mode);
         }
@@ -558,7 +594,10 @@ namespace lancedb
         /// </summary>
         /// <param name="data">The data to insert into the table.</param>
         /// <param name="options">Options controlling the write mode and bad vector handling.</param>
-        public Task Add(RecordBatch data, AddOptions options)
+        /// <returns>
+        /// An <see cref="AddResult"/> containing the commit version of the operation.
+        /// </returns>
+        public Task<AddResult> Add(RecordBatch data, AddOptions options)
         {
             return Add(new[] { data }, options);
         }
@@ -1048,12 +1087,15 @@ namespace lancedb
         /// A dictionary mapping new column names to SQL expressions.
         /// For example, <c>new Dictionary&lt;string, string&gt; { { "doubled", "id * 2" } }</c>.
         /// </param>
-        public async Task AddColumns(Dictionary<string, string> transforms)
+        /// <returns>
+        /// An <see cref="AddColumnsResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<AddColumnsResult> AddColumns(Dictionary<string, string> transforms)
         {
             var pairs = transforms.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(pairs));
 
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1064,6 +1106,8 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            return new AddColumnsResult { Version = (ulong)resultPtr.ToInt64() };
         }
 
         /// <summary>
@@ -1082,11 +1126,14 @@ namespace lancedb
         /// A list of alterations, each as a dictionary with keys: <c>"path"</c> (required),
         /// <c>"rename"</c> (optional), <c>"nullable"</c> (optional).
         /// </param>
-        public async Task AlterColumns(IReadOnlyList<Dictionary<string, object>> alterations)
+        /// <returns>
+        /// An <see cref="AlterColumnsResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<AlterColumnsResult> AlterColumns(IReadOnlyList<Dictionary<string, object>> alterations)
         {
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(alterations));
 
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1097,17 +1144,22 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            return new AlterColumnsResult { Version = (ulong)resultPtr.ToInt64() };
         }
 
         /// <summary>
         /// Drop columns from the table.
         /// </summary>
         /// <param name="columns">The names of the columns to drop.</param>
-        public async Task DropColumns(IReadOnlyList<string> columns)
+        /// <returns>
+        /// A <see cref="DropColumnsResult"/> containing the commit version of the operation.
+        /// </returns>
+        public async Task<DropColumnsResult> DropColumns(IReadOnlyList<string> columns)
         {
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
 
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1118,6 +1170,8 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            return new DropColumnsResult { Version = (ulong)resultPtr.ToInt64() };
         }
 
         /// <summary>
@@ -1212,7 +1266,7 @@ namespace lancedb
             return new MergeInsertBuilder(this, on);
         }
 
-        internal async Task ExecuteMergeInsert(
+        internal async Task<MergeResult> ExecuteMergeInsert(
             IReadOnlyList<string> onColumns,
             bool whenMatchedUpdateAll, string? whenMatchedUpdateAllFilter,
             bool whenNotMatchedInsertAll,
@@ -1228,7 +1282,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(whenNotMatchedBySourceDeleteFilter) : null;
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
 
-            await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async(completion =>
             {
                 unsafe
                 {
@@ -1266,6 +1320,15 @@ namespace lancedb
                     }
                 }
             }).ConfigureAwait(false);
+
+            try
+            {
+                return Marshal.PtrToStructure<MergeResult>(resultPtr);
+            }
+            finally
+            {
+                table_merge_result_free(resultPtr);
+            }
         }
 
         /// <summary>

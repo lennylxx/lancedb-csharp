@@ -150,8 +150,9 @@ namespace lancedb.tests
         {
             using var fixture = await TestFixture.CreateWithTable("delete_empty");
 
-            await fixture.Table.Delete("id < 0");
+            var result = await fixture.Table.Delete("id < 0");
 
+            Assert.True(result.Version > 0);
             long count = await fixture.Table.CountRows();
             Assert.Equal(0, count);
         }
@@ -164,10 +165,12 @@ namespace lancedb.tests
         {
             using var fixture = await TestFixture.CreateWithTable("update_empty");
 
-            await fixture.Table.Update(
+            var result = await fixture.Table.Update(
                 new Dictionary<string, string> { { "id", "0" } },
                 @where: "id < 0");
 
+            Assert.Equal(0UL, result.RowsUpdated);
+            Assert.True(result.Version > 0);
             long count = await fixture.Table.CountRows();
             Assert.Equal(0, count);
         }
@@ -181,8 +184,9 @@ namespace lancedb.tests
             using var fixture = await TestFixture.CreateWithTable("add_single");
 
             var batch = CreateTestBatch(5);
-            await fixture.Table.Add(batch);
+            var result = await fixture.Table.Add(batch);
 
+            Assert.True(result.Version > 0);
             long count = await fixture.Table.CountRows();
             Assert.Equal(5, count);
         }
@@ -195,9 +199,10 @@ namespace lancedb.tests
         {
             using var fixture = await TestFixture.CreateWithTable("add_append");
 
-            await fixture.Table.Add(CreateTestBatch(3));
-            await fixture.Table.Add(CreateTestBatch(4));
+            var result1 = await fixture.Table.Add(CreateTestBatch(3));
+            var result2 = await fixture.Table.Add(CreateTestBatch(4));
 
+            Assert.True(result2.Version > result1.Version);
             long count = await fixture.Table.CountRows();
             Assert.Equal(7, count);
         }
@@ -211,7 +216,9 @@ namespace lancedb.tests
             using var fixture = await TestFixture.CreateWithTable("add_overwrite");
 
             await fixture.Table.Add(CreateTestBatch(10));
-            await fixture.Table.Add(CreateTestBatch(3), mode: "overwrite");
+            var result = await fixture.Table.Add(CreateTestBatch(3), mode: "overwrite");
+
+            Assert.True(result.Version > 0);
 
             long count = await fixture.Table.CountRows();
             Assert.Equal(3, count);
@@ -492,10 +499,12 @@ namespace lancedb.tests
                 var batch = CreateTestBatch(3);
                 var table = await connection.CreateTable("add_cols", batch);
 
-                await table.AddColumns(new Dictionary<string, string>
+                var addResult = await table.AddColumns(new Dictionary<string, string>
                 {
                     { "doubled", "id * 2" }
                 });
+
+                Assert.True(addResult.Version > 0);
 
                 var schema = await table.Schema();
                 Assert.Equal(2, schema.FieldsList.Count);
@@ -528,7 +537,7 @@ namespace lancedb.tests
                 var batch = CreateTestBatch(3);
                 var table = await connection.CreateTable("alter_cols", batch);
 
-                await table.AlterColumns(new List<Dictionary<string, object>>
+                var alterResult = await table.AlterColumns(new List<Dictionary<string, object>>
                 {
                     new Dictionary<string, object>
                     {
@@ -536,6 +545,8 @@ namespace lancedb.tests
                         { "rename", "identifier" }
                     }
                 });
+
+                Assert.True(alterResult.Version > 0);
 
                 var schema = await table.Schema();
                 Assert.Equal("identifier", schema.FieldsList[0].Name);
@@ -581,7 +592,9 @@ namespace lancedb.tests
                 var schemaBefore = await table.Schema();
                 Assert.Equal(2, schemaBefore.FieldsList.Count);
 
-                await table.DropColumns(new[] { "name" });
+                var dropResult = await table.DropColumns(new[] { "name" });
+
+                Assert.True(dropResult.Version > 0);
 
                 var schemaAfter = await table.Schema();
                 Assert.Single(schemaAfter.FieldsList);
@@ -816,10 +829,15 @@ namespace lancedb.tests
                 var table = await connection.CreateTable("merge_upsert", initial);
 
                 var newData = CreateIdValueBatch(new[] { 2, 3, 4 }, new[] { "B", "C", "D" });
-                await table.MergeInsert("id")
+                var mergeResult = await table.MergeInsert("id")
                     .WhenMatchedUpdateAll()
                     .WhenNotMatchedInsertAll()
                     .Execute(newData);
+
+                Assert.True(mergeResult.Version > 0);
+                Assert.Equal(1UL, mergeResult.NumInsertedRows);
+                Assert.Equal(2UL, mergeResult.NumUpdatedRows);
+                Assert.True(mergeResult.NumAttempts >= 1);
 
                 long count = await table.CountRows();
                 Assert.Equal(4, count);

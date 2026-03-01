@@ -8,6 +8,23 @@ use std::ffi::CString;
 use crate::ffi::{callback_error, FfiCallback};
 use crate::ffi;
 
+/// C-compatible struct for update results, passed across FFI.
+#[repr(C)]
+pub struct FfiUpdateResult {
+    pub rows_updated: u64,
+    pub version: u64,
+}
+
+/// C-compatible struct for merge insert results, passed across FFI.
+#[repr(C)]
+pub struct FfiMergeResult {
+    pub version: u64,
+    pub num_inserted_rows: u64,
+    pub num_updated_rows: u64,
+    pub num_deleted_rows: u64,
+    pub num_attempts: u32,
+}
+
 /// Returns the name of the table as a C string. Caller must free with free_string().
 #[unsafe(no_mangle)]
 pub extern "C" fn table_get_name(table_ptr: *const Table) -> *mut c_char {
@@ -63,8 +80,8 @@ pub extern "C" fn table_delete(
     let predicate = crate::ffi::to_string(predicate);
     crate::spawn(async move {
         match table.delete(&predicate).await {
-            Ok(_) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }
@@ -106,12 +123,24 @@ pub extern "C" fn table_update(
         }
 
         match builder.execute().await {
-            Ok(_) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            Ok(result) => {
+                let ffi = Box::new(FfiUpdateResult {
+                    rows_updated: result.rows_updated,
+                    version: result.version,
+                });
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }
     });
+}
+
+/// Frees an FfiUpdateResult pointer returned by table_update.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_update_result_free(ptr: *mut FfiUpdateResult) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)); }
+    }
 }
 
 /// Returns the table's Arrow schema via the C Data Interface.
@@ -181,8 +210,8 @@ pub extern "C" fn table_add(
             schema_ref,
         );
         match table.add(reader).mode(add_mode).execute().await {
-            Ok(_) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }
@@ -754,7 +783,9 @@ pub extern "C" fn table_add_columns(
     crate::spawn(async move {
         let transform = NewColumnTransform::SqlExpressions(pairs);
         match table.add_columns(transform, None).await {
-            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+            }
             Err(e) => callback_error(completion, e),
         }
     });
@@ -790,7 +821,9 @@ pub extern "C" fn table_alter_columns(
 
     crate::spawn(async move {
         match table.alter_columns(&alterations).await {
-            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+            }
             Err(e) => callback_error(completion, e),
         }
     });
@@ -811,7 +844,9 @@ pub extern "C" fn table_drop_columns(
     crate::spawn(async move {
         let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
         match table.drop_columns(&col_refs).await {
-            Ok(_) => completion(std::ptr::null(), std::ptr::null()),
+            Ok(result) => {
+                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+            }
             Err(e) => callback_error(completion, e),
         }
     });
@@ -1281,12 +1316,27 @@ pub extern "C" fn table_merge_insert(
         );
 
         match builder.execute(Box::new(reader)).await {
-            Ok(_) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+            Ok(result) => {
+                let ffi = Box::new(FfiMergeResult {
+                    version: result.version,
+                    num_inserted_rows: result.num_inserted_rows,
+                    num_updated_rows: result.num_updated_rows,
+                    num_deleted_rows: result.num_deleted_rows,
+                    num_attempts: result.num_attempts,
+                });
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }
     });
+}
+
+/// Frees an FfiMergeResult pointer returned by table_merge_insert.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_merge_result_free(ptr: *mut FfiMergeResult) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)); }
+    }
 }
 
 /// Takes rows by offset positions and returns results via Arrow C Data Interface.

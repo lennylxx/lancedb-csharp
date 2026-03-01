@@ -135,9 +135,13 @@ namespace lancedb
         /// <param name="data">
         /// The new data to merge. The schema must match the target table.
         /// </param>
-        public async Task Execute(IReadOnlyList<RecordBatch> data)
+        /// <returns>
+        /// A <see cref="MergeResult"/> containing statistics about the merge operation,
+        /// including the number of rows inserted, updated, and deleted.
+        /// </returns>
+        public async Task<MergeResult> Execute(IReadOnlyList<RecordBatch> data)
         {
-            await _table.ExecuteMergeInsert(
+            return await _table.ExecuteMergeInsert(
                 _onColumns,
                 _whenMatchedUpdateAll, _whenMatchedUpdateAllFilter,
                 _whenNotMatchedInsertAll,
@@ -149,7 +153,10 @@ namespace lancedb
         /// Execute the merge insert operation with a single RecordBatch.
         /// </summary>
         /// <param name="data">The new data to merge.</param>
-        public Task Execute(RecordBatch data)
+        /// <returns>
+        /// A <see cref="MergeResult"/> containing statistics about the merge operation.
+        /// </returns>
+        public Task<MergeResult> Execute(RecordBatch data)
         {
             return Execute(new[] { data });
         }
