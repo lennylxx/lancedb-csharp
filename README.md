@@ -21,7 +21,7 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 
 The native Rust layer uses a pool of Tokio runtimes (one per CPU core) with least-loaded dispatch to maximize async throughput across the FFI boundary.
 
-Under concurrent workloads, the C# SDK achieves ~100.7% of native Rust throughput (if using `lancedb` crate), ~85.4% of native Rust throughput (if using `lance` crate). The difference comes from DataFusion query planning overhead in `lancedb`.
+Under concurrent workloads, the C# SDK achieves ~100% of native Rust throughput (if using `lancedb` crate), ~85.4% of native Rust throughput (if using `lance` crate). The difference comes from DataFusion query planning overhead in `lancedb`.
 
 ## Prerequisites
 
