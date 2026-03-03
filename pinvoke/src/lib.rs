@@ -34,13 +34,33 @@ pub use table::{
 };
 pub use ffi::{free_ffi_cdata, free_ffi_schema, free_string, FfiCData};
 
-/// Pool of Tokio runtimes (one per CPU core, each with 1 worker thread).
+/// Pool of Tokio runtimes (one per physical CPU core, each with 1 worker thread).
 /// Async FFI calls are dispatched to the least-loaded runtime to avoid
 /// task queue contention while keeping isolated per-runtime scheduling.
+///
+/// Alternatives tested and rejected:
+/// 1. Single multi-threaded runtime: bottlenecks on the shared task
+///    injection queue under high concurrency (493 QPS vs 808 QPS with
+///    the pool). Good tail latency but throughput drops ~40%.
+/// 2. Round-robin dispatch: similar throughput (~762 QPS) but severe tail
+///    latency (p99=786ms, max=909ms). Tasks have variable execution times,
+///    so a runtime assigned several slow tasks back-to-back accumulates a
+///    deep queue while other runtimes sit idle. The blind cycling guarantees
+///    equal assignment counts but not equal load, causing starvation.
+/// 3. Power of Two Choices (P2C): nearly identical results (805 QPS,
+///    p99=94ms) but slightly worse tail latency. With a small pool (N =
+///    CPU cores), O(N) scan is not a bottleneck, so P2C's O(1) advantage
+///    doesn't help.
+/// 4. `new_current_thread()` runtimes: deadlock because spawned tasks are
+///    only polled when the runtime is explicitly driven (e.g. via
+///    `block_on`). Since FFI calls spawn from external threads, nobody
+///    polls the current-thread runtime and tasks hang indefinitely.
+///    `new_multi_thread(worker_threads=1)` avoids this by running its own
+///    background thread that continuously polls the task queue.
+/// 5. Multiple worker threads per runtime: 2N total threads compete for N
+///    cores, adding context-switch overhead (747 QPS, higher min latency).
 static RUNTIME_POOL: LazyLock<Vec<Runtime>> = LazyLock::new(|| {
-    let n = std::thread::available_parallelism()
-        .map(|p| p.get())
-        .unwrap_or(4);
+    let n = num_cpus::get_physical();
     (0..n)
         .map(|_| {
             tokio::runtime::Builder::new_multi_thread()
