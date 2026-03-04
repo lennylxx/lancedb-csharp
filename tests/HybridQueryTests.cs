@@ -286,6 +286,154 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Verifies that when FTS sub-query returns no results, LinearCombinationReranker
+        /// short-circuits to use inverted distance as relevance score (matching Python).
+        /// Python skips the weighted formula and returns _relevance_score = 1 - distance.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// db = await lancedb.connect_async("/tmp/test")
+        /// data = [
+        ///     {"id": 1, "text": "apple banana fruit", "vector": [1.0, 0.0]},
+        ///     {"id": 2, "text": "cherry date sweet",  "vector": [0.0, 1.0]},
+        ///     {"id": 3, "text": "apple cherry tart",  "vector": [0.5, 0.5]},
+        ///     {"id": 4, "text": "banana fig jam",      "vector": [0.9, 0.1]},
+        ///     {"id": 5, "text": "apple pie dessert",  "vector": [0.0, 0.9]},
+        /// ]
+        /// table = await db.create_table("test", data, mode="overwrite")
+        /// await table.create_index("text", config=FTS(with_position=False))
+        ///
+        /// # FTS empty + LC(weight=0.7, return_score="relevance")
+        /// results = await (table.query()
+        ///     .nearest_to([1.0, 0.0]).nearest_to_text("nonexistent_xyz")
+        ///     .rerank(LinearCombinationReranker(weight=0.7)).to_arrow())
+        /// # Columns: ['id', 'text', 'vector', '_relevance_score']
+        /// # id=1 _relevance_score=1.0
+        /// # id=4 _relevance_score=0.99
+        /// # id=3 _relevance_score=0.75
+        /// # id=5 _relevance_score=0.095
+        /// # id=2 _relevance_score=0.0
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_EmptyFts_LinearCombination_MatchesPython()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_lc");
+            var reranker = new LinearCombinationReranker(weight: 0.7f, fill: 1.0f);
+            var results = await fixture.Table
+                .HybridSearch("nonexistent_xyz", new double[] { 1.0, 0.0 })
+                .Rerank(reranker)
+                .ToArrow();
+
+            // Should still return vector results even though FTS is empty
+            Assert.Equal(5, results.Length);
+
+            var idIdx = results.Schema.GetFieldIndex("id");
+            var ids = (Int32Array)results.Column(idIdx);
+            var relIdx = results.Schema.GetFieldIndex("_relevance_score");
+            var scores = (FloatArray)results.Column(relIdx);
+
+            // Python short-circuits: relevance = 1 - normalized_distance
+            var expectedIds = new int[] { 1, 4, 3, 5, 2 };
+            var expectedScores = new float[] { 1.0f, 0.99f, 0.75f, 0.095f, 0.0f };
+            for (int i = 0; i < results.Length; i++)
+            {
+                Assert.Equal(expectedIds[i], ids.GetValue(i));
+                Assert.Equal(expectedScores[i], scores.GetValue(i)!.Value, precision: 1);
+            }
+
+            // Default returnScore="relevance": no _distance or _score columns
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_distance");
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_score");
+        }
+
+        /// <summary>
+        /// Verifies that when FTS is empty and returnScore="all", LC adds a NaN-filled
+        /// _score column (matching Python).
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// results = await (table.query()
+        ///     .nearest_to([1.0, 0.0]).nearest_to_text("nonexistent_xyz")
+        ///     .rerank(LinearCombinationReranker(weight=0.7, return_score="all")).to_arrow())
+        /// # Columns: ['id', 'text', 'vector', '_distance', '_relevance_score', '_score']
+        /// # _score column is NaN for all rows
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_EmptyFts_LinearCombination_ReturnScoreAll_HasNanScore()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_lc_all");
+            var reranker = new LinearCombinationReranker(weight: 0.7f, fill: 1.0f,
+                returnScore: "all");
+            var results = await fixture.Table
+                .HybridSearch("nonexistent_xyz", new double[] { 1.0, 0.0 })
+                .Rerank(reranker)
+                .ToArrow();
+
+            Assert.Equal(5, results.Length);
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_distance");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_score");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+
+            // _score should be NaN for all rows (no FTS results)
+            var scoreIdx = results.Schema.GetFieldIndex("_score");
+            var scores = (FloatArray)results.Column(scoreIdx);
+            for (int i = 0; i < results.Length; i++)
+            {
+                Assert.True(float.IsNaN(scores.GetValue(i)!.Value),
+                    $"Row {i} _score should be NaN");
+            }
+        }
+
+        /// <summary>
+        /// Verifies that RRF reranker handles empty FTS results correctly.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// results = await (table.query()
+        ///     .nearest_to([1.0, 0.0]).nearest_to_text("nonexistent_xyz")
+        ///     .rerank(RRFReranker()).to_arrow())
+        /// # Columns: ['id', 'text', 'vector', '_relevance_score']
+        /// # Rows: 5 (all from vector, ranked by position)
+        /// # id=1 _relevance_score=0.0164
+        /// # id=4 _relevance_score=0.0161
+        /// # id=3 _relevance_score=0.0159
+        /// # id=5 _relevance_score=0.0156
+        /// # id=2 _relevance_score=0.0154
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_EmptyFts_RRF_StillWorks()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_rrf");
+            var reranker = new RRFReranker();
+            var results = await fixture.Table
+                .HybridSearch("nonexistent_xyz", new double[] { 1.0, 0.0 })
+                .Rerank(reranker)
+                .ToArrow();
+
+            Assert.Equal(5, results.Length);
+
+            var idIdx = results.Schema.GetFieldIndex("id");
+            var ids = (Int32Array)results.Column(idIdx);
+
+            // RRF only has vector-side rankings (1/(rank+60))
+            var expectedIds = new int[] { 1, 4, 3, 5, 2 };
+            for (int i = 0; i < results.Length; i++)
+            {
+                Assert.Equal(expectedIds[i], ids.GetValue(i));
+            }
+
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_distance");
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_score");
+        }
+
+        /// <summary>
         /// Verifies that HybridQuery normalizes _distance and _score to [0,1]
         /// before reranking (matching Python behavior). Without normalization,
         /// LinearCombinationReranker produces wrong rankings because raw distances

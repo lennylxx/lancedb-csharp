@@ -353,21 +353,26 @@ namespace lancedb
         /// <returns>The merged and reranked results as a RecordBatch.</returns>
         public async Task<RecordBatch> ToArrow(TimeSpan? timeout = null)
         {
-            // Execute FTS sub-query
+            // Build FTS sub-query
             using var ftsSubQuery = new Query(_tablePtr);
             ftsSubQuery._fullTextSearchQuery = _ftsQuery;
             ftsSubQuery._fullTextSearchColumns = _ftsColumns;
             ftsSubQuery.WithRowId();
             ApplySharedConfig(ftsSubQuery);
-            var ftsResults = await ftsSubQuery.ToArrow(timeout).ConfigureAwait(false);
 
-            // Execute vector sub-query
+            // Build vector sub-query
             using var vecBaseQuery = new Query(_tablePtr);
             ApplySharedConfig(vecBaseQuery);
             var vecSubQuery = vecBaseQuery.NearestTo(_vector);
             vecSubQuery.WithRowId();
             ApplyVectorConfig(vecSubQuery);
-            var vecResults = await vecSubQuery.ToArrow(timeout).ConfigureAwait(false);
+
+            // Execute both sub-queries concurrently (matching Python's asyncio.gather)
+            var ftsTask = ftsSubQuery.ToArrow(timeout);
+            var vecTask = vecSubQuery.ToArrow(timeout);
+            await Task.WhenAll(ftsTask, vecTask).ConfigureAwait(false);
+            var ftsResults = await ftsTask.ConfigureAwait(false);
+            var vecResults = await vecTask.ConfigureAwait(false);
 
             // If normalize="rank", convert scores to ordinal ranks first.
             if (_normalize == "rank")

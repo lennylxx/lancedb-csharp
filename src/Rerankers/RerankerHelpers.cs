@@ -595,6 +595,21 @@ namespace lancedb
             return new RecordBatch(schema, columns, batch.Length);
         }
 
+        /// <summary>
+        /// Appends a float column filled with NaN values to a <see cref="RecordBatch"/>.
+        /// Used when one sub-query returns no results and return_score="all" needs a
+        /// placeholder column for the missing side.
+        /// </summary>
+        internal static RecordBatch AppendNanColumn(RecordBatch batch, string columnName)
+        {
+            var nanValues = new float[batch.Length];
+            for (int i = 0; i < nanValues.Length; i++)
+            {
+                nanValues[i] = float.NaN;
+            }
+            return AppendColumn(batch, columnName, nanValues);
+        }
+
         private static IArrowArray ConcatFixedSizeList(
             FixedSizeListArray first, List<int> firstIndices,
             FixedSizeListArray second, List<int> secondIndices,

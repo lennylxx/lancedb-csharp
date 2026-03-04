@@ -64,9 +64,90 @@ namespace lancedb
             RecordBatch vectorResults,
             RecordBatch ftsResults)
         {
+            // When one side is empty, short-circuit: use the available score directly
+            // as relevance (matching Python's LinearCombinationReranker.merge_results).
+            if (vectorResults.Length == 0)
+            {
+                return Task.FromResult(HandleEmptyVector(ftsResults));
+            }
+
+            if (ftsResults.Length == 0)
+            {
+                return Task.FromResult(HandleEmptyFts(vectorResults));
+            }
+
+            // Both sides have results — use the full weighted formula.
+            return Task.FromResult(CombineBothSides(vectorResults, ftsResults));
+        }
+
+        /// <summary>
+        /// When vector results are empty, relevance = FTS score directly.
+        /// </summary>
+        private RecordBatch HandleEmptyVector(RecordBatch ftsResults)
+        {
+            var scoreIdx = RerankerHelpers.GetColumnIndex(ftsResults.Schema,
+                RerankerHelpers.ScoreColumn);
+            var scores = (FloatArray)ftsResults.Column(scoreIdx);
+            var relevance = new float[ftsResults.Length];
+            for (int i = 0; i < ftsResults.Length; i++)
+            {
+                relevance[i] = scores.GetValue(i) ?? 0f;
+            }
+
+            var result = RerankerHelpers.AppendColumn(ftsResults,
+                RerankerHelpers.RelevanceScoreColumn, relevance);
+
+            if (_returnScore == "all")
+            {
+                result = RerankerHelpers.AppendNanColumn(result,
+                    RerankerHelpers.DistanceColumn);
+            }
+            else
+            {
+                result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// When FTS results are empty, relevance = inverted distance (1 - distance).
+        /// </summary>
+        private RecordBatch HandleEmptyFts(RecordBatch vectorResults)
+        {
+            var distIdx = RerankerHelpers.GetColumnIndex(vectorResults.Schema,
+                RerankerHelpers.DistanceColumn);
+            var distances = (FloatArray)vectorResults.Column(distIdx);
+            var relevance = new float[vectorResults.Length];
+            for (int i = 0; i < vectorResults.Length; i++)
+            {
+                relevance[i] = 1f - (distances.GetValue(i) ?? 0f);
+            }
+
+            var result = RerankerHelpers.AppendColumn(vectorResults,
+                RerankerHelpers.RelevanceScoreColumn, relevance);
+
+            if (_returnScore == "all")
+            {
+                result = RerankerHelpers.AppendNanColumn(result,
+                    RerankerHelpers.ScoreColumn);
+            }
+            else
+            {
+                result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
+            }
+
+            return result;
+        }
+
+        /// <summary>
+        /// Both sides have results — merge, deduplicate, compute weighted relevance.
+        /// </summary>
+        private RecordBatch CombineBothSides(RecordBatch vectorResults,
+            RecordBatch ftsResults)
+        {
             // Build lookup maps: rowId -> score for each result set
             var vectorScores = new Dictionary<ulong, float>();
-            if (vectorResults.Length > 0)
             {
                 var distIdx = RerankerHelpers.GetColumnIndex(vectorResults.Schema, RerankerHelpers.DistanceColumn);
                 var rowIdIdx = RerankerHelpers.GetColumnIndex(vectorResults.Schema, RerankerHelpers.RowIdColumn);
@@ -84,7 +165,6 @@ namespace lancedb
             }
 
             var ftsScores = new Dictionary<ulong, float>();
-            if (ftsResults.Length > 0)
             {
                 var scoreIdx = RerankerHelpers.GetColumnIndex(ftsResults.Schema, RerankerHelpers.ScoreColumn);
                 var rowIdIdx = RerankerHelpers.GetColumnIndex(ftsResults.Schema, RerankerHelpers.RowIdColumn);
@@ -128,7 +208,7 @@ namespace lancedb
             result = RerankerHelpers.SortByDescending(result, RerankerHelpers.RelevanceScoreColumn);
             result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
 
-            return Task.FromResult(result);
+            return result;
         }
     }
 }
