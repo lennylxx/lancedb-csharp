@@ -608,6 +608,13 @@ namespace lancedb
             {
                 query.Select(_selectColumns);
             }
+            // Forward limit to sub-queries so each returns at most limit rows.
+            // Add offset so sub-queries return enough rows for post-rerank slicing.
+            if (_limit.HasValue)
+            {
+                int subQueryLimit = _limit.Value + (_offset ?? 0);
+                query.Limit(subQueryLimit);
+            }
         }
 
         private void ApplyVectorConfig(VectorQuery query)

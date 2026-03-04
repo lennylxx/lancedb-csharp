@@ -210,9 +210,47 @@ namespace lancedb.tests
         }
 
         /// <summary>
-        /// With 3 results, offset=1 and limit=2 should return 2 rows
-        /// (skip 1, then take up to 2). Verifies offset is applied before limit.
+        /// Verifies that limit is propagated to sub-queries, matching Python behavior.
+        /// With limit=2 on a 5-item table, each sub-query returns at most 2 rows,
+        /// resulting in different RRF scores than when all 5 candidates are ranked.
         /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2, exact fixture data):
+        /// <code>
+        /// data = [
+        ///     {"id": 1, "text": "apple banana fruit", "vector": [1.0, 0.0]},
+        ///     {"id": 2, "text": "cherry date sweet",  "vector": [0.0, 1.0]},
+        ///     {"id": 3, "text": "apple cherry tart",  "vector": [0.5, 0.5]},
+        ///     {"id": 4, "text": "banana fig jam",     "vector": [0.9, 0.1]},
+        ///     {"id": 5, "text": "apple pie dessert",  "vector": [0.0, 0.9]},
+        /// ]
+        /// # limit=2: ids=[1, 3], scores=[0.032522, 0.016393]
+        /// # no limit: ids=[1, 3, 5, 4, 2], scores=[0.032266, 0.032266, ...]
+        /// # Scores differ because limit constrains each sub-query's candidate set.
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_LimitPropagatedToSubQueries_MatchesPython()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_lim_prop");
+
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0 })
+                .Limit(2)
+                .ToArrow();
+
+            Assert.Equal(2, results.Length);
+
+            // Python with limit=2 propagated: id=1 score=0.032522, id=3 score=0.016393
+            // Without propagation (C# before fix): id=1 score=0.032266 (different!)
+            var ids = (Int32Array)results.Column("id");
+            var scores = (FloatArray)results.Column("_relevance_score");
+            Assert.Equal(1, ids.GetValue(0)!.Value);
+            Assert.Equal(3, ids.GetValue(1)!.Value);
+            Assert.Equal(0.0325f, scores.GetValue(0)!.Value, precision: 4);
+            Assert.Equal(0.0164f, scores.GetValue(1)!.Value, precision: 4);
+        }
         [Fact]
         public async Task HybridQuery_OffsetThenLimit_ReturnsCorrectCount()
         {
