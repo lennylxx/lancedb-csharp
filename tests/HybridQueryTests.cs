@@ -338,6 +338,121 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Verifies DistanceRange filters vector results by distance bounds.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// hq = (table.query()
+        ///     .nearest_to([1.0, 0.0, 0.0])
+        ///     .nearest_to_text("apple")
+        ///     .rerank(RRFReranker())
+        ///     .distance_range(upper_bound=1.5))
+        /// r = await hq.to_arrow()
+        /// # Returns 2 rows (only those within distance &lt; 1.5)
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_DistanceRange_FiltersResults()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_distrange");
+            // Without distance range: all 3 rows
+            var allResults = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ToArrow();
+            Assert.Equal(3, allResults.Length);
+
+            // With upper bound: fewer rows (only close vectors)
+            var filtered = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .DistanceRange(upperBound: 1.5f)
+                .ToArrow();
+            Assert.True(filtered.Length < allResults.Length);
+            Assert.True(filtered.Length > 0);
+        }
+
+        /// <summary>
+        /// Verifies ExplainPlan returns combined vector and FTS plans.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// plan = await hq.explain_plan(verbose=True)
+        /// # Returns string with "Vector Search Plan:" and "FTS Search Plan:" sections
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_ExplainPlan_ReturnsBothPlans()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_explain");
+            var plan = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ExplainPlan(verbose: true);
+
+            Assert.Contains("Vector Search Plan:", plan);
+            Assert.Contains("FTS Search Plan:", plan);
+        }
+
+        /// <summary>
+        /// Verifies AnalyzePlan returns combined vector and FTS execution metrics.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// plan = await hq.analyze_plan()
+        /// # Returns string with "Vector Search Query:" and "FTS Search Query:" sections
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_AnalyzePlan_ReturnsBothPlans()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_analyze");
+            var plan = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .AnalyzePlan();
+
+            Assert.Contains("Vector Search Query:", plan);
+            Assert.Contains("FTS Search Query:", plan);
+        }
+
+        /// <summary>
+        /// Verifies ToBatches returns a streaming reader over hybrid results.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// reader = await hq.to_batches()
+        /// batches = [b async for b in reader]
+        /// # Returns batches with _relevance_score column
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_ToBatches_ReturnsStreamingResults()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_batches");
+            var batches = new System.Collections.Generic.List<RecordBatch>();
+            await foreach (var batch in fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ToBatches())
+            {
+                batches.Add(batch);
+            }
+            Assert.True(batches.Count > 0);
+            int totalRows = 0;
+            foreach (var b in batches)
+            {
+                totalRows += b.Length;
+                Assert.Contains(b.Schema.FieldsList, f => f.Name == "_relevance_score");
+            }
+            Assert.True(totalRows > 0);
+        }
+
+        /// <summary>
         /// Verifies that when FTS sub-query returns no results, LinearCombinationReranker
         /// short-circuits to use inverted distance as relevance score (matching Python).
         /// Python skips the weighted formula and returns _relevance_score = 1 - distance.

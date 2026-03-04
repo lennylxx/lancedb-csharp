@@ -53,6 +53,8 @@ namespace lancedb
         private int? _ef;
         private int? _minimumNprobes;
         private int? _maximumNprobes;
+        private float? _distanceRangeLower;
+        private float? _distanceRangeUpper;
 
         /// <summary>
         /// Creates a HybridQuery from an FTSQuery and a vector.
@@ -308,6 +310,20 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Set the distance range for vector search results.
+        /// Only rows with distances within range [lowerBound, upperBound) will be returned.
+        /// </summary>
+        /// <param name="lowerBound">The lower bound of the distance range (inclusive), or null for no lower bound.</param>
+        /// <param name="upperBound">The upper bound of the distance range (exclusive), or null for no upper bound.</param>
+        /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
+        public HybridQuery DistanceRange(float? lowerBound = null, float? upperBound = null)
+        {
+            _distanceRangeLower = lowerBound;
+            _distanceRangeUpper = upperBound;
+            return this;
+        }
+
+        /// <summary>
         /// Set the FTS columns to search.
         /// </summary>
         /// <param name="columns">The column names to search.</param>
@@ -329,6 +345,103 @@ namespace lancedb
         {
             _withRowId = true;
             return this;
+        }
+
+        /// <summary>
+        /// Return the execution plan for this hybrid query.
+        /// The output includes both the vector and FTS search plans.
+        /// </summary>
+        /// <param name="verbose">Use a verbose output format.</param>
+        /// <returns>A string containing both the vector and FTS execution plans.</returns>
+        public async Task<string> ExplainPlan(bool verbose = false)
+        {
+            using var ftsSubQuery = new Query(_tablePtr);
+            ftsSubQuery._fullTextSearchQuery = _ftsQuery;
+            ftsSubQuery._fullTextSearchColumns = _ftsColumns;
+            ApplySharedConfig(ftsSubQuery);
+
+            using var vecBaseQuery = new Query(_tablePtr);
+            ApplySharedConfig(vecBaseQuery);
+            var vecSubQuery = vecBaseQuery.NearestTo(_vector);
+            ApplyVectorConfig(vecSubQuery);
+
+            var vecPlanTask = vecSubQuery.ExplainPlan(verbose);
+            var ftsPlanTask = ftsSubQuery.ExplainPlan(verbose);
+            await Task.WhenAll(vecPlanTask, ftsPlanTask).ConfigureAwait(false);
+
+            return string.Join("\n", new[]
+            {
+                "Vector Search Plan:",
+                await vecPlanTask.ConfigureAwait(false),
+                "FTS Search Plan:",
+                await ftsPlanTask.ConfigureAwait(false),
+            });
+        }
+
+        /// <summary>
+        /// Execute the hybrid query and return the physical execution plan with runtime metrics.
+        /// Runs both the vector and FTS queries and returns detailed metrics for each step
+        /// of execution — such as rows processed, elapsed time, I/O stats, and more.
+        /// </summary>
+        /// <returns>A string containing both the vector and FTS execution plans with metrics.</returns>
+        public async Task<string> AnalyzePlan()
+        {
+            using var ftsSubQuery = new Query(_tablePtr);
+            ftsSubQuery._fullTextSearchQuery = _ftsQuery;
+            ftsSubQuery._fullTextSearchColumns = _ftsColumns;
+            ApplySharedConfig(ftsSubQuery);
+
+            using var vecBaseQuery = new Query(_tablePtr);
+            ApplySharedConfig(vecBaseQuery);
+            var vecSubQuery = vecBaseQuery.NearestTo(_vector);
+            ApplyVectorConfig(vecSubQuery);
+
+            var vecPlanTask = vecSubQuery.AnalyzePlan();
+            var ftsPlanTask = ftsSubQuery.AnalyzePlan();
+            await Task.WhenAll(vecPlanTask, ftsPlanTask).ConfigureAwait(false);
+
+            return string.Join("\n", new[]
+            {
+                "Vector Search Query:",
+                await vecPlanTask.ConfigureAwait(false),
+                "FTS Search Query:",
+                await ftsPlanTask.ConfigureAwait(false),
+            });
+        }
+
+        /// <summary>
+        /// Execute the hybrid query and return the results as a streaming
+        /// <see cref="IAsyncEnumerable{RecordBatch}"/>.
+        /// </summary>
+        /// <remarks>
+        /// This executes the full hybrid pipeline (both sub-queries, normalization,
+        /// reranking) and yields the result in batches. Unlike single-query
+        /// ToBatches which streams from Rust, this materializes the reranked result
+        /// first since hybrid merging requires all rows.
+        /// </remarks>
+        /// <param name="maxBatchLength">Maximum number of rows per batch. If null, returns a single batch.</param>
+        /// <param name="timeout">Optional maximum time for each sub-query to run.</param>
+        /// <returns>An async enumerable of <see cref="RecordBatch"/> over the hybrid results.</returns>
+        public async IAsyncEnumerable<RecordBatch> ToBatches(
+            int? maxBatchLength = null,
+            TimeSpan? timeout = null)
+        {
+            var result = await ToArrow(timeout).ConfigureAwait(false);
+
+            if (!maxBatchLength.HasValue || result.Length <= maxBatchLength.Value)
+            {
+                yield return result;
+            }
+            else
+            {
+                int offset = 0;
+                while (offset < result.Length)
+                {
+                    int length = Math.Min(maxBatchLength.Value, result.Length - offset);
+                    yield return SliceBatch(result, offset, length);
+                    offset += length;
+                }
+            }
         }
 
         /// <summary>
@@ -530,6 +643,10 @@ namespace lancedb
             if (_maximumNprobes.HasValue)
             {
                 query.MaximumNprobes(_maximumNprobes.Value);
+            }
+            if (_distanceRangeLower.HasValue || _distanceRangeUpper.HasValue)
+            {
+                query.DistanceRange(_distanceRangeLower, _distanceRangeUpper);
             }
         }
 
