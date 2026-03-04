@@ -30,6 +30,7 @@ namespace lancedb
         private string[]? _ftsColumns;
         private readonly double[] _vector;
         private IReranker _reranker = new RRFReranker();
+        private string _normalize = "score";
 
         // Shared config (applied to both sub-queries)
         private string? _predicate;
@@ -125,10 +126,22 @@ namespace lancedb
         /// The default reranker is <see cref="RRFReranker"/> with k=60.
         /// </remarks>
         /// <param name="reranker">The reranker to use.</param>
+        /// <param name="normalize">The method to normalize the scores. Can be "score" or "rank".
+        /// If "score" (the default), the raw scores are normalized directly via min-max scaling.
+        /// If "rank", the scores are first converted to ordinal ranks and then normalized.
+        /// Rank-based normalization is more robust to outliers in the score distribution.</param>
         /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
-        public HybridQuery Rerank(IReranker reranker)
+        /// <exception cref="ArgumentException">
+        /// Thrown if <paramref name="normalize"/> is not "score" or "rank".
+        /// </exception>
+        public HybridQuery Rerank(IReranker reranker, string normalize = "score")
         {
+            if (normalize != "score" && normalize != "rank")
+            {
+                throw new ArgumentException("normalize must be 'score' or 'rank'.", nameof(normalize));
+            }
             _reranker = reranker;
+            _normalize = normalize;
             return this;
         }
 
@@ -340,6 +353,13 @@ namespace lancedb
             ApplyVectorConfig(vecSubQuery);
             var vecResults = await vecSubQuery.ToArrow(timeout).ConfigureAwait(false);
 
+            // If normalize="rank", convert scores to ordinal ranks first.
+            if (_normalize == "rank")
+            {
+                vecResults = RankColumn(vecResults, "_distance", ascending: true);
+                ftsResults = RankColumn(ftsResults, "_score", ascending: true);
+            }
+
             // Normalize scores to [0,1] before reranking (matching Python behavior).
             // Save originals so we can restore them after reranking.
             FloatArray? originalDistances = null;
@@ -504,6 +524,54 @@ namespace lancedb
                 arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
             }
             return new RecordBatch(batch.Schema, arrays, length);
+        }
+
+        /// <summary>
+        /// Replaces a float column with ordinal ranks (1-based).
+        /// Matches Python's <c>_rank</c>: sorts by the column, assigns ranks 1,2,3...
+        /// </summary>
+        private static RecordBatch RankColumn(RecordBatch batch, string columnName, bool ascending)
+        {
+            if (batch.Length == 0)
+            {
+                return batch;
+            }
+
+            var colIdx = batch.Schema.GetFieldIndex(columnName);
+            if (colIdx < 0)
+            {
+                return batch;
+            }
+
+            var values = (FloatArray)batch.Column(colIdx);
+            int n = values.Length;
+
+            // Build sort indices (argsort)
+            var indices = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                indices[i] = i;
+            }
+            System.Array.Sort(indices, (a, b) =>
+            {
+                var va = values.GetValue(a) ?? float.MaxValue;
+                var vb = values.GetValue(b) ?? float.MaxValue;
+                return ascending ? va.CompareTo(vb) : vb.CompareTo(va);
+            });
+
+            // Assign ranks: ranks[sortedIndex] = rank (1-based)
+            var ranks = new float[n];
+            for (int rank = 0; rank < n; rank++)
+            {
+                ranks[indices[rank]] = rank + 1;
+            }
+
+            var builder = new FloatArray.Builder();
+            for (int i = 0; i < n; i++)
+            {
+                builder.Append(ranks[i]);
+            }
+            return ReplaceColumn(batch, colIdx, builder.Build());
         }
 
         /// <summary>

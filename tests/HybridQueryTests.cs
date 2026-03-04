@@ -272,6 +272,54 @@ namespace lancedb.tests
             }
         }
 
+        /// <summary>
+        /// Verifies that normalize="rank" converts scores to ordinal ranks before
+        /// min-max normalization, producing different rankings than normalize="score".
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb v0.29.2):
+        /// <code>
+        /// # Same data as NormalizesScoresBeforeReranking test
+        /// reranker = LinearCombinationReranker(weight=0.5, fill=1.0)
+        /// results = (table.search(query_type="hybrid")
+        ///     .vector([1.0, 0.0]).text("apple")
+        ///     .rerank(reranker, normalize="rank").limit(5).to_arrow())
+        ///
+        /// # Output:
+        /// #   id=3, _relevance_score=0.7500
+        /// #   id=5, _relevance_score=0.6250
+        /// #   id=2, _relevance_score=0.5000
+        /// #   id=4, _relevance_score=0.1250
+        /// #   id=1, _relevance_score=0.0000
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_LinearCombination_NormalizeRank_MatchesPython()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_rank_norm");
+            var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
+            var results = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0 })
+                .Rerank(reranker, normalize: "rank")
+                .Limit(5)
+                .ToArrow();
+
+            var idIdx = results.Schema.GetFieldIndex("id");
+            var ids = (Int32Array)results.Column(idIdx);
+            var relIdx = results.Schema.GetFieldIndex("_relevance_score");
+            var scores = (FloatArray)results.Column(relIdx);
+
+            Assert.Equal(5, results.Length);
+
+            var expectedIds = new int[] { 3, 5, 2, 4, 1 };
+            var expectedScores = new float[] { 0.75f, 0.625f, 0.5f, 0.125f, 0.0f };
+            for (int i = 0; i < results.Length; i++)
+            {
+                Assert.Equal(expectedIds[i], ids.GetValue(i));
+                Assert.Equal(expectedScores[i], scores.GetValue(i)!.Value, precision: 2);
+            }
+        }
+
         // ----- Fixture -----
 
         /// <summary>
