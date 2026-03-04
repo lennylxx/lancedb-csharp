@@ -149,7 +149,10 @@ fn test_set_last_error_and_get_returns_message() {
 #[test]
 fn test_get_last_error_returns_null_when_no_error() {
     // Clear any prior error
-    let _ = ffi::ffi_get_last_error();
+    let prior = ffi::ffi_get_last_error();
+    if !prior.is_null() {
+        lancedb_ffi::free_string(prior);
+    }
     let err_ptr = ffi::ffi_get_last_error();
     assert!(err_ptr.is_null());
 }

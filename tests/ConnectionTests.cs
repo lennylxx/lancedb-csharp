@@ -38,8 +38,8 @@ namespace lancedb.tests
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
 
-                var table1 = await connection.CreateEmptyTable("table_one");
-                var table2 = await connection.CreateEmptyTable("table_two");
+                using var table1 = await connection.CreateEmptyTable("table_one");
+                using var table2 = await connection.CreateEmptyTable("table_two");
 
                 Assert.Equal("table_one", table1.Name);
                 Assert.Equal("table_two", table2.Name);
@@ -247,13 +247,12 @@ namespace lancedb.tests
                 await connection.Connect(tmpDir);
 
                 var batch = CreateTestBatch(5);
-                var table = await connection.CreateTable("my_table", batch);
+                using var table = await connection.CreateTable("my_table", batch);
 
                 Assert.Equal("my_table", table.Name);
                 long count = await table.CountRows();
                 Assert.Equal(5, count);
 
-                table.Dispose();
                 connection.Dispose();
             }
             finally
@@ -307,12 +306,11 @@ namespace lancedb.tests
                 await connection.Connect(tmpDir);
 
                 await connection.CreateTable("overwrite_test", CreateTestBatch(10));
-                var table = await connection.CreateTable("overwrite_test", CreateTestBatch(3), mode: "overwrite");
+                using var table = await connection.CreateTable("overwrite_test", CreateTestBatch(3), mode: "overwrite");
 
                 long count = await table.CountRows();
                 Assert.Equal(3, count);
 
-                table.Dispose();
                 connection.Dispose();
             }
             finally
@@ -351,17 +349,15 @@ namespace lancedb.tests
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
                 var batch = CreateTestBatch(5);
-                var table1 = await connection.CreateTable("my_table", batch);
+                using var table1 = await connection.CreateTable("my_table", batch);
 
-                var table2 = await connection.CreateTable("my_table", new CreateTableOptions
+                using var table2 = await connection.CreateTable("my_table", new CreateTableOptions
                 {
                     Data = new[] { batch },
                     ExistOk = true
                 });
 
                 Assert.Equal("my_table", table2.Name);
-                table1.Dispose();
-                table2.Dispose();
                 connection.Close();
             }
             finally
@@ -384,16 +380,14 @@ namespace lancedb.tests
             {
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
-                var table1 = await connection.CreateEmptyTable("my_table");
+                using var table1 = await connection.CreateEmptyTable("my_table");
 
-                var table2 = await connection.CreateEmptyTable("my_table", new CreateTableOptions
+                using var table2 = await connection.CreateEmptyTable("my_table", new CreateTableOptions
                 {
                     ExistOk = true
                 });
 
                 Assert.Equal("my_table", table2.Name);
-                table1.Dispose();
-                table2.Dispose();
                 connection.Close();
             }
             finally
@@ -423,7 +417,7 @@ namespace lancedb.tests
                     .Field(new Apache.Arrow.Field("age", Apache.Arrow.Types.Int32Type.Default, nullable: false))
                     .Build();
 
-                var table = await connection.CreateTable("schema_table", new CreateTableOptions
+                using var table = await connection.CreateTable("schema_table", new CreateTableOptions
                 {
                     Schema = schema
                 });
@@ -437,7 +431,6 @@ namespace lancedb.tests
                 Assert.Equal("name", retrievedSchema.FieldsList[0].Name);
                 Assert.Equal("age", retrievedSchema.FieldsList[1].Name);
 
-                table.Dispose();
                 connection.Close();
             }
             finally
@@ -492,7 +485,7 @@ namespace lancedb.tests
                     .Field(new Apache.Arrow.Field("y", Apache.Arrow.Types.FloatType.Default, nullable: false))
                     .Build();
 
-                var table = await connection.CreateEmptyTable("custom_schema", new CreateTableOptions
+                using var table = await connection.CreateEmptyTable("custom_schema", new CreateTableOptions
                 {
                     Schema = schema
                 });
@@ -502,7 +495,6 @@ namespace lancedb.tests
                 Assert.Equal("x", retrievedSchema.FieldsList[0].Name);
                 Assert.Equal("y", retrievedSchema.FieldsList[1].Name);
 
-                table.Dispose();
                 connection.Close();
             }
             finally
@@ -582,10 +574,11 @@ namespace lancedb.tests
             {
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
-                var table1 = await connection.CreateEmptyTable("opts_table");
-                table1.Dispose();
+                {
+                    using var table1 = await connection.CreateEmptyTable("opts_table");
+                }
 
-                var table2 = await connection.OpenTable("opts_table", new OpenTableOptions
+                using var table2 = await connection.OpenTable("opts_table", new OpenTableOptions
                 {
                     StorageOptions = new System.Collections.Generic.Dictionary<string, string>
                     {
@@ -593,7 +586,6 @@ namespace lancedb.tests
                     }
                 });
                 Assert.Equal("opts_table", table2.Name);
-                table2.Dispose();
                 connection.Close();
             }
             finally
@@ -617,7 +609,7 @@ namespace lancedb.tests
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
                 var batch = CreateTestBatch(3);
-                var table = await connection.CreateTable("storage_table", new CreateTableOptions
+                using var table = await connection.CreateTable("storage_table", new CreateTableOptions
                 {
                     Data = new[] { batch },
                     StorageOptions = new System.Collections.Generic.Dictionary<string, string>
@@ -627,7 +619,6 @@ namespace lancedb.tests
                 });
                 Assert.Equal("storage_table", table.Name);
                 Assert.Equal(3, await table.CountRows());
-                table.Dispose();
                 connection.Close();
             }
             finally
@@ -651,18 +642,18 @@ namespace lancedb.tests
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
                 var batch1 = CreateTestBatch(5);
-                var t1 = await connection.CreateTable("ow_table", batch1);
-                Assert.Equal(5, await t1.CountRows());
-                t1.Dispose();
+                {
+                    using var t1 = await connection.CreateTable("ow_table", batch1);
+                    Assert.Equal(5, await t1.CountRows());
+                }
 
                 var batch2 = CreateTestBatch(2);
-                var t2 = await connection.CreateTable("ow_table", new CreateTableOptions
+                using var t2 = await connection.CreateTable("ow_table", new CreateTableOptions
                 {
                     Data = new[] { batch2 },
                     Mode = "overwrite"
                 });
                 Assert.Equal(2, await t2.CountRows());
-                t2.Dispose();
                 connection.Close();
             }
             finally

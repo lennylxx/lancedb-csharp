@@ -326,7 +326,7 @@ namespace lancedb.tests
         }
 
         /// <summary>
-        /// UsesV2ManifestPaths returns a boolean value.
+        /// UsesV2ManifestPaths returns true for new tables.
         /// </summary>
         [Fact]
         public async Task UsesV2ManifestPaths_ReturnsBoolean()
@@ -336,8 +336,7 @@ namespace lancedb.tests
 
             var result = await fixture.Table.UsesV2ManifestPaths();
 
-            // New tables may or may not use V2 paths depending on Lance version.
-            Assert.IsType<bool>(result);
+            Assert.True(result);
         }
 
         /// <summary>
@@ -1308,10 +1307,12 @@ namespace lancedb.tests
             var count = await fixture.Table.CountRows();
             Assert.Equal(2, count); // 1 original + 1 filled
 
-            using var query = fixture.Table.Query().Where("id = 0").Limit(1);
-            var rows = await query.ToList();
-            // The replaced row should be present (not dropped)
-            Assert.Equal(2, (int)(long)count);
+            // Verify the filled row has the fill value (99f) replacing the NaN
+            using var query = fixture.Table.Query().Limit(2);
+            var result = await query.ToArrow();
+            var vectors = (Apache.Arrow.FixedSizeListArray)result.Column("vector");
+            var lastValues = (Apache.Arrow.FloatArray)vectors.GetSlicedValues(1);
+            Assert.Equal(99f, lastValues.GetValue(0)); // NaN replaced with 99f
         }
 
         /// <summary>
