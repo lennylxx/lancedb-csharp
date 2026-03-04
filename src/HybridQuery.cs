@@ -410,38 +410,24 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Execute the hybrid query and return the results as a streaming
-        /// <see cref="IAsyncEnumerable{RecordBatch}"/>.
+        /// Execute the hybrid query and return the results as an
+        /// <see cref="AsyncRecordBatchReader"/>.
         /// </summary>
         /// <remarks>
         /// This executes the full hybrid pipeline (both sub-queries, normalization,
-        /// reranking) and yields the result in batches. Unlike single-query
-        /// ToBatches which streams from Rust, this materializes the reranked result
-        /// first since hybrid merging requires all rows.
+        /// reranking) and wraps the result in an <see cref="AsyncRecordBatchReader"/>.
+        /// Unlike single-query ToBatches which streams from Rust, this materializes
+        /// the reranked result first since hybrid merging requires all rows.
         /// </remarks>
         /// <param name="maxBatchLength">Maximum number of rows per batch. If null, returns a single batch.</param>
         /// <param name="timeout">Optional maximum time for each sub-query to run.</param>
-        /// <returns>An async enumerable of <see cref="RecordBatch"/> over the hybrid results.</returns>
-        public async IAsyncEnumerable<RecordBatch> ToBatches(
+        /// <returns>An <see cref="AsyncRecordBatchReader"/> over the hybrid results.</returns>
+        public async Task<AsyncRecordBatchReader> ToBatches(
             int? maxBatchLength = null,
             TimeSpan? timeout = null)
         {
             var result = await ToArrow(timeout).ConfigureAwait(false);
-
-            if (!maxBatchLength.HasValue || result.Length <= maxBatchLength.Value)
-            {
-                yield return result;
-            }
-            else
-            {
-                int offset = 0;
-                while (offset < result.Length)
-                {
-                    int length = Math.Min(maxBatchLength.Value, result.Length - offset);
-                    yield return SliceBatch(result, offset, length);
-                    offset += length;
-                }
-            }
+            return new AsyncRecordBatchReader(result, maxBatchLength);
         }
 
         /// <summary>

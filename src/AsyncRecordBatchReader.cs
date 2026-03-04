@@ -13,10 +13,11 @@ namespace lancedb
     /// one batch at a time from a query execution.
     /// </summary>
     /// <remarks>
-    /// Created by <see cref="QueryBase{T}.ToBatches"/>. Implements
+    /// Created by <see cref="QueryBase{T}.ToBatches"/> (native stream) or
+    /// <see cref="HybridQuery.ToBatches"/> (materialized result). Implements
     /// <see cref="IAsyncEnumerable{T}"/> so it can be consumed with
     /// <c>await foreach</c>. The reader must be disposed after use to
-    /// release the underlying native stream handle.
+    /// release any underlying native stream handle.
     /// </remarks>
     public sealed class AsyncRecordBatchReader : IAsyncEnumerable<RecordBatch>, IDisposable
     {
@@ -29,19 +30,55 @@ namespace lancedb
 
         private IntPtr _handle;
         private bool _disposed;
+        private readonly RecordBatch? _materializedResult;
+        private readonly int? _maxBatchLength;
 
+        /// <summary>
+        /// Creates a reader backed by a native stream handle from Rust.
+        /// </summary>
         internal AsyncRecordBatchReader(IntPtr handle)
         {
             _handle = handle;
         }
 
         /// <summary>
+        /// Creates a reader that yields batches from a materialized <see cref="RecordBatch"/>.
+        /// Used by <see cref="HybridQuery.ToBatches"/> where the full result is already
+        /// computed in C# (hybrid merging requires all rows).
+        /// </summary>
+        internal AsyncRecordBatchReader(RecordBatch result, int? maxBatchLength = null)
+        {
+            _materializedResult = result;
+            _maxBatchLength = maxBatchLength;
+        }
+
+        /// <summary>
         /// Returns an async enumerator that yields <see cref="RecordBatch"/>
-        /// results from the stream.
+        /// results from either a native stream or a materialized result.
         /// </summary>
         public async IAsyncEnumerator<RecordBatch> GetAsyncEnumerator(
             CancellationToken cancellationToken = default)
         {
+            if (_materializedResult != null)
+            {
+                if (!_maxBatchLength.HasValue || _materializedResult.Length <= _maxBatchLength.Value)
+                {
+                    yield return _materializedResult;
+                }
+                else
+                {
+                    int offset = 0;
+                    while (offset < _materializedResult.Length)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        int length = Math.Min(_maxBatchLength.Value, _materializedResult.Length - offset);
+                        yield return SliceBatch(_materializedResult, offset, length);
+                        offset += length;
+                    }
+                }
+                yield break;
+            }
+
             while (!_disposed)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -58,6 +95,16 @@ namespace lancedb
 
                 yield return ImportBatch(result);
             }
+        }
+
+        private static RecordBatch SliceBatch(RecordBatch batch, int offset, int length)
+        {
+            var arrays = new IArrowArray[batch.ColumnCount];
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
+            }
+            return new RecordBatch(batch.Schema, arrays, length);
         }
 
         private static unsafe RecordBatch ImportBatch(IntPtr cdataPtr)

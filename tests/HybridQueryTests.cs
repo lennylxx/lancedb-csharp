@@ -473,10 +473,11 @@ namespace lancedb.tests
         {
             using var fixture = await CreateHybridFixture("hybrid_batches");
             var batches = new System.Collections.Generic.List<RecordBatch>();
-            await foreach (var batch in fixture.Table.Query()
+            using var reader = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
-                .ToBatches())
+                .ToBatches();
+            await foreach (var batch in reader)
             {
                 batches.Add(batch);
             }
