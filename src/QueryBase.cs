@@ -297,7 +297,7 @@ namespace lancedb
         /// Optional maximum number of rows per batch. If <c>null</c>, uses the default (1024).
         /// </param>
         /// <returns>The query results as a RecordBatch.</returns>
-        public async Task<RecordBatch> ToArrow(
+        public virtual async Task<RecordBatch> ToArrow(
             TimeSpan? timeout = null, int? maxBatchLength = null)
         {
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
@@ -358,7 +358,7 @@ namespace lancedb
         /// Optional maximum number of rows per batch. If <c>null</c>, uses the default (1024).
         /// </param>
         /// <returns>An <see cref="AsyncRecordBatchReader"/> that yields batches incrementally.</returns>
-        public async Task<AsyncRecordBatchReader> ToBatches(
+        public virtual async Task<AsyncRecordBatchReader> ToBatches(
             TimeSpan? timeout = null, int? maxBatchLength = null)
         {
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;

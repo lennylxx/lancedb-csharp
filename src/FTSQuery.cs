@@ -2,6 +2,8 @@ namespace lancedb
 {
     using System;
     using System.Runtime.InteropServices;
+    using System.Threading.Tasks;
+    using Apache.Arrow;
 
     /// <summary>
     /// A builder for full-text search queries, created by <see cref="Query.NearestToText"/>.
@@ -15,6 +17,10 @@ namespace lancedb
     /// <para>
     /// To combine full-text search with vector search (hybrid search), call
     /// <see cref="NearestTo"/> to transition to a <see cref="HybridQuery"/>.
+    /// </para>
+    /// <para>
+    /// To apply a custom reranker to the FTS results, call <see cref="Rerank"/>.
+    /// The reranker must implement <see cref="IReranker.RerankFts"/>.
     /// </para>
     /// </remarks>
     public class FTSQuery : QueryBase<FTSQuery>
@@ -42,6 +48,8 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_output_schema(
             IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion);
+
+        private IReranker? _reranker;
 
         internal FTSQuery(IntPtr tablePtr)
             : base(tablePtr)
@@ -74,6 +82,48 @@ namespace lancedb
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
             NativeCall.FfiCallback callback)
             => query_execute_stream(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback);
+
+        /// <summary>
+        /// Rerank the FTS results using the specified reranker.
+        /// </summary>
+        /// <remarks>
+        /// The reranker must implement <see cref="IReranker.RerankFts"/>.
+        /// The reranker receives the FTS results and the query string, and returns
+        /// reranked results with a <c>_relevance_score</c> column.
+        /// </remarks>
+        /// <param name="reranker">The reranker to apply to the FTS results.</param>
+        /// <returns>This query instance for method chaining.</returns>
+        public FTSQuery Rerank(IReranker reranker)
+        {
+            _reranker = reranker ?? throw new ArgumentNullException(nameof(reranker));
+            return this;
+        }
+
+        /// <inheritdoc/>
+        public override async Task<RecordBatch> ToArrow(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
+        {
+            var result = await base.ToArrow(timeout, maxBatchLength).ConfigureAwait(false);
+            if (_reranker != null)
+            {
+                result = await _reranker.RerankFts(_fullTextSearchQuery!, result)
+                    .ConfigureAwait(false);
+            }
+            return result;
+        }
+
+        /// <inheritdoc/>
+        public override async Task<AsyncRecordBatchReader> ToBatches(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
+        {
+            if (_reranker == null)
+            {
+                return await base.ToBatches(timeout, maxBatchLength).ConfigureAwait(false);
+            }
+            var result = await ToArrow(timeout).ConfigureAwait(false);
+            return AsyncRecordBatchReader.FromRecordBatch(
+                result, maxBatchLength.HasValue ? maxBatchLength.Value : null);
+        }
 
         /// <summary>
         /// Find the nearest vectors to the given query vector, creating a hybrid search

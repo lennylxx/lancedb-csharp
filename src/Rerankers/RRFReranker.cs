@@ -127,7 +127,21 @@ namespace lancedb
             result = RerankerHelpers.SortByDescending(result, RerankerHelpers.RelevanceScoreColumn);
             result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
 
-            return Task.FromResult(result);
+                        return Task.FromResult(result);
+        }
+
+        /// <inheritdoc/>
+        public Task<RecordBatch> RerankFts(string query, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException(
+                $"{nameof(RRFReranker)} does not support RerankFts.");
+        }
+
+        /// <inheritdoc/>
+        public Task<RecordBatch> RerankVector(string query, RecordBatch vectorResults)
+        {
+            throw new NotSupportedException(
+                $"{nameof(RRFReranker)} does not support RerankVector.");
         }
     }
 }

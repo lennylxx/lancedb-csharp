@@ -210,5 +210,19 @@ namespace lancedb
 
             return result;
         }
+
+        /// <inheritdoc/>
+        public Task<RecordBatch> RerankFts(string query, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException(
+                $"{nameof(LinearCombinationReranker)} does not support RerankFts.");
+        }
+
+        /// <inheritdoc/>
+        public Task<RecordBatch> RerankVector(string query, RecordBatch vectorResults)
+        {
+            throw new NotSupportedException(
+                $"{nameof(LinearCombinationReranker)} does not support RerankVector.");
+        }
     }
 }

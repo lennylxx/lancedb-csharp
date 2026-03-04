@@ -1,6 +1,7 @@
 namespace lancedb.tests
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
     using System.Threading.Tasks;
     using Apache.Arrow;
@@ -48,6 +49,116 @@ namespace lancedb.tests
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
             Assert.IsType<HybridQuery>(hybridQuery);
+        }
+
+        // ----- FTSQuery Rerank Tests -----
+
+        [Fact]
+        public async Task FTSQuery_Rerank_AppliesReranker()
+        {
+            using var fixture = await CreateHybridFixture("fts_rerank");
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .Rerank(new FtsTestReranker())
+                .ToArrow();
+            Assert.True(results.Length > 0);
+            var scoreIdx = results.Schema.GetFieldIndex("_relevance_score");
+            Assert.True(scoreIdx >= 0, "Expected _relevance_score column from reranker");
+        }
+
+        [Fact]
+        public async Task FTSQuery_Rerank_ToBatches_AppliesReranker()
+        {
+            using var fixture = await CreateHybridFixture("fts_rerank_batches");
+            using var reader = await fixture.Table.Query()
+                .NearestToText("apple")
+                .Rerank(new FtsTestReranker())
+                .ToBatches();
+            var batches = new List<RecordBatch>();
+            await foreach (var batch in reader)
+            {
+                batches.Add(batch);
+            }
+            Assert.True(batches.Count > 0);
+            var scoreIdx = batches[0].Schema.GetFieldIndex("_relevance_score");
+            Assert.True(scoreIdx >= 0, "Expected _relevance_score column from reranker");
+        }
+
+        [Fact]
+        public async Task FTSQuery_WithoutRerank_NoRelevanceScore()
+        {
+            using var fixture = await CreateHybridFixture("fts_no_rerank");
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .ToArrow();
+            Assert.True(results.Length > 0);
+            var scoreIdx = results.Schema.GetFieldIndex("_relevance_score");
+            Assert.True(scoreIdx < 0, "Should not have _relevance_score without reranker");
+        }
+
+        // ----- VectorQuery Rerank Tests -----
+
+        [Fact]
+        public async Task VectorQuery_Rerank_AppliesReranker()
+        {
+            using var fixture = await CreateHybridFixture("vec_rerank");
+            var results = await fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new VectorTestReranker(), "apple")
+                .ToArrow();
+            Assert.True(results.Length > 0);
+            var scoreIdx = results.Schema.GetFieldIndex("_relevance_score");
+            Assert.True(scoreIdx >= 0, "Expected _relevance_score column from reranker");
+        }
+
+        [Fact]
+        public async Task VectorQuery_Rerank_ToBatches_AppliesReranker()
+        {
+            using var fixture = await CreateHybridFixture("vec_rerank_batches");
+            using var reader = await fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new VectorTestReranker(), "apple")
+                .ToBatches();
+            var batches = new List<RecordBatch>();
+            await foreach (var batch in reader)
+            {
+                batches.Add(batch);
+            }
+            Assert.True(batches.Count > 0);
+            var scoreIdx = batches[0].Schema.GetFieldIndex("_relevance_score");
+            Assert.True(scoreIdx >= 0, "Expected _relevance_score column from reranker");
+        }
+
+        [Fact]
+        public async Task VectorQuery_Rerank_RequiresQueryString()
+        {
+            using var fixture = await CreateHybridFixture("vec_rerank_no_qs");
+            Assert.Throws<ArgumentException>(() =>
+                fixture.Table.Query()
+                    .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                    .Rerank(new VectorTestReranker()));
+        }
+
+        [Fact]
+        public async Task IReranker_DefaultRerankFts_ThrowsNotSupported()
+        {
+            var reranker = new RRFReranker();
+            var batch = new RecordBatch(
+                new Schema(new[] { new Field("x", Int32Type.Default, false) }, null),
+                new IArrowArray[] { new Int32Array.Builder().Append(1).Build() }, 1);
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => reranker.RerankFts("test", batch));
+        }
+
+        [Fact]
+        public async Task IReranker_DefaultRerankVector_ThrowsNotSupported()
+        {
+            var reranker = new RRFReranker();
+            var batch = new RecordBatch(
+                new Schema(new[] { new Field("x", Int32Type.Default, false) }, null),
+                new IArrowArray[] { new Int32Array.Builder().Append(1).Build() }, 1);
+            await Assert.ThrowsAsync<NotSupportedException>(
+                () => reranker.RerankVector("test", batch));
         }
 
         // ----- HybridQuery Tests -----
@@ -1001,6 +1112,98 @@ namespace lancedb.tests
                 new Field("id", Int64Type.Default, false)
             }, null);
             return Task.FromResult(new RecordBatch(schema, new IArrowArray[] { idArray }, 1));
+        }
+
+        public Task<RecordBatch> RerankFts(string query, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<RecordBatch> RerankVector(string query, RecordBatch vectorResults)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    /// <summary>
+    /// A test reranker that implements RerankFts — adds a _relevance_score column
+    /// with descending scores based on row position.
+    /// </summary>
+    internal class FtsTestReranker : IReranker
+    {
+        public Task<RecordBatch> RerankHybrid(
+            string query, RecordBatch vectorResults, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<RecordBatch> RerankFts(string query, RecordBatch ftsResults)
+        {
+            return Task.FromResult(AddRelevanceScore(ftsResults));
+        }
+
+        public Task<RecordBatch> RerankVector(string query, RecordBatch vectorResults)
+        {
+            throw new NotSupportedException();
+        }
+
+        private static RecordBatch AddRelevanceScore(RecordBatch batch)
+        {
+            var scoreBuilder = new FloatArray.Builder();
+            for (int i = 0; i < batch.Length; i++)
+            {
+                scoreBuilder.Append(1.0f / (i + 1));
+            }
+            var fields = new List<Field>(batch.Schema.FieldsList);
+            fields.Add(new Field("_relevance_score", FloatType.Default, false));
+            var arrays = new List<IArrowArray>();
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                arrays.Add(batch.Column(i));
+            }
+            arrays.Add(scoreBuilder.Build());
+            return new RecordBatch(new Schema(fields, null), arrays, batch.Length);
+        }
+    }
+
+    /// <summary>
+    /// A test reranker that implements RerankVector — adds a _relevance_score column
+    /// with descending scores based on row position.
+    /// </summary>
+    internal class VectorTestReranker : IReranker
+    {
+        public Task<RecordBatch> RerankHybrid(
+            string query, RecordBatch vectorResults, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<RecordBatch> RerankFts(string query, RecordBatch ftsResults)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<RecordBatch> RerankVector(string query, RecordBatch vectorResults)
+        {
+            return Task.FromResult(AddRelevanceScore(vectorResults));
+        }
+
+        private static RecordBatch AddRelevanceScore(RecordBatch batch)
+        {
+            var scoreBuilder = new FloatArray.Builder();
+            for (int i = 0; i < batch.Length; i++)
+            {
+                scoreBuilder.Append(1.0f / (i + 1));
+            }
+            var fields = new List<Field>(batch.Schema.FieldsList);
+            fields.Add(new Field("_relevance_score", FloatType.Default, false));
+            var arrays = new List<IArrowArray>();
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                arrays.Add(batch.Column(i));
+            }
+            arrays.Add(scoreBuilder.Build());
+            return new RecordBatch(new Schema(fields, null), arrays, batch.Length);
         }
     }
 }

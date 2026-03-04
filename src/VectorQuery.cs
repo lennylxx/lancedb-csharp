@@ -3,6 +3,8 @@ namespace lancedb
     using System;
     using System.Collections.Generic;
     using System.Runtime.InteropServices;
+    using System.Threading.Tasks;
+    using Apache.Arrow;
 
     /// <summary>
     /// A builder for vector queries, created by <see cref="Query.NearestTo"/>.
@@ -55,6 +57,8 @@ namespace lancedb
         internal int? _minimumNprobes;
         internal int? _maximumNprobes;
         private List<float[]>? _additionalVectors;
+        private IReranker? _reranker;
+        private string? _rerankQueryString;
 
         internal VectorQuery(IntPtr tablePtr, Query parentQuery, double[] vector)
             : base(tablePtr)
@@ -321,6 +325,64 @@ namespace lancedb
             }
             _additionalVectors.Add(vector);
             return this;
+        }
+
+        /// <summary>
+        /// Rerank the vector search results using the specified reranker.
+        /// </summary>
+        /// <remarks>
+        /// The reranker must implement <see cref="IReranker.RerankVector"/>.
+        /// The reranker receives the vector results and the query string, and returns
+        /// reranked results with a <c>_relevance_score</c> column.
+        /// A <paramref name="queryString"/> is required because the reranker needs
+        /// the original text query to cross-reference against the vector results
+        /// (e.g., for cross-encoder scoring).
+        /// </remarks>
+        /// <param name="reranker">The reranker to apply to the vector results.</param>
+        /// <param name="queryString">
+        /// The text query string for the reranker. Required because vector queries
+        /// don't inherently carry a text query.
+        /// </param>
+        /// <returns>This query instance for method chaining.</returns>
+        /// <exception cref="ArgumentException">Thrown when <paramref name="queryString"/>
+        /// is not provided.</exception>
+        public VectorQuery Rerank(IReranker reranker, string? queryString = null)
+        {
+            if (queryString == null)
+            {
+                throw new ArgumentException(
+                    "queryString must be provided to rerank vector results.",
+                    nameof(queryString));
+            }
+            _reranker = reranker ?? throw new ArgumentNullException(nameof(reranker));
+            _rerankQueryString = queryString;
+            return this;
+        }
+
+        /// <inheritdoc/>
+        public override async Task<RecordBatch> ToArrow(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
+        {
+            var result = await base.ToArrow(timeout, maxBatchLength).ConfigureAwait(false);
+            if (_reranker != null)
+            {
+                result = await _reranker.RerankVector(_rerankQueryString!, result)
+                    .ConfigureAwait(false);
+            }
+            return result;
+        }
+
+        /// <inheritdoc/>
+        public override async Task<AsyncRecordBatchReader> ToBatches(
+            TimeSpan? timeout = null, int? maxBatchLength = null)
+        {
+            if (_reranker == null)
+            {
+                return await base.ToBatches(timeout, maxBatchLength).ConfigureAwait(false);
+            }
+            var result = await ToArrow(timeout).ConfigureAwait(false);
+            return AsyncRecordBatchReader.FromRecordBatch(
+                result, maxBatchLength.HasValue ? maxBatchLength.Value : null);
         }
 
         /// <summary>
