@@ -23,12 +23,37 @@ The native Rust layer uses a pool of Tokio runtimes (one per CPU core) with leas
 
 Under concurrent workloads, the C# SDK achieves ~100% of native Rust throughput (if using `lancedb` crate), ~85.4% of native Rust throughput (if using `lance` crate). The difference comes from DataFusion query planning overhead in `lancedb`.
 
-## Prerequisites
+## Installation
+
+Install the [LanceDB NuGet package](https://www.nuget.org/packages/LanceDB):
+
+```bash
+dotnet add package LanceDB
+```
+
+Or add it to your `.csproj`:
+
+```xml
+<PackageReference Include="LanceDB" Version="2.1.0" />
+```
+
+The package includes pre-built native libraries for **Linux x64** and **Windows x64**. No Rust toolchain required.
+
+### Supported Platforms
+
+| Platform | Runtime | Status |
+|----------|---------|--------|
+| Linux x64 | .NET 8.0+ / .NET Standard 2.0 | ✅ |
+| Windows x64 | .NET 8.0+ / .NET Standard 2.0 | ✅ |
+
+## Building from Source
+
+### Prerequisites
 
 - [.NET 8.0 SDK](https://dotnet.microsoft.com) or later
 - [Rust toolchain](https://rustup.rs/) 1.93.1
 
-## Build
+### Build
 
 ```bash
 ./build.sh
@@ -36,7 +61,7 @@ Under concurrent workloads, the C# SDK achieves ~100% of native Rust throughput 
 
 This builds the Rust native library (`lancedb_ffi`) first, then the C# project. The C# build copies the pre-built native library to the output directory.
 
-## Test
+### Test
 
 ```bash
 ./test.sh
