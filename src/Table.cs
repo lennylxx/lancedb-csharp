@@ -306,7 +306,7 @@ namespace lancedb
         public async Task<Apache.Arrow.RecordBatch> Head(int n = 5)
         {
             using var query = Query().Limit(n);
-            return await query.ToArrow();
+            return await query.ToArrow().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -320,7 +320,7 @@ namespace lancedb
         public async Task<Apache.Arrow.RecordBatch> ToArrow()
         {
             using var query = Query();
-            return await query.ToArrow();
+            return await query.ToArrow().ConfigureAwait(false);
         }
 
         /// <summary>

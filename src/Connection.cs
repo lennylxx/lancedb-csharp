@@ -337,7 +337,7 @@ namespace lancedb
             {
                 if (options.Schema != null)
                 {
-                    return await CreateEmptyTable(name, options);
+                    return await CreateEmptyTable(name, options).ConfigureAwait(false);
                 }
                 throw new ArgumentException("Either Data or Schema must be provided.", nameof(options));
             }
