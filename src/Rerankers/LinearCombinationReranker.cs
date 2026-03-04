@@ -19,6 +19,7 @@ namespace lancedb
     {
         private readonly float _weight;
         private readonly float _fill;
+        private readonly string _returnScore;
 
         /// <summary>
         /// Creates a new <see cref="LinearCombinationReranker"/>.
@@ -28,17 +29,33 @@ namespace lancedb
         /// <param name="fill">The penalty score assigned to results that appear in only one
         /// of the two result sets. Higher values produce lower relevance scores for
         /// single-source results. Default is 1.0.</param>
+        /// <param name="returnScore">
+        /// Controls which score columns appear in the output.
+        /// <c>"relevance"</c> (default) returns only <c>_relevance_score</c>.
+        /// <c>"all"</c> also keeps <c>_distance</c> and <c>_score</c>.
+        /// </param>
         /// <exception cref="ArgumentOutOfRangeException">
         /// Thrown if <paramref name="weight"/> is not between 0 and 1.
         /// </exception>
-        public LinearCombinationReranker(float weight = 0.7f, float fill = 1.0f)
+        /// <exception cref="ArgumentException">
+        /// Thrown if <paramref name="returnScore"/> is not <c>"relevance"</c> or <c>"all"</c>.
+        /// </exception>
+        public LinearCombinationReranker(float weight = 0.7f, float fill = 1.0f,
+            string returnScore = "relevance")
         {
             if (weight < 0 || weight > 1)
             {
                 throw new ArgumentOutOfRangeException(nameof(weight), "weight must be between 0 and 1.");
             }
+            if (returnScore != "relevance" && returnScore != "all")
+            {
+                throw new ArgumentException(
+                    "returnScore must be \"relevance\" or \"all\".",
+                    nameof(returnScore));
+            }
             _weight = weight;
             _fill = fill;
+            _returnScore = returnScore;
         }
 
         /// <inheritdoc />
@@ -109,6 +126,7 @@ namespace lancedb
             // Append relevance score and sort
             var result = RerankerHelpers.AppendColumn(combined, RerankerHelpers.RelevanceScoreColumn, relevanceScores);
             result = RerankerHelpers.SortByDescending(result, RerankerHelpers.RelevanceScoreColumn);
+            result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
 
             return Task.FromResult(result);
         }

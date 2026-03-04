@@ -51,18 +51,22 @@ namespace lancedb
                 return vectorResults;
             }
 
-            // Build a common schema from columns present in both result sets
-            var commonFields = new List<Field>();
+            // Build a unified schema from columns in either result set (union, not intersection).
+            // This matches Python's pa.concat_tables(promote_options="default").
+            var unifiedFields = new List<Field>();
             foreach (var field in vectorResults.Schema.FieldsList)
             {
-                if (ftsResults.Schema.GetFieldIndex(field.Name) >= 0)
+                unifiedFields.Add(field);
+            }
+            foreach (var field in ftsResults.Schema.FieldsList)
+            {
+                if (vectorResults.Schema.GetFieldIndex(field.Name) < 0)
                 {
-                    commonFields.Add(field);
+                    unifiedFields.Add(field);
                 }
             }
-            var commonSchema = new Schema(commonFields, null);
+            var unifiedSchema = new Schema(unifiedFields, null);
 
-            var rowIdIndex = GetColumnIndex(commonSchema, RowIdColumn);
             var vecRowIdColIndex = GetColumnIndex(vectorResults.Schema, RowIdColumn);
             var ftsRowIdColIndex = GetColumnIndex(ftsResults.Schema, RowIdColumn);
 
@@ -94,19 +98,39 @@ namespace lancedb
                 }
             }
 
-            // Build combined columns using only common fields
+            // Build combined columns using the unified schema.
+            // Columns missing from one side are null-filled.
             int totalRows = keepIndices.Count + ftsKeepIndices.Count;
             var builders = new List<IArrowArray>();
 
-            foreach (var field in commonFields)
+            foreach (var field in unifiedFields)
             {
-                var vectorCol = vectorResults.Column(GetColumnIndex(vectorResults.Schema, field.Name));
-                var ftsCol = ftsResults.Column(GetColumnIndex(ftsResults.Schema, field.Name));
+                var vecIdx = vectorResults.Schema.GetFieldIndex(field.Name);
+                var ftsIdx = ftsResults.Schema.GetFieldIndex(field.Name);
 
-                builders.Add(ConcatFilteredColumns(vectorCol, keepIndices, ftsCol, ftsKeepIndices, field.DataType, totalRows));
+                if (vecIdx >= 0 && ftsIdx >= 0)
+                {
+                    builders.Add(ConcatFilteredColumns(
+                        vectorResults.Column(vecIdx), keepIndices,
+                        ftsResults.Column(ftsIdx), ftsKeepIndices,
+                        field.DataType, totalRows));
+                }
+                else if (vecIdx >= 0)
+                {
+                    builders.Add(ConcatFilteredColumnsWithNulls(
+                        vectorResults.Column(vecIdx), keepIndices,
+                        ftsKeepIndices.Count, field.DataType, totalRows));
+                }
+                else
+                {
+                    builders.Add(ConcatFilteredColumnsWithNulls(
+                        ftsResults.Column(ftsIdx), ftsKeepIndices,
+                        keepIndices.Count, field.DataType, totalRows,
+                        nullsFirst: true));
+                }
             }
 
-            return new RecordBatch(commonSchema, builders, totalRows);
+            return new RecordBatch(unifiedSchema, builders, totalRows);
         }
 
         /// <summary>
@@ -438,6 +462,121 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Concatenates values from one source with null padding for the other side.
+        /// Used for columns that exist in only one of the two result sets.
+        /// </summary>
+        /// <param name="source">The array containing actual values.</param>
+        /// <param name="sourceIndices">Indices to take from source.</param>
+        /// <param name="nullCount">Number of null values for the other side.</param>
+        /// <param name="dataType">The Arrow data type.</param>
+        /// <param name="totalRows">Expected total row count.</param>
+        /// <param name="nullsFirst">If true, nulls come before source values.</param>
+        private static IArrowArray ConcatFilteredColumnsWithNulls(
+            IArrowArray source, List<int> sourceIndices,
+            int nullCount, IArrowType dataType, int totalRows,
+            bool nullsFirst = false)
+        {
+            switch (dataType)
+            {
+                case FloatType:
+                {
+                    var src = (FloatArray)source;
+                    var builder = new FloatArray.Builder();
+                    if (nullsFirst)
+                    {
+                        for (int i = 0; i < nullCount; i++) { builder.AppendNull(); }
+                    }
+                    foreach (var idx in sourceIndices)
+                    {
+                        var val = src.GetValue(idx);
+                        if (val.HasValue) { builder.Append(val.Value); } else { builder.AppendNull(); }
+                    }
+                    if (!nullsFirst)
+                    {
+                        for (int i = 0; i < nullCount; i++) { builder.AppendNull(); }
+                    }
+                    return builder.Build();
+                }
+                case UInt64Type:
+                {
+                    var src = (UInt64Array)source;
+                    var builder = new UInt64Array.Builder();
+                    if (nullsFirst)
+                    {
+                        for (int i = 0; i < nullCount; i++) { builder.AppendNull(); }
+                    }
+                    foreach (var idx in sourceIndices)
+                    {
+                        var val = src.GetValue(idx);
+                        if (val.HasValue) { builder.Append(val.Value); } else { builder.AppendNull(); }
+                    }
+                    if (!nullsFirst)
+                    {
+                        for (int i = 0; i < nullCount; i++) { builder.AppendNull(); }
+                    }
+                    return builder.Build();
+                }
+                default:
+                {
+                    // For other types, build a fully-null array of the correct length
+                    return BuildNullArray(dataType, totalRows);
+                }
+            }
+        }
+
+        private static IArrowArray BuildNullArray(IArrowType dataType, int length)
+        {
+            switch (dataType)
+            {
+                case FloatType:
+                {
+                    var b = new FloatArray.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case UInt64Type:
+                {
+                    var b = new UInt64Array.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case StringType:
+                {
+                    var b = new StringArray.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case Int32Type:
+                {
+                    var b = new Int32Array.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case Int64Type:
+                {
+                    var b = new Int64Array.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case DoubleType:
+                {
+                    var b = new DoubleArray.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                case BooleanType:
+                {
+                    var b = new BooleanArray.Builder();
+                    for (int i = 0; i < length; i++) { b.AppendNull(); }
+                    return b.Build();
+                }
+                default:
+                    throw new NotSupportedException(
+                        $"Reranker does not support null-fill for Arrow type '{dataType.Name}'.");
+            }
+        }
+
+        /// <summary>
         /// Appends a float column to a <see cref="RecordBatch"/>.
         /// </summary>
         internal static RecordBatch AppendColumn(RecordBatch batch, string columnName, float[] values)
@@ -510,6 +649,47 @@ namespace lancedb
                             $"FixedSizeList with value type '{valueType.Name}' is not supported.");
                 }
             }
+        }
+
+        /// <summary>
+        /// Strips <c>_distance</c> and <c>_score</c> columns from the result when
+        /// <paramref name="returnScore"/> is <c>"relevance"</c>. When <c>"all"</c>,
+        /// returns the batch unchanged.
+        /// </summary>
+        /// <remarks>
+        /// Matches Python's <c>Reranker._keep_relevance_score</c>.
+        /// </remarks>
+        internal static RecordBatch KeepRelevanceScore(RecordBatch batch, string returnScore)
+        {
+            if (returnScore != "relevance")
+            {
+                return batch;
+            }
+
+            batch = DropColumnIfPresent(batch, ScoreColumn);
+            batch = DropColumnIfPresent(batch, DistanceColumn);
+            return batch;
+        }
+
+        private static RecordBatch DropColumnIfPresent(RecordBatch batch, string columnName)
+        {
+            var idx = batch.Schema.GetFieldIndex(columnName);
+            if (idx < 0)
+            {
+                return batch;
+            }
+
+            var fields = new List<Field>(batch.ColumnCount - 1);
+            var arrays = new List<IArrowArray>(batch.ColumnCount - 1);
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                if (i != idx)
+                {
+                    fields.Add(batch.Schema.GetFieldByIndex(i));
+                    arrays.Add(batch.Column(i));
+                }
+            }
+            return new RecordBatch(new Schema(fields, batch.Schema.Metadata), arrays, batch.Length);
         }
     }
 }

@@ -27,6 +27,7 @@ namespace lancedb
     {
         private readonly float _weightVector;
         private readonly float _weightFts;
+        private readonly string _returnScore;
 
         /// <summary>
         /// Creates a new <see cref="MRRReranker"/> with the specified weights.
@@ -38,15 +39,21 @@ namespace lancedb
         /// Weight for FTS search results (0.0 to 1.0). Default is 0.5.
         /// <c>weightVector + weightFts</c> must equal 1.0.
         /// </param>
+        /// <param name="returnScore">
+        /// Controls which score columns appear in the output.
+        /// <c>"relevance"</c> (default) returns only <c>_relevance_score</c>.
+        /// <c>"all"</c> also keeps <c>_distance</c> and <c>_score</c>.
+        /// </param>
         /// <exception cref="ArgumentOutOfRangeException">
         /// Thrown if <paramref name="weightVector"/> or <paramref name="weightFts"/>
         /// is outside the range [0.0, 1.0].
         /// </exception>
         /// <exception cref="ArgumentException">
         /// Thrown if <paramref name="weightVector"/> + <paramref name="weightFts"/>
-        /// does not equal 1.0.
+        /// does not equal 1.0, or if <paramref name="returnScore"/> is invalid.
         /// </exception>
-        public MRRReranker(float weightVector = 0.5f, float weightFts = 0.5f)
+        public MRRReranker(float weightVector = 0.5f, float weightFts = 0.5f,
+            string returnScore = "relevance")
         {
             if (weightVector < 0f || weightVector > 1f)
             {
@@ -63,9 +70,16 @@ namespace lancedb
                 throw new ArgumentException(
                     "weightVector + weightFts must equal 1.0.");
             }
+            if (returnScore != "relevance" && returnScore != "all")
+            {
+                throw new ArgumentException(
+                    "returnScore must be \"relevance\" or \"all\".",
+                    nameof(returnScore));
+            }
 
             _weightVector = weightVector;
             _weightFts = weightFts;
+            _returnScore = returnScore;
         }
 
         /// <inheritdoc />
@@ -148,6 +162,7 @@ namespace lancedb
                 combined, RerankerHelpers.RelevanceScoreColumn, relevanceScores);
             result = RerankerHelpers.SortByDescending(
                 result, RerankerHelpers.RelevanceScoreColumn);
+            result = RerankerHelpers.KeepRelevanceScore(result, _returnScore);
 
             return Task.FromResult(result);
         }

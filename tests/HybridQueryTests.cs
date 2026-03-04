@@ -140,6 +140,63 @@ namespace lancedb.tests
             Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
         }
 
+        /// <summary>
+        /// Verifies that rerankers with returnScore="relevance" (default) strip
+        /// _distance and _score columns, and returnScore="all" keeps them.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// from lancedb.rerankers.rrf import RRFReranker
+        /// from lancedb.rerankers.linear_combination import LinearCombinationReranker
+        /// from lancedb.rerankers.mrr import MRRReranker
+        ///
+        /// # Default (return_score="relevance") — NO _distance or _score
+        /// r = table.search(query_type='hybrid').vector([1,0,0]).text('apple') \
+        ///     .rerank(RRFReranker()).to_arrow()
+        /// assert r.column_names == ['id', 'text', 'vector', '_relevance_score']
+        ///
+        /// # return_score="all" — has _distance AND _score
+        /// r = table.search(query_type='hybrid').vector([1,0,0]).text('apple') \
+        ///     .rerank(RRFReranker(return_score="all")).to_arrow()
+        /// assert '_distance' in r.column_names
+        /// assert '_score' in r.column_names
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_ReturnScoreRelevance_StripsDistanceAndScore()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_retscore_rel");
+
+            // RRF default (returnScore="relevance") — should NOT have _distance or _score
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new RRFReranker())
+                .ToArrow();
+            Assert.True(results.Length > 0);
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_distance");
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_score");
+        }
+
+        [Fact]
+        public async Task HybridQuery_ReturnScoreAll_KeepsDistanceAndScore()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_retscore_all");
+
+            // RRF with returnScore="all" — should have _distance AND _score
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new RRFReranker(returnScore: "all"))
+                .ToArrow();
+            Assert.True(results.Length > 0);
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_distance");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_score");
+        }
+
         [Fact]
         public async Task HybridQuery_WithLimit_RespectsLimit()
         {
