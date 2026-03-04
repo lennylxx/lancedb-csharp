@@ -149,7 +149,8 @@ namespace lancedb
         public FTSQuery NearestToText(string query, string[]? columns = null)
         {
             var ftsQuery = new FTSQuery(_tablePtr);
-            ftsQuery._selectJson = _selectJson;
+            ftsQuery._selectColumns = _selectColumns;
+            ftsQuery._selectExpressions = _selectExpressions;
             ftsQuery._predicate = _predicate;
             ftsQuery._limit = _limit;
             ftsQuery._offset = _offset;

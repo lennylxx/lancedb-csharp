@@ -32,7 +32,8 @@ namespace lancedb
         internal IntPtr _tablePtr;
 
         // Stored builder parameters (applied lazily at execution time)
-        internal string? _selectJson;
+        internal IReadOnlyList<string>? _selectColumns;
+        internal Dictionary<string, string>? _selectExpressions;
         internal string? _predicate;
         internal int? _limit;
         internal int? _offset;
@@ -54,9 +55,13 @@ namespace lancedb
         internal virtual Dictionary<string, object> BuildParamsDict()
         {
             var dict = new Dictionary<string, object>();
-            if (_selectJson != null)
+            if (_selectColumns != null)
             {
-                dict["select"] = JsonSerializer.Deserialize<object>(_selectJson)!;
+                dict["select"] = _selectColumns;
+            }
+            else if (_selectExpressions != null)
+            {
+                dict["select"] = _selectExpressions;
             }
             if (_predicate != null)
             {
@@ -138,7 +143,8 @@ namespace lancedb
         /// </summary>
         internal void CopyBaseParams(QueryBase<T> source)
         {
-            _selectJson = source._selectJson;
+            _selectColumns = source._selectColumns;
+            _selectExpressions = source._selectExpressions;
             _predicate = source._predicate;
             _limit = source._limit;
             _offset = source._offset;
@@ -161,7 +167,8 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(IReadOnlyList<string> columns)
         {
-            _selectJson = JsonSerializer.Serialize(columns);
+            _selectColumns = columns;
+            _selectExpressions = null;
             return (T)this;
         }
 
@@ -177,7 +184,8 @@ namespace lancedb
         /// <returns>This query instance for method chaining.</returns>
         public T Select(Dictionary<string, string> columns)
         {
-            _selectJson = JsonSerializer.Serialize(columns);
+            _selectExpressions = columns;
+            _selectColumns = null;
             return (T)this;
         }
 

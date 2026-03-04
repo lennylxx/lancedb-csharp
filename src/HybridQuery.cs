@@ -2,7 +2,6 @@ namespace lancedb
 {
     using System;
     using System.Collections.Generic;
-    using System.Text.Json;
     using System.Threading.Tasks;
     using Apache.Arrow;
 
@@ -38,7 +37,7 @@ namespace lancedb
         private bool _postfilter;
 
         // Final result config (applied after reranking)
-        private string? _selectJson;
+        private IReadOnlyList<string>? _selectColumns;
         private int? _limit;
         private int? _offset;
 
@@ -62,7 +61,11 @@ namespace lancedb
             _ftsColumns = source._fullTextSearchColumns;
             _vector = vector;
             _predicate = source._predicate;
-            _selectJson = source._selectJson;
+            _selectColumns = source._selectColumns;
+            if (_selectColumns == null && source._selectExpressions != null)
+            {
+                _selectColumns = new List<string>(source._selectExpressions.Keys);
+            }
             _limit = source._limit;
             _offset = source._offset;
             _fastSearch = source._fastSearch;
@@ -79,7 +82,11 @@ namespace lancedb
             _ftsColumns = ftsColumns;
             _vector = source._vector;
             _predicate = source._predicate;
-            _selectJson = source._selectJson;
+            _selectColumns = source._selectColumns;
+            if (_selectColumns == null && source._selectExpressions != null)
+            {
+                _selectColumns = new List<string>(source._selectExpressions.Keys);
+            }
             _limit = source._limit;
             _offset = source._offset;
             _fastSearch = source._fastSearch;
@@ -143,7 +150,7 @@ namespace lancedb
         /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
         public HybridQuery Select(IReadOnlyList<string> columns)
         {
-            _selectJson = JsonSerializer.Serialize(columns);
+            _selectColumns = columns;
             return this;
         }
 
@@ -154,7 +161,7 @@ namespace lancedb
         /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
         public HybridQuery Select(Dictionary<string, string> columns)
         {
-            _selectJson = JsonSerializer.Serialize(columns);
+            _selectColumns = new List<string>(columns.Keys);
             return this;
         }
 
@@ -344,6 +351,12 @@ namespace lancedb
                 merged = SliceBatch(merged, 0, _limit.Value);
             }
 
+            // Apply column projection
+            if (_selectColumns != null)
+            {
+                merged = ApplySelect(merged, _selectColumns);
+            }
+
             return merged;
         }
 
@@ -419,6 +432,26 @@ namespace lancedb
             {
                 query.MaximumNprobes(_maximumNprobes.Value);
             }
+        }
+
+        private static RecordBatch ApplySelect(RecordBatch batch, IReadOnlyList<string> columns)
+        {
+            var keep = new HashSet<string>(columns);
+            // Always include _relevance_score from reranker
+            keep.Add("_relevance_score");
+
+            var fields = new List<Field>();
+            var arrays = new List<IArrowArray>();
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                if (keep.Contains(batch.Schema.FieldsList[i].Name))
+                {
+                    fields.Add(batch.Schema.FieldsList[i]);
+                    arrays.Add(batch.Column(i));
+                }
+            }
+            var schema = new Schema(fields, batch.Schema.Metadata);
+            return new RecordBatch(schema, arrays, batch.Length);
         }
 
         private static RecordBatch SliceBatch(RecordBatch batch, int offset, int length)

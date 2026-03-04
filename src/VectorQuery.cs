@@ -61,7 +61,8 @@ namespace lancedb
         {
             _vector = vector;
             // Copy base params from the parent query
-            _selectJson = parentQuery._selectJson;
+            _selectColumns = parentQuery._selectColumns;
+            _selectExpressions = parentQuery._selectExpressions;
             _predicate = parentQuery._predicate;
             _limit = parentQuery._limit;
             _offset = parentQuery._offset;
