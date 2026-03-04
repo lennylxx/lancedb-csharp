@@ -106,16 +106,16 @@ namespace lancedb.tests
             Assert.Equal(3, result.Schema.FieldsList.Count);
 
             var names = (StringArray)result.Column(0);
-            Assert.Equal("bar", names.GetString(0));   // 1/2 + 1/1 = 1.5
-            Assert.Equal("foo", names.GetString(1));    // 1/1 = 1.0
-            Assert.Equal("bean", names.GetString(2));   // 1/4 + 1/2 = 0.75
-            Assert.Equal("dog", names.GetString(3));    // 1/5 + 1/3 ≈ 0.533
-            Assert.Equal("baz", names.GetString(4));    // 1/3 ≈ 0.333
+            Assert.Equal("bar", names.GetString(0));   // 1/(2+1) + 1/(1+1) = 5/6
+            Assert.Equal("bean", names.GetString(1));   // 1/(4+1) + 1/(2+1) = 8/15
+            Assert.Equal("foo", names.GetString(2));    // 1/(1+1) = 1/2
+            Assert.Equal("dog", names.GetString(3));    // 1/(5+1) + 1/(3+1) = 5/12
+            Assert.Equal("baz", names.GetString(4));    // 1/(3+1) = 1/4
 
             var scores = (FloatArray)result.Column(result.Schema.GetFieldIndex("_relevance_score"));
-            Assert.Equal(1.5f, scores.GetValue(0));
-            Assert.Equal(1.0f, scores.GetValue(1));
-            Assert.Equal(0.75f, scores.GetValue(2));
+            Assert.Equal(5f / 6f, scores.GetValue(0)!.Value, precision: 5);
+            Assert.Equal(8f / 15f, scores.GetValue(1)!.Value, precision: 5);
+            Assert.Equal(0.5f, scores.GetValue(2)!.Value, precision: 5);
         }
 
         [Fact]
@@ -201,6 +201,35 @@ namespace lancedb.tests
         {
             Assert.Throws<ArgumentOutOfRangeException>(() => new RRFReranker(k: 0));
             Assert.Throws<ArgumentOutOfRangeException>(() => new RRFReranker(k: -1));
+        }
+
+        /// <summary>
+        /// RRF formula uses 1-based ranks: score = 1/(rank+k) where rank starts at 1.
+        /// Python uses enumerate(ids, 1). Our C# must match.
+        /// With k=60, first item score should be 1/61, not 1/60.
+        /// </summary>
+        [Fact]
+        public async Task RRFReranker_Scores_Match1BasedRanking()
+        {
+            var vecResults = CreateVectorResults(
+                new[] { "a", "b", "c" },
+                new ulong[] { 1, 2, 3 },
+                new float[] { 0.1f, 0.2f, 0.3f });
+            var ftsResults = CreateFtsResults(
+                System.Array.Empty<string>(),
+                System.Array.Empty<ulong>(),
+                System.Array.Empty<float>());
+
+            var reranker = new RRFReranker(k: 60f);
+            var result = await reranker.RerankHybrid("query", vecResults, ftsResults);
+
+            var scoreIdx = result.Schema.GetFieldIndex("_relevance_score");
+            var scores = (FloatArray)result.Column(scoreIdx);
+
+            // 1-based: first item = 1/(1+60) = 1/61
+            float expected = 1f / 61f;
+            float actual = scores.GetValue(0)!.Value;
+            Assert.Equal(expected, actual, precision: 5);
         }
 
         // ===== LinearCombinationReranker Tests =====

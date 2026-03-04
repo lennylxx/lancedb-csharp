@@ -54,7 +54,7 @@ namespace lancedb
                     var id = vecRowIds.GetValue(i);
                     if (id.HasValue)
                     {
-                        float score = 1f / (i + _k);
+                        float score = 1f / (i + 1 + _k);
                         if (rrfScores.ContainsKey(id.Value))
                         {
                             rrfScores[id.Value] += score;
@@ -77,7 +77,7 @@ namespace lancedb
                     var id = ftsRowIds.GetValue(i);
                     if (id.HasValue)
                     {
-                        float score = 1f / (i + _k);
+                        float score = 1f / (i + 1 + _k);
                         if (rrfScores.ContainsKey(id.Value))
                         {
                             rrfScores[id.Value] += score;
