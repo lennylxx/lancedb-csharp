@@ -371,7 +371,7 @@ namespace lancedb
                 NativeConsolidatedExecuteStream(_tablePtr, pJson, timeoutMs, batchLen, completion);
             }).ConfigureAwait(false);
 
-            return new AsyncRecordBatchReader(streamPtr);
+            return AsyncRecordBatchReader.FromNativeStream(streamPtr);
         }
 
         /// <summary>

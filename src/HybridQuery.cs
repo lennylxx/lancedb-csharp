@@ -427,7 +427,7 @@ namespace lancedb
             TimeSpan? timeout = null)
         {
             var result = await ToArrow(timeout).ConfigureAwait(false);
-            return new AsyncRecordBatchReader(result, maxBatchLength);
+            return AsyncRecordBatchReader.FromRecordBatch(result, maxBatchLength);
         }
 
         /// <summary>

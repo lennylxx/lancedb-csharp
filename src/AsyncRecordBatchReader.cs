@@ -13,13 +13,39 @@ namespace lancedb
     /// one batch at a time from a query execution.
     /// </summary>
     /// <remarks>
-    /// Created by <see cref="QueryBase{T}.ToBatches"/> (native stream) or
-    /// <see cref="HybridQuery.ToBatches"/> (materialized result). Implements
-    /// <see cref="IAsyncEnumerable{T}"/> so it can be consumed with
-    /// <c>await foreach</c>. The reader must be disposed after use to
-    /// release any underlying native stream handle.
+    /// Implements <see cref="IAsyncEnumerable{T}"/> so it can be consumed with
+    /// <c>await foreach</c>. The reader must be disposed after use.
     /// </remarks>
-    public sealed class AsyncRecordBatchReader : IAsyncEnumerable<RecordBatch>, IDisposable
+    public abstract class AsyncRecordBatchReader : IAsyncEnumerable<RecordBatch>, IDisposable
+    {
+        /// <inheritdoc/>
+        public abstract IAsyncEnumerator<RecordBatch> GetAsyncEnumerator(
+            CancellationToken cancellationToken = default);
+
+        /// <inheritdoc/>
+        public virtual void Dispose() { }
+
+        /// <summary>
+        /// Creates a reader backed by a native stream from Rust.
+        /// </summary>
+        internal static AsyncRecordBatchReader FromNativeStream(IntPtr handle)
+        {
+            return new NativeStreamReader(handle);
+        }
+
+        /// <summary>
+        /// Creates a reader that yields batches from a materialized <see cref="RecordBatch"/>.
+        /// </summary>
+        internal static AsyncRecordBatchReader FromRecordBatch(RecordBatch result, int? maxBatchLength = null)
+        {
+            return new MaterializedBatchReader(result, maxBatchLength);
+        }
+    }
+
+    /// <summary>
+    /// Reads batches one at a time from a native Rust stream via FFI.
+    /// </summary>
+    internal sealed class NativeStreamReader : AsyncRecordBatchReader
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void stream_next(
@@ -30,55 +56,15 @@ namespace lancedb
 
         private IntPtr _handle;
         private bool _disposed;
-        private readonly RecordBatch? _materializedResult;
-        private readonly int? _maxBatchLength;
 
-        /// <summary>
-        /// Creates a reader backed by a native stream handle from Rust.
-        /// </summary>
-        internal AsyncRecordBatchReader(IntPtr handle)
+        internal NativeStreamReader(IntPtr handle)
         {
             _handle = handle;
         }
 
-        /// <summary>
-        /// Creates a reader that yields batches from a materialized <see cref="RecordBatch"/>.
-        /// Used by <see cref="HybridQuery.ToBatches"/> where the full result is already
-        /// computed in C# (hybrid merging requires all rows).
-        /// </summary>
-        internal AsyncRecordBatchReader(RecordBatch result, int? maxBatchLength = null)
-        {
-            _materializedResult = result;
-            _maxBatchLength = maxBatchLength;
-        }
-
-        /// <summary>
-        /// Returns an async enumerator that yields <see cref="RecordBatch"/>
-        /// results from either a native stream or a materialized result.
-        /// </summary>
-        public async IAsyncEnumerator<RecordBatch> GetAsyncEnumerator(
+        public override async IAsyncEnumerator<RecordBatch> GetAsyncEnumerator(
             CancellationToken cancellationToken = default)
         {
-            if (_materializedResult != null)
-            {
-                if (!_maxBatchLength.HasValue || _materializedResult.Length <= _maxBatchLength.Value)
-                {
-                    yield return _materializedResult;
-                }
-                else
-                {
-                    int offset = 0;
-                    while (offset < _materializedResult.Length)
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        int length = Math.Min(_maxBatchLength.Value, _materializedResult.Length - offset);
-                        yield return SliceBatch(_materializedResult, offset, length);
-                        offset += length;
-                    }
-                }
-                yield break;
-            }
-
             while (!_disposed)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -95,16 +81,6 @@ namespace lancedb
 
                 yield return ImportBatch(result);
             }
-        }
-
-        private static RecordBatch SliceBatch(RecordBatch batch, int offset, int length)
-        {
-            var arrays = new IArrowArray[batch.ColumnCount];
-            for (int i = 0; i < batch.ColumnCount; i++)
-            {
-                arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
-            }
-            return new RecordBatch(batch.Schema, arrays, length);
         }
 
         private static unsafe RecordBatch ImportBatch(IntPtr cdataPtr)
@@ -125,10 +101,7 @@ namespace lancedb
             }
         }
 
-        /// <summary>
-        /// Releases the underlying native stream handle.
-        /// </summary>
-        public void Dispose()
+        public override void Dispose()
         {
             if (!_disposed)
             {
@@ -139,6 +112,53 @@ namespace lancedb
                     _handle = IntPtr.Zero;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Wraps an already-materialized <see cref="RecordBatch"/> as a streaming reader,
+    /// optionally slicing it into smaller batches.
+    /// </summary>
+    internal sealed class MaterializedBatchReader : AsyncRecordBatchReader
+    {
+        private readonly RecordBatch _result;
+        private readonly int? _maxBatchLength;
+
+        internal MaterializedBatchReader(RecordBatch result, int? maxBatchLength = null)
+        {
+            _result = result;
+            _maxBatchLength = maxBatchLength;
+        }
+
+#pragma warning disable CS1998 // Async method lacks 'await' operators
+        public override async IAsyncEnumerator<RecordBatch> GetAsyncEnumerator(
+            CancellationToken cancellationToken = default)
+#pragma warning restore CS1998
+        {
+            if (!_maxBatchLength.HasValue || _result.Length <= _maxBatchLength.Value)
+            {
+                yield return _result;
+                yield break;
+            }
+
+            int offset = 0;
+            while (offset < _result.Length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                int length = Math.Min(_maxBatchLength.Value, _result.Length - offset);
+                yield return SliceBatch(_result, offset, length);
+                offset += length;
+            }
+        }
+
+        private static RecordBatch SliceBatch(RecordBatch batch, int offset, int length)
+        {
+            var arrays = new IArrowArray[batch.ColumnCount];
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
+            }
+            return new RecordBatch(batch.Schema, arrays, length);
         }
     }
 }
