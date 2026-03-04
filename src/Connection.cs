@@ -118,7 +118,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             _handle = new ConnectionHandle(ptr);
         }
 
@@ -170,7 +170,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             _handle = new ConnectionHandle(ptr);
         }
 
@@ -245,7 +245,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             return new Table(tablePtr);
         }
 
@@ -309,7 +309,7 @@ namespace lancedb
                         }
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             return new Table(tablePtr);
         }
 
@@ -394,7 +394,7 @@ namespace lancedb
                         }
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             return new Table(tablePtr);
         }
 
@@ -465,7 +465,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string joined = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(joined))
             {
@@ -520,7 +520,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(json))
             {
@@ -566,7 +566,7 @@ namespace lancedb
                                 callback);
                         }
                     }
-                });
+                }).ConfigureAwait(false);
             }
             catch (LanceDbException) when (ignoreMissing)
             {
@@ -615,7 +615,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -684,7 +684,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             return new Table(tablePtr);
         }
 
@@ -712,7 +712,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -757,7 +757,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(json))
             {
@@ -814,7 +814,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(json))
             {
@@ -873,7 +873,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(json))
             {
@@ -907,7 +907,7 @@ namespace lancedb
                             callback);
                     }
                 }
-            });
+            }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(ptr);
             if (string.IsNullOrEmpty(json))
             {
