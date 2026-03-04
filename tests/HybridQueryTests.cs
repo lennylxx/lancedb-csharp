@@ -212,7 +212,133 @@ namespace lancedb.tests
             Assert.Contains("_relevance_score", results[0].Keys);
         }
 
+        /// <summary>
+        /// Verifies that HybridQuery normalizes _distance and _score to [0,1]
+        /// before reranking (matching Python behavior). Without normalization,
+        /// LinearCombinationReranker produces wrong rankings because raw distances
+        /// and FTS scores are on incomparable scales.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb v0.29.2):
+        /// <code>
+        /// db = lancedb.connect("/tmp/test")
+        /// data = [
+        ///     {"id": 1, "text": "apple banana fruit", "vector": [1.0, 0.0]},
+        ///     {"id": 2, "text": "cherry date sweet",  "vector": [0.0, 1.0]},
+        ///     {"id": 3, "text": "apple cherry tart",  "vector": [0.5, 0.5]},
+        ///     {"id": 4, "text": "banana fig jam",     "vector": [0.9, 0.1]},
+        ///     {"id": 5, "text": "apple pie dessert",  "vector": [0.0, 0.9]},
+        /// ]
+        /// table = db.create_table("test", data)
+        /// table.create_fts_index("text")
+        /// reranker = LinearCombinationReranker(weight=0.5, fill=1.0)
+        /// results = (table.search(query_type="hybrid")
+        ///     .vector([1.0, 0.0]).text("apple")
+        ///     .rerank(reranker).limit(5).to_arrow())
+        ///
+        /// # Output:
+        /// #   id=5, _relevance_score=0.9525
+        /// #   id=3, _relevance_score=0.6250
+        /// #   id=1, _relevance_score=0.5000
+        /// #   id=2, _relevance_score=0.5000
+        /// #   id=4, _relevance_score=0.0050
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_LinearCombination_NormalizesScoresBeforeReranking()
+        {
+            using var fixture = await CreateNormalizationFixture("hybrid_norm");
+            var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
+            var results = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0 })
+                .Rerank(reranker)
+                .Limit(5)
+                .ToArrow();
+
+            // Expected ranking and scores verified against Python (see remarks above)
+            var idIdx = results.Schema.GetFieldIndex("id");
+            var ids = (Int32Array)results.Column(idIdx);
+            var relIdx = results.Schema.GetFieldIndex("_relevance_score");
+            var scores = (FloatArray)results.Column(relIdx);
+
+            Assert.Equal(5, results.Length);
+
+            var expectedIds = new int[] { 5, 3, 1, 2, 4 };
+            var expectedScores = new float[] { 0.9525f, 0.625f, 0.5f, 0.5f, 0.005f };
+            for (int i = 0; i < results.Length; i++)
+            {
+                Assert.Equal(expectedIds[i], ids.GetValue(i));
+                Assert.Equal(expectedScores[i], scores.GetValue(i)!.Value, precision: 2);
+            }
+        }
+
         // ----- Fixture -----
+
+        /// <summary>
+        /// Creates a fixture with 5 items designed to test score normalization.
+        /// Vectors produce L2 distances in range [0, 2], FTS scores are all identical.
+        /// </summary>
+        private static async Task<TestFixture> CreateNormalizationFixture(string tableName)
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var idBuilder = new Int32Array.Builder();
+            var contentBuilder = new StringArray.Builder();
+
+            // id=1: matches FTS + closest vector
+            // id=2: no FTS match + farthest vector
+            // id=3: matches FTS + mid vector
+            // id=4: no FTS match + close vector
+            // id=5: matches FTS + far vector
+            string[] texts = new[]
+            {
+                "apple banana fruit",
+                "cherry date sweet",
+                "apple cherry tart",
+                "banana fig jam",
+                "apple pie dessert",
+            };
+            float[][] vectors = new[]
+            {
+                new float[] { 1.0f, 0.0f },   // dist=0.0 from [1,0]
+                new float[] { 0.0f, 1.0f },   // dist=2.0
+                new float[] { 0.5f, 0.5f },   // dist=0.5
+                new float[] { 0.9f, 0.1f },   // dist=0.02
+                new float[] { 0.0f, 0.9f },   // dist=1.81
+            };
+
+            var valueField = new Field("item", FloatType.Default, nullable: false);
+            var vectorBuilder = new FixedSizeListArray.Builder(valueField, 2);
+            var valueBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
+
+            for (int i = 0; i < texts.Length; i++)
+            {
+                idBuilder.Append(i + 1);
+                contentBuilder.Append(texts[i]);
+                vectorBuilder.Append();
+                foreach (var v in vectors[i])
+                {
+                    valueBuilder.Append(v);
+                }
+            }
+
+            var vectorType = new FixedSizeListType(valueField, 2);
+            var schema = new Schema.Builder()
+                .Field(new Field("id", Int32Type.Default, nullable: false))
+                .Field(new Field("content", StringType.Default, nullable: false))
+                .Field(new Field("vector", vectorType, nullable: false))
+                .Build();
+
+            var batch = new RecordBatch(schema,
+                new IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), vectorBuilder.Build() },
+                texts.Length);
+            var table = await connection.CreateTable(tableName, batch);
+            await table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+            return new TestFixture(connection, table, tmpDir);
+        }
 
         private static async Task<TestFixture> CreateHybridFixture(string tableName)
         {

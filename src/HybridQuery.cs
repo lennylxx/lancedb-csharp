@@ -314,6 +314,11 @@ namespace lancedb
         /// then merges the results using the configured reranker. The merged results
         /// include a <c>_relevance_score</c> column from the reranker.
         /// </para>
+        /// <para>
+        /// Before reranking, <c>_distance</c> and <c>_score</c> columns are normalized
+        /// to the [0, 1] range using min-max normalization, matching the Python SDK behavior.
+        /// Original values are restored after reranking.
+        /// </para>
         /// </remarks>
         /// <param name="timeout">Optional maximum time for each sub-query to run.</param>
         /// <returns>The merged and reranked results as a RecordBatch.</returns>
@@ -335,9 +340,46 @@ namespace lancedb
             ApplyVectorConfig(vecSubQuery);
             var vecResults = await vecSubQuery.ToArrow(timeout).ConfigureAwait(false);
 
+            // Normalize scores to [0,1] before reranking (matching Python behavior).
+            // Save originals so we can restore them after reranking.
+            FloatArray? originalDistances = null;
+            UInt64Array? originalDistanceRowIds = null;
+            FloatArray? originalScores = null;
+            UInt64Array? originalScoreRowIds = null;
+
+            if (vecResults.Length > 0)
+            {
+                var distIdx = vecResults.Schema.GetFieldIndex("_distance");
+                if (distIdx >= 0)
+                {
+                    originalDistances = (FloatArray)vecResults.Column(distIdx);
+                    originalDistanceRowIds = (UInt64Array)vecResults.Column(
+                        vecResults.Schema.GetFieldIndex("_rowid"));
+                    vecResults = ReplaceColumn(vecResults, distIdx,
+                        NormalizeScores(originalDistances));
+                }
+            }
+
+            if (ftsResults.Length > 0)
+            {
+                var scoreIdx = ftsResults.Schema.GetFieldIndex("_score");
+                if (scoreIdx >= 0)
+                {
+                    originalScores = (FloatArray)ftsResults.Column(scoreIdx);
+                    originalScoreRowIds = (UInt64Array)ftsResults.Column(
+                        ftsResults.Schema.GetFieldIndex("_rowid"));
+                    ftsResults = ReplaceColumn(ftsResults, scoreIdx,
+                        NormalizeScores(originalScores));
+                }
+            }
+
             // Merge with reranker
             var merged = await _reranker.RerankHybrid(_ftsQuery, vecResults, ftsResults)
                 .ConfigureAwait(false);
+
+            // Restore original _distance and _score values (reranker saw normalized copies)
+            merged = RestoreColumn(merged, "_distance", originalDistances, originalDistanceRowIds);
+            merged = RestoreColumn(merged, "_score", originalScores, originalScoreRowIds);
 
             // Apply final offset (before limit — SQL semantics)
             if (_offset.HasValue && _offset.Value > 0 && merged.Length > _offset.Value)
@@ -462,6 +504,127 @@ namespace lancedb
                 arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
             }
             return new RecordBatch(batch.Schema, arrays, length);
+        }
+
+        /// <summary>
+        /// Min-max normalizes float scores to [0, 1].
+        /// Matches Python's <c>_normalize_scores</c>: if range is 0 and max != 0,
+        /// all values become 0; if range is 0 and max == 0, values are unchanged.
+        /// </summary>
+        private static FloatArray NormalizeScores(FloatArray scores)
+        {
+            if (scores.Length == 0)
+            {
+                return scores;
+            }
+
+            float min = float.MaxValue, max = float.MinValue;
+            for (int i = 0; i < scores.Length; i++)
+            {
+                var val = scores.GetValue(i);
+                if (val.HasValue)
+                {
+                    if (val.Value < min) { min = val.Value; }
+                    if (val.Value > max) { max = val.Value; }
+                }
+            }
+
+            float range = max - min;
+            var builder = new FloatArray.Builder();
+            for (int i = 0; i < scores.Length; i++)
+            {
+                var val = scores.GetValue(i);
+                if (!val.HasValue)
+                {
+                    builder.AppendNull();
+                }
+                else if (range != 0f)
+                {
+                    builder.Append((val.Value - min) / range);
+                }
+                else if (max != 0f)
+                {
+                    builder.Append(val.Value - min);
+                }
+                else
+                {
+                    builder.Append(val.Value);
+                }
+            }
+            return builder.Build();
+        }
+
+        private static RecordBatch ReplaceColumn(RecordBatch batch, int columnIndex, IArrowArray newColumn)
+        {
+            var arrays = new IArrowArray[batch.ColumnCount];
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                arrays[i] = i == columnIndex ? newColumn : batch.Column(i);
+            }
+            return new RecordBatch(batch.Schema, arrays, batch.Length);
+        }
+
+        /// <summary>
+        /// Restores original pre-normalization values in a column by matching _rowid.
+        /// Equivalent to Python's <c>pc.index_in</c> + <c>pc.take</c> + <c>set_column</c>.
+        /// </summary>
+        private static RecordBatch RestoreColumn(RecordBatch merged, string columnName,
+            FloatArray? originalValues, UInt64Array? originalRowIds)
+        {
+            if (originalValues == null || originalRowIds == null)
+            {
+                return merged;
+            }
+
+            var colIdx = merged.Schema.GetFieldIndex(columnName);
+            if (colIdx < 0)
+            {
+                return merged;
+            }
+
+            var mergedRowIdIdx = merged.Schema.GetFieldIndex("_rowid");
+            if (mergedRowIdIdx < 0)
+            {
+                return merged;
+            }
+
+            // Build rowid → original value lookup
+            var lookup = new Dictionary<ulong, float>(originalRowIds.Length);
+            for (int i = 0; i < originalRowIds.Length; i++)
+            {
+                var id = originalRowIds.GetValue(i);
+                var val = originalValues.GetValue(i);
+                if (id.HasValue && val.HasValue)
+                {
+                    lookup[id.Value] = val.Value;
+                }
+            }
+
+            var mergedRowIds = (UInt64Array)merged.Column(mergedRowIdIdx);
+            var currentValues = (FloatArray)merged.Column(colIdx);
+            var builder = new FloatArray.Builder();
+            for (int i = 0; i < merged.Length; i++)
+            {
+                var rowId = mergedRowIds.GetValue(i);
+                if (rowId.HasValue && lookup.TryGetValue(rowId.Value, out var original))
+                {
+                    builder.Append(original);
+                }
+                else
+                {
+                    var val = currentValues.GetValue(i);
+                    if (val.HasValue)
+                    {
+                        builder.Append(val.Value);
+                    }
+                    else
+                    {
+                        builder.AppendNull();
+                    }
+                }
+            }
+
+            return ReplaceColumn(merged, colIdx, builder.Build());
         }
 
         private static object? GetArrowValue(IArrowArray array, int index)
