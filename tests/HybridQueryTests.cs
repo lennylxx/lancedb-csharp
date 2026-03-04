@@ -96,6 +96,22 @@ namespace lancedb.tests
             // Results should have _relevance_score from RRF
             var schema = results.Schema;
             Assert.Contains(schema.FieldsList, f => f.Name == "_relevance_score");
+            // _rowid should NOT be in results unless user explicitly requests it
+            Assert.DoesNotContain(schema.FieldsList, f => f.Name == "_rowid");
+        }
+
+        [Fact]
+        public async Task HybridQuery_WithRowId_IncludesRowId()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_with_rowid");
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .WithRowId()
+                .ToArrow();
+
+            Assert.True(results.Length > 0);
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_rowid");
         }
 
         [Fact]

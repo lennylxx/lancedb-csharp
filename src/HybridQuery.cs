@@ -41,6 +41,7 @@ namespace lancedb
         private IReadOnlyList<string>? _selectColumns;
         private int? _limit;
         private int? _offset;
+        private bool _withRowId;
 
         // Vector-specific config
         private string? _vectorColumn;
@@ -71,6 +72,7 @@ namespace lancedb
             _offset = source._offset;
             _fastSearch = source._fastSearch;
             _postfilter = source._postfilter;
+            _withRowId = source._withRowId;
         }
 
         /// <summary>
@@ -92,6 +94,7 @@ namespace lancedb
             _offset = source._offset;
             _fastSearch = source._fastSearch;
             _postfilter = source._postfilter;
+            _withRowId = source._withRowId;
             CopyVectorParams(source);
         }
 
@@ -319,6 +322,19 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Include the <c>_rowid</c> column in the results.
+        /// </summary>
+        /// <remarks>
+        /// By default, <c>_rowid</c> is used internally for merging and deduplication
+        /// but is stripped from the final results. Call this method to retain it.
+        /// </remarks>
+        public HybridQuery WithRowId()
+        {
+            _withRowId = true;
+            return this;
+        }
+
+        /// <summary>
         /// Execute the hybrid query and return the results as an Arrow <see cref="RecordBatch"/>.
         /// </summary>
         /// <remarks>
@@ -417,6 +433,12 @@ namespace lancedb
             if (_selectColumns != null)
             {
                 merged = ApplySelect(merged, _selectColumns);
+            }
+
+            // Strip _rowid unless user explicitly requested it
+            if (!_withRowId)
+            {
+                merged = DropColumn(merged, "_rowid");
             }
 
             return merged;
@@ -524,6 +546,32 @@ namespace lancedb
                 arrays[i] = ((Apache.Arrow.Array)batch.Column(i)).Slice(offset, length);
             }
             return new RecordBatch(batch.Schema, arrays, length);
+        }
+
+        /// <summary>
+        /// Removes a column from a RecordBatch by name. Returns the batch unchanged
+        /// if the column does not exist.
+        /// </summary>
+        private static RecordBatch DropColumn(RecordBatch batch, string columnName)
+        {
+            var idx = batch.Schema.GetFieldIndex(columnName);
+            if (idx < 0)
+            {
+                return batch;
+            }
+
+            var fields = new List<Field>(batch.ColumnCount - 1);
+            var arrays = new List<IArrowArray>(batch.ColumnCount - 1);
+            for (int i = 0; i < batch.ColumnCount; i++)
+            {
+                if (i != idx)
+                {
+                    fields.Add(batch.Schema.GetFieldByIndex(i));
+                    arrays.Add(batch.Column(i));
+                }
+            }
+            var schema = new Schema(fields, batch.Schema.Metadata);
+            return new RecordBatch(schema, arrays, batch.Length);
         }
 
         /// <summary>
