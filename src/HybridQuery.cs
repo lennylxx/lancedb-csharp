@@ -332,16 +332,16 @@ namespace lancedb
             var merged = await _reranker.RerankHybrid(_ftsQuery, vecResults, ftsResults)
                 .ConfigureAwait(false);
 
+            // Apply final offset (before limit — SQL semantics)
+            if (_offset.HasValue && _offset.Value > 0 && merged.Length > _offset.Value)
+            {
+                merged = SliceBatch(merged, _offset.Value, merged.Length - _offset.Value);
+            }
+
             // Apply final limit
             if (_limit.HasValue && merged.Length > _limit.Value)
             {
                 merged = SliceBatch(merged, 0, _limit.Value);
-            }
-
-            // Apply final offset
-            if (_offset.HasValue && _offset.Value > 0 && merged.Length > _offset.Value)
-            {
-                merged = SliceBatch(merged, _offset.Value, merged.Length - _offset.Value);
             }
 
             return merged;

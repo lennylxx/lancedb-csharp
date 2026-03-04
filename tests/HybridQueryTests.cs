@@ -136,6 +136,33 @@ namespace lancedb.tests
             Assert.True(results.Length <= 1);
         }
 
+        /// <summary>
+        /// With 3 results, offset=1 and limit=2 should return 2 rows
+        /// (skip 1, then take up to 2). Verifies offset is applied before limit.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_OffsetThenLimit_ReturnsCorrectCount()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_off_lim");
+            var allResults = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ToArrow();
+
+            // Sanity: we have 3 rows total
+            Assert.Equal(3, allResults.Length);
+
+            // offset=1, limit=2: skip 1 row, take up to 2 → should return 2
+            var paged = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Offset(1)
+                .Limit(2)
+                .ToArrow();
+
+            Assert.Equal(2, paged.Length);
+        }
+
         [Fact]
         public async Task HybridQuery_WithWhere_FiltersResults()
         {
