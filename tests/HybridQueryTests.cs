@@ -746,6 +746,72 @@ namespace lancedb.tests
             }
         }
 
+        /// <summary>
+        /// Validates that HybridQuery throws if a custom reranker omits _relevance_score.
+        /// Python equivalent: check_reranker_result() raises ValueError.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_BadReranker_ThrowsInvalidOperation()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_bad_reranker");
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            {
+                await fixture.Table
+                    .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
+                    .Rerank(new BadReranker())
+                    .ToArrow();
+            });
+            Assert.Contains("_relevance_score", ex.Message);
+        }
+
+        /// <summary>
+        /// Validates that RRFReranker passes the _relevance_score validation.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_RRFReranker_PassesValidation()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_rrf_validation");
+            var results = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new RRFReranker())
+                .ToArrow();
+
+            Assert.True(results.Length > 0);
+            Assert.True(results.Schema.GetFieldIndex("_relevance_score") >= 0);
+        }
+
+        /// <summary>
+        /// Validates that LinearCombinationReranker passes the _relevance_score validation.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_LinearCombinationReranker_PassesValidation()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_lc_validation");
+            var results = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new LinearCombinationReranker())
+                .ToArrow();
+
+            Assert.True(results.Length > 0);
+            Assert.True(results.Schema.GetFieldIndex("_relevance_score") >= 0);
+        }
+
+        /// <summary>
+        /// Validates that MRRReranker passes the _relevance_score validation.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_MRRReranker_PassesValidation()
+        {
+            using var fixture = await CreateHybridFixture("hybrid_mrr_validation");
+            var results = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
+                .Rerank(new MRRReranker())
+                .ToArrow();
+
+            Assert.True(results.Length > 0);
+            Assert.True(results.Schema.GetFieldIndex("_relevance_score") >= 0);
+        }
+
         // ----- Fixture -----
 
         /// <summary>
@@ -915,6 +981,25 @@ namespace lancedb.tests
             await table.CreateIndex(new[] { "content" }, new FtsIndex());
 
             return new TestFixture(connection, table, tmpDir);
+        }
+    }
+
+    /// <summary>
+    /// A reranker that deliberately omits the _relevance_score column,
+    /// used to test validation of reranker output.
+    /// </summary>
+    internal class BadReranker : IReranker
+    {
+        public Task<RecordBatch> RerankHybrid(
+            string query, RecordBatch vectorResults, RecordBatch ftsResults)
+        {
+            // Return a batch with no _relevance_score column
+            var idArray = new Int64Array.Builder().Append(1).Build();
+            var schema = new Schema(new[]
+            {
+                new Field("id", Int64Type.Default, false)
+            }, null);
+            return Task.FromResult(new RecordBatch(schema, new IArrowArray[] { idArray }, 1));
         }
     }
 }

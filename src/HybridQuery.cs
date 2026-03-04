@@ -528,6 +528,13 @@ namespace lancedb
             var merged = await _reranker.RerankHybrid(_ftsQuery, vecResults, ftsResults)
                 .ConfigureAwait(false);
 
+            // Validate reranker output (matching Python's check_reranker_result)
+            if (merged.Schema.GetFieldIndex("_relevance_score") < 0)
+            {
+                throw new InvalidOperationException(
+                    "RerankHybrid must return a RecordBatch with a column named '_relevance_score'.");
+            }
+
             // Restore original _distance and _score values (reranker saw normalized copies)
             merged = RestoreColumn(merged, "_distance", originalDistances, originalDistanceRowIds);
             merged = RestoreColumn(merged, "_score", originalScores, originalScoreRowIds);
