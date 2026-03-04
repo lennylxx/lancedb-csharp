@@ -39,6 +39,7 @@ namespace lancedb
 
         // Final result config (applied after reranking)
         private IReadOnlyList<string>? _selectColumns;
+        private Dictionary<string, string>? _selectExpressions;
         private int? _limit;
         private int? _offset;
         private bool _withRowId;
@@ -64,10 +65,7 @@ namespace lancedb
             _vector = vector;
             _predicate = source._predicate;
             _selectColumns = source._selectColumns;
-            if (_selectColumns == null && source._selectExpressions != null)
-            {
-                _selectColumns = new List<string>(source._selectExpressions.Keys);
-            }
+            _selectExpressions = source._selectExpressions;
             _limit = source._limit;
             _offset = source._offset;
             _fastSearch = source._fastSearch;
@@ -86,10 +84,7 @@ namespace lancedb
             _vector = source._vector;
             _predicate = source._predicate;
             _selectColumns = source._selectColumns;
-            if (_selectColumns == null && source._selectExpressions != null)
-            {
-                _selectColumns = new List<string>(source._selectExpressions.Keys);
-            }
+            _selectExpressions = source._selectExpressions;
             _limit = source._limit;
             _offset = source._offset;
             _fastSearch = source._fastSearch;
@@ -167,6 +162,7 @@ namespace lancedb
         public HybridQuery Select(IReadOnlyList<string> columns)
         {
             _selectColumns = columns;
+            _selectExpressions = null;
             return this;
         }
 
@@ -177,7 +173,8 @@ namespace lancedb
         /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
         public HybridQuery Select(Dictionary<string, string> columns)
         {
-            _selectColumns = new List<string>(columns.Keys);
+            _selectExpressions = columns;
+            _selectColumns = null;
             return this;
         }
 
@@ -435,7 +432,11 @@ namespace lancedb
             }
 
             // Apply column projection
-            if (_selectColumns != null)
+            if (_selectExpressions != null)
+            {
+                merged = ApplySelect(merged, new List<string>(_selectExpressions.Keys));
+            }
+            else if (_selectColumns != null)
             {
                 merged = ApplySelect(merged, _selectColumns);
             }
@@ -484,6 +485,15 @@ namespace lancedb
             if (_postfilter)
             {
                 query.Postfilter();
+            }
+            // Forward select to sub-queries so Rust computes any SQL expressions
+            if (_selectExpressions != null)
+            {
+                query.Select(_selectExpressions);
+            }
+            else if (_selectColumns != null)
+            {
+                query.Select(_selectColumns);
             }
         }
 

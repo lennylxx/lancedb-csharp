@@ -274,6 +274,58 @@ namespace lancedb.tests
             Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_rowid");
         }
 
+        /// <summary>
+        /// Verifies that Select(Dictionary) passes SQL expressions to sub-queries so
+        /// computed columns (like "price * 2") appear in the final result.
+        /// </summary>
+        /// <remarks>
+        /// Python equivalent (verified with lancedb pip v0.29.2):
+        /// <code>
+        /// r = await (table.query()
+        ///     .nearest_to([1.0, 0.0, 0.0])
+        ///     .nearest_to_text("apple")
+        ///     .rerank(RRFReranker())
+        ///     .select({"id": "id", "double_price": "price * 2"})
+        ///     .to_arrow())
+        /// # Columns: ['id', 'double_price', '_relevance_score']
+        /// # double_price values are 2x the original price
+        /// </code>
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_SelectDict_PassesExpressionsToSubQueries()
+        {
+            using var fixture = await CreateHybridFixtureWithPrice("hybrid_sel_expr");
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Select(new System.Collections.Generic.Dictionary<string, string>
+                {
+                    { "id", "id" },
+                    { "double_price", "price * 2" },
+                })
+                .ToArrow();
+
+            Assert.True(results.Length > 0);
+            // Should contain computed column
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "double_price");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "id");
+            Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+            // Should NOT contain original price (not selected)
+            Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "price");
+
+            // Verify computed values: double_price should be 2x price
+            var idCol = (Int32Array)results.Column("id");
+            var dpCol = (Int32Array)results.Column("double_price");
+            // Original prices: id=0 -> 10, id=1 -> 20, id=2 -> 30
+            for (int i = 0; i < results.Length; i++)
+            {
+                int id = idCol.GetValue(i)!.Value;
+                int doublePrice = dpCol.GetValue(i)!.Value;
+                int expectedPrice = (id + 1) * 10 * 2; // price = (id+1)*10, doubled
+                Assert.Equal(expectedPrice, doublePrice);
+            }
+        }
+
         [Fact]
         public async Task HybridQuery_ToList_ReturnsResults()
         {
@@ -654,6 +706,59 @@ namespace lancedb.tests
             var table = await connection.CreateTable(tableName, batch);
 
             // Create FTS index on content column
+            await table.CreateIndex(new[] { "content" }, new FtsIndex());
+
+            return new TestFixture(connection, table, tmpDir);
+        }
+
+        private static async Task<TestFixture> CreateHybridFixtureWithPrice(string tableName)
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            var connection = new Connection();
+            await connection.Connect(tmpDir);
+
+            var idBuilder = new Int32Array.Builder();
+            var contentBuilder = new StringArray.Builder();
+            var priceBuilder = new Int32Array.Builder();
+
+            string[] texts = new[] { "apple banana fruit", "cherry date sweet", "elderberry fig tart" };
+            int[] prices = new[] { 10, 20, 30 };
+            float[][] vectors = new[]
+            {
+                new float[] { 1.0f, 0.0f, 0.0f },
+                new float[] { 0.0f, 1.0f, 0.0f },
+                new float[] { 0.0f, 0.0f, 1.0f },
+            };
+
+            var valueField = new Field("item", FloatType.Default, nullable: false);
+            var vectorBuilder = new FixedSizeListArray.Builder(valueField, 3);
+            var valueBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
+
+            for (int i = 0; i < texts.Length; i++)
+            {
+                idBuilder.Append(i);
+                contentBuilder.Append(texts[i]);
+                priceBuilder.Append(prices[i]);
+                vectorBuilder.Append();
+                foreach (var v in vectors[i])
+                {
+                    valueBuilder.Append(v);
+                }
+            }
+
+            var vectorType = new FixedSizeListType(valueField, 3);
+            var schema = new Schema.Builder()
+                .Field(new Field("id", Int32Type.Default, nullable: false))
+                .Field(new Field("content", StringType.Default, nullable: false))
+                .Field(new Field("price", Int32Type.Default, nullable: false))
+                .Field(new Field("vector", vectorType, nullable: false))
+                .Build();
+
+            var batch = new RecordBatch(schema,
+                new IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), priceBuilder.Build(), vectorBuilder.Build() },
+                texts.Length);
+            var table = await connection.CreateTable(tableName, batch);
+
             await table.CreateIndex(new[] { "content" }, new FtsIndex());
 
             return new TestFixture(connection, table, tmpDir);
