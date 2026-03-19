@@ -11,8 +11,8 @@ use crate::ffi;
 /// C-compatible struct for update results, passed across FFI.
 #[repr(C)]
 pub struct FfiUpdateResult {
-    pub rows_updated: u64,
     pub version: u64,
+    pub rows_updated: u64,
 }
 
 /// C-compatible struct for merge insert results, passed across FFI.
@@ -23,6 +23,13 @@ pub struct FfiMergeResult {
     pub num_updated_rows: u64,
     pub num_deleted_rows: u64,
     pub num_attempts: u32,
+}
+
+/// C-compatible struct for delete results, passed across FFI.
+#[repr(C)]
+pub struct FfiDeleteResult {
+    pub version: u64,
+    pub num_deleted_rows: u64,
 }
 
 /// Returns the name of the table as a C string. Caller must free with free_string().
@@ -81,11 +88,23 @@ pub extern "C" fn table_delete(
     crate::spawn(async move {
         match table.delete(&predicate).await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                let ffi = Box::new(FfiDeleteResult {
+                    version: result.version,
+                    num_deleted_rows: result.num_deleted_rows,
+                });
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
             }
             Err(e) => callback_error(completion, e),
         }
     });
+}
+
+/// Frees an FfiDeleteResult pointer returned by table_delete.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_delete_result_free(ptr: *mut FfiDeleteResult) {
+    if !ptr.is_null() {
+        unsafe { drop(Box::from_raw(ptr)); }
+    }
 }
 
 /// Updates rows in the table. column_sqlexprs_json is a JSON array of [name, expr] pairs.
@@ -125,8 +144,8 @@ pub extern "C" fn table_update(
         match builder.execute().await {
             Ok(result) => {
                 let ffi = Box::new(FfiUpdateResult {
-                    rows_updated: result.rows_updated,
                     version: result.version,
+                    rows_updated: result.rows_updated,
                 });
                 completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
             }
@@ -186,7 +205,7 @@ pub extern "C" fn table_add(
 ) {
     let table = ffi_clone_arc!(table_ptr, Table);
 
-    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+    let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
             callback_error(completion, e);
@@ -205,11 +224,7 @@ pub extern "C" fn table_add(
     };
 
     crate::spawn(async move {
-        let reader = arrow_array::RecordBatchIterator::new(
-            batches.into_iter().map(Ok),
-            schema_ref,
-        );
-        match table.add(reader).mode(add_mode).execute().await {
+        match table.add(batches).mode(add_mode).execute().await {
             Ok(result) => {
                 completion(result.version as *const std::ffi::c_void, std::ptr::null());
             }
@@ -1307,12 +1322,18 @@ pub extern "C" fn table_merge_insert(
         Some(crate::ffi::to_string(when_not_matched_by_source_delete_filter))
     };
 
-    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+    let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
             callback_error(completion, e);
             return;
         }
+    };
+
+    let schema_ref = if batches.is_empty() {
+        arrow_schema::SchemaRef::new(arrow_schema::Schema::empty())
+    } else {
+        batches[0].schema()
     };
 
     crate::spawn(async move {
@@ -1562,5 +1583,51 @@ pub extern "C" fn table_take_row_ids(
         });
         let ptr = Box::into_raw(cdata);
         completion(ptr as *const std::ffi::c_void, std::ptr::null());
+    });
+}
+
+/// Returns the initial storage options as a JSON string, or null if none.
+/// Caller must free the returned string with free_string() (if non-null).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_initial_storage_options(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        let opts = table.initial_storage_options().await;
+        match opts {
+            Some(map) => {
+                let json = sonic_rs::to_string(&map).unwrap_or_default();
+                let c_str = CString::new(json).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            None => {
+                completion(std::ptr::null(), std::ptr::null());
+            }
+        }
+    });
+}
+
+/// Returns the latest storage options as a JSON string, or null if none.
+/// Caller must free the returned string with free_string() (if non-null).
+#[unsafe(no_mangle)]
+pub extern "C" fn table_latest_storage_options(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+) {
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.latest_storage_options().await {
+            Ok(Some(map)) => {
+                let json = sonic_rs::to_string(&map).unwrap_or_default();
+                let c_str = CString::new(json).unwrap_or_default();
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+            }
+            Ok(None) => {
+                completion(std::ptr::null(), std::ptr::null());
+            }
+            Err(e) => callback_error(completion, e),
+        }
     });
 }

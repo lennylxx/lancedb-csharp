@@ -42,6 +42,9 @@ namespace lancedb
             IntPtr table_ptr, IntPtr predicate, NativeCall.FfiCallback completion);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_delete_result_free(IntPtr ptr);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_update(
             IntPtr table_ptr, IntPtr filter, IntPtr columns_json,
             NativeCall.FfiCallback completion);
@@ -201,6 +204,14 @@ namespace lancedb
             IntPtr table_ptr, IntPtr row_ids, nuint row_ids_len, IntPtr columns_json,
             [MarshalAs(UnmanagedType.U1)] bool with_row_id,
             NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_initial_storage_options(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_latest_storage_options(
+            IntPtr table_ptr, NativeCall.FfiCallback completion);
 
         private TableHandle? _handle;
 
@@ -417,7 +428,14 @@ namespace lancedb
                 }
             }).ConfigureAwait(false);
 
-            return new DeleteResult { Version = (ulong)resultPtr.ToInt64() };
+            try
+            {
+                return Marshal.PtrToStructure<DeleteResult>(resultPtr);
+            }
+            finally
+            {
+                table_delete_result_free(resultPtr);
+            }
         }
 
         /// <summary>
@@ -1618,6 +1636,72 @@ namespace lancedb
                 }
             }).ConfigureAwait(false);
             return (ulong)result.ToInt64();
+        }
+
+        /// <summary>
+        /// Get the initial storage options that were provided when the table was created
+        /// or opened.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// These are the static storage options originally provided at table creation
+        /// or open time. They do not reflect any dynamic credential refresh.
+        /// </para>
+        /// <para>
+        /// For dynamically refreshed options (e.g., credential vending), use
+        /// <see cref="LatestStorageOptions"/>.
+        /// </para>
+        /// </remarks>
+        /// <returns>
+        /// A dictionary of storage options, or <c>null</c> if no custom storage
+        /// options were configured.
+        /// </returns>
+        public async Task<Dictionary<string, string>?> InitialStorageOptions()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_initial_storage_options(
+                    _handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+
+            if (result == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+        }
+
+        /// <summary>
+        /// Get the latest storage options, refreshing from provider if configured.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This method is useful for credential vending scenarios where storage options
+        /// may be refreshed dynamically. If no dynamic provider is configured, this
+        /// returns the initial static options.
+        /// </para>
+        /// </remarks>
+        /// <returns>
+        /// A dictionary of storage options, or <c>null</c> if no custom storage
+        /// options were configured.
+        /// </returns>
+        public async Task<Dictionary<string, string>?> LatestStorageOptions()
+        {
+            IntPtr result = await NativeCall.Async(completion =>
+            {
+                table_latest_storage_options(
+                    _handle!.DangerousGetHandle(), completion);
+            }).ConfigureAwait(false);
+
+            if (result == IntPtr.Zero)
+            {
+                return null;
+            }
+
+            string json = NativeCall.ReadStringAndFree(result);
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json);
         }
     }
 }

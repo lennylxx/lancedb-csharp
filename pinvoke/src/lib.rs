@@ -25,12 +25,19 @@ pub use query::{
 pub use table::{
     table_add, table_add_columns, table_add_columns_null, table_alter_columns,
     table_checkout, table_checkout_latest, table_checkout_tag, table_close, table_count_rows,
-    table_create_index, table_delete, table_drop_columns, table_drop_index, table_get_name,
-    table_index_stats, table_index_stats_free, table_is_open, table_list_indices,
-    table_list_versions, table_merge_insert, table_optimize, table_prewarm_index, table_restore,
-    table_schema, table_stats, table_stats_free, table_tags_create, table_tags_delete,
-    table_tags_get_version, table_tags_list, table_tags_update, table_take_offsets,
-    table_take_row_ids, table_update, table_uri, table_version, table_wait_for_index,
+    table_create_index, table_delete, table_delete_result_free, table_drop_columns,
+    table_drop_index, table_get_name, table_index_stats, table_index_stats_free,
+    table_initial_storage_options, table_is_open, table_latest_storage_options,
+    table_list_indices, table_list_versions, table_merge_insert, table_merge_result_free,
+    table_migrate_manifest_paths_v2, table_optimize, table_prewarm_index,
+    table_replace_field_metadata, table_restore, table_schema, table_stats, table_stats_free,
+    table_tags_create, table_tags_delete, table_tags_get_version, table_tags_list,
+    table_tags_update, table_take_offsets, table_take_row_ids, table_update,
+    table_update_result_free, table_uri, table_uses_v2_manifest_paths, table_version,
+    table_wait_for_index,
+};
+pub use table::{
+    FfiDeleteResult, FfiIndexStats, FfiMergeResult, FfiTableStats, FfiUpdateResult,
 };
 pub use ffi::{free_ffi_cdata, free_ffi_schema, free_string, FfiCData};
 

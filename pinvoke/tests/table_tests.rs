@@ -738,3 +738,265 @@ fn test_take_row_ids_ffi() {
     table_close(table_ptr);
     connection_close(conn_ptr);
 }
+
+// ===== Free function null-safety tests =====
+
+#[test]
+fn test_table_delete_result_free_null_is_safe() {
+    table_delete_result_free(ptr::null_mut());
+}
+
+#[test]
+fn test_table_update_result_free_null_is_safe() {
+    table_update_result_free(ptr::null_mut());
+}
+
+#[test]
+fn test_table_merge_result_free_null_is_safe() {
+    table_merge_result_free(ptr::null_mut());
+}
+
+#[test]
+fn test_table_index_stats_free_null_is_safe() {
+    table_index_stats_free(ptr::null_mut());
+}
+
+#[test]
+fn test_table_stats_free_null_is_safe() {
+    table_stats_free(ptr::null_mut());
+}
+
+// ===== table_delete FFI: returns FfiDeleteResult =====
+
+#[test]
+fn test_table_delete_ffi_returns_delete_result() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let batch = create_id_value_batch(&[1, 2, 3, 4, 5], &["a", "b", "c", "d", "e"]);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "delete_result_ffi", vec![batch]);
+
+    let predicate = std::ffi::CString::new("id > 3").unwrap();
+    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_result = result as *mut FfiDeleteResult;
+    let delete_result = unsafe { &*ffi_result };
+    assert_eq!(delete_result.num_deleted_rows, 2);
+    assert!(delete_result.version > 0);
+
+    table_delete_result_free(ffi_result);
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_delete_ffi_no_matching_rows() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let batch = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "delete_none_ffi", vec![batch]);
+
+    let predicate = std::ffi::CString::new("id > 100").unwrap();
+    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_result = result as *mut FfiDeleteResult;
+    let delete_result = unsafe { &*ffi_result };
+    assert_eq!(delete_result.num_deleted_rows, 0);
+
+    table_delete_result_free(ffi_result);
+    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_update FFI: returns FfiUpdateResult =====
+
+#[test]
+fn test_table_update_ffi_returns_update_result() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let batch = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "update_result_ffi", vec![batch]);
+
+    let filter = std::ffi::CString::new("id >= 2").unwrap();
+    let columns_json = std::ffi::CString::new(r#"[["value","'updated'"]]"#).unwrap();
+    table_update(
+        table_ptr,
+        filter.as_ptr(),
+        columns_json.as_ptr(),
+        common::ffi_callback,
+    );
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_result = result as *mut FfiUpdateResult;
+    let update_result = unsafe { &*ffi_result };
+    assert_eq!(update_result.rows_updated, 2);
+    assert!(update_result.version > 0);
+
+    table_update_result_free(ffi_result);
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_merge_insert FFI: returns FfiMergeResult =====
+
+#[test]
+fn test_table_merge_insert_ffi_returns_merge_result() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let initial = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "merge_result_ffi", vec![initial]);
+
+    let (mut ffi_array, mut ffi_schema) =
+        batch_to_cdata(&create_id_value_batch(&[2, 3, 4, 5], &["B", "C", "D", "E"]));
+    let on_columns = std::ffi::CString::new(r#"["id"]"#).unwrap();
+
+    table_merge_insert(
+        table_ptr,
+        on_columns.as_ptr(),
+        true,          // when_matched_update_all
+        ptr::null(),
+        true,          // when_not_matched_insert_all
+        false,
+        ptr::null(),
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,
+        true,
+        -1,
+        common::ffi_callback,
+    );
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_result = result as *mut FfiMergeResult;
+    let merge_result = unsafe { &*ffi_result };
+    assert!(merge_result.version > 0);
+    assert_eq!(merge_result.num_inserted_rows, 2);
+    assert_eq!(merge_result.num_updated_rows, 2);
+    assert_eq!(merge_result.num_deleted_rows, 0);
+
+    table_merge_result_free(ffi_result);
+    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_index_stats FFI: returns FfiIndexStats =====
+
+#[test]
+fn test_table_index_stats_ffi_returns_stats() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "idx_stats_ffi");
+
+    common::add_sync(table_ptr, vec![create_test_batch(100)]);
+    common::create_btree_index_sync(table_ptr, "id");
+
+    let indices = common::list_indices_sync(table_ptr);
+    let idx_name = &indices[0].name;
+    let name_cstr = std::ffi::CString::new(idx_name.as_str()).unwrap();
+
+    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_stats = result as *mut FfiIndexStats;
+    let stats = unsafe { &*ffi_stats };
+    assert_eq!(stats.num_indexed_rows, 100);
+    assert_eq!(stats.num_unindexed_rows, 0);
+    assert_eq!(stats.index_type, 6); // BTree
+
+    table_index_stats_free(ffi_stats);
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_index_stats_ffi_nonexistent_returns_null() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "idx_stats_none_ffi");
+
+    let name_cstr = std::ffi::CString::new("nonexistent_index").unwrap();
+    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(result.is_null());
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_stats FFI: returns FfiTableStats =====
+
+#[test]
+fn test_table_stats_ffi_returns_stats() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let batch = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(conn_ptr, "table_stats_ffi", vec![batch]);
+
+    table_stats(table_ptr, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(!result.is_null());
+
+    let ffi_stats = result as *mut FfiTableStats;
+    let stats = unsafe { &*ffi_stats };
+    assert_eq!(stats.num_rows, 3);
+    assert!(stats.total_bytes > 0);
+    assert!(stats.fragment_stats.num_fragments > 0);
+
+    table_stats_free(ffi_stats);
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_initial_storage_options / table_latest_storage_options FFI =====
+
+#[test]
+fn test_table_initial_storage_options_ffi_local_returns_null() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "init_opts_ffi");
+
+    table_initial_storage_options(table_ptr, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(result.is_null());
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_latest_storage_options_ffi_local_returns_null() {
+    let _lock = common::ffi_lock();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "latest_opts_ffi");
+
+    table_latest_storage_options(table_ptr, common::ffi_callback);
+    let result = common::ffi_wait_success();
+    assert!(result.is_null());
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}

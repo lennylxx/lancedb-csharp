@@ -214,6 +214,10 @@ await table.ReplaceFieldMetadata("field", metadata);
 bool usesV2 = await table.UsesV2ManifestPaths(); // Check manifest path version
 await table.MigrateManifestPathsV2();            // Migrate to V2 manifest paths
 var stats = await table.Optimize(cleanupOlderThan: TimeSpan.FromDays(7));
+
+// Storage options
+var initial = await table.InitialStorageOptions();  // Options from table creation
+var latest = await table.LatestStorageOptions();    // Current storage options
 ```
 
 ### Querying

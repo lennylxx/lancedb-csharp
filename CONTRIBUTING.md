@@ -38,7 +38,7 @@ Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust
 
 ## Test Projects
 
-- **C# tests** live in `tests/` as an xUnit project (`lancedb.tests.csproj`).
+- **C# tests** live in `tests/` as an xUnit project (`tests.csproj`).
   - Test naming convention: `MethodName_Scenario_ExpectedResult` (e.g., `Connect_ValidUri_ReturnsConnection`).
 - **Rust tests** live in `pinvoke/tests/` as Cargo integration tests.
   - Test the FFI functions directly using raw pointers to verify ownership and memory safety.

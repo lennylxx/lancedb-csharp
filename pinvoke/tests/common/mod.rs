@@ -1,7 +1,7 @@
 //! Shared test helpers for creating database connections and tables.
 #![allow(dead_code)]
 
-use arrow_array::{RecordBatch, RecordBatchIterator};
+use arrow_array::RecordBatch;
 use arrow_schema::SchemaRef;
 use lancedb::connection::Connection;
 use lancedb::table::Table;
@@ -185,10 +185,8 @@ pub fn add_sync(table_ptr: *const Table, batches: Vec<RecordBatch>) {
     unsafe { Arc::increment_strong_count(table_ptr) };
     let table = unsafe { Arc::from_raw(table_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let schema = batches[0].schema();
-    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     rt.block_on(async {
-        table.add(reader).execute().await.unwrap();
+        table.add(batches).execute().await.unwrap();
     });
 }
 
@@ -233,11 +231,9 @@ pub fn create_table_with_data_sync(
     unsafe { Arc::increment_strong_count(connection_ptr) };
     let connection = unsafe { Arc::from_raw(connection_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let schema = batches[0].schema();
-    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     let table = rt.block_on(async {
         connection
-            .create_table(name, reader)
+            .create_table(name, batches)
             .execute()
             .await
             .unwrap()
@@ -275,11 +271,9 @@ pub fn create_table_exist_ok_sync(
     unsafe { Arc::increment_strong_count(connection_ptr) };
     let connection = unsafe { Arc::from_raw(connection_ptr) };
     let rt = tokio::runtime::Runtime::new().unwrap();
-    let schema = batches[0].schema();
-    let reader = RecordBatchIterator::new(batches.into_iter().map(Ok), schema);
     let table = rt.block_on(async {
         connection
-            .create_table(name, reader)
+            .create_table(name, batches)
             .mode(CreateTableMode::exist_ok(|req| req))
             .execute()
             .await

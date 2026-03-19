@@ -1,10 +1,12 @@
 namespace lancedb
 {
     using System.Text.Json.Serialization;
+    using System.Runtime.InteropServices;
 
     /// <summary>
     /// The result of a delete operation.
     /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
     public struct DeleteResult
     {
         /// <summary>
@@ -14,5 +16,11 @@ namespace lancedb
         /// </summary>
         [JsonPropertyName("version")]
         public ulong Version;
+
+        /// <summary>
+        /// The number of rows that were deleted.
+        /// </summary>
+        [JsonPropertyName("num_deleted_rows")]
+        public ulong NumDeletedRows;
     }
 }

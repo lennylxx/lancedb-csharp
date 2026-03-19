@@ -224,7 +224,7 @@ pub extern "C" fn connection_create_table(
     let location_str = ffi::parse_optional_string(location);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
 
-    let (batches, schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
+    let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
             callback_error(completion, e);
@@ -244,13 +244,8 @@ pub extern "C" fn connection_create_table(
     };
 
     crate::spawn(async move {
-        let reader = arrow_array::RecordBatchIterator::new(
-            batches.into_iter().map(Ok),
-            schema_ref,
-        );
-
         let mut builder = connection
-            .create_table(table_name, reader)
+            .create_table(table_name, batches)
             .mode(create_mode);
 
         if let Some(opts) = storage_opts {

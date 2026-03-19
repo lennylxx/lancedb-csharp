@@ -158,6 +158,39 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Delete should return the number of deleted rows.
+        /// </summary>
+        [Fact]
+        public async Task Delete_MatchingRows_ReturnsNumDeletedRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("delete_count");
+            var table = fixture.Table;
+
+            await table.Add(CreateTestBatch(3));
+
+            var result = await table.Delete("id >= 1");
+
+            Assert.Equal(2UL, result.NumDeletedRows);
+            Assert.True(result.Version > 0);
+            long count = await table.CountRows();
+            Assert.Equal(1, count);
+        }
+
+        /// <summary>
+        /// Delete with no matching rows should return 0 deleted rows.
+        /// </summary>
+        [Fact]
+        public async Task Delete_NoMatchingRows_ReturnsZeroDeletedRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("delete_zero");
+
+            var result = await fixture.Table.Delete("id < -999");
+
+            Assert.Equal(0UL, result.NumDeletedRows);
+            Assert.True(result.Version > 0);
+        }
+
+        /// <summary>
         /// Update with no matching rows should not throw.
         /// </summary>
         [Fact]
@@ -1865,6 +1898,32 @@ namespace lancedb.tests
 
             Assert.Equal(stats1.NumRows, stats2.NumRows);
             Assert.Equal(stats1.TotalBytes, stats2.TotalBytes);
+        }
+
+        /// <summary>
+        /// InitialStorageOptions on a local table should return null (no custom storage options).
+        /// </summary>
+        [Fact]
+        public async Task InitialStorageOptions_LocalTable_ReturnsNull()
+        {
+            using var fixture = await TestFixture.CreateWithTable("initial_so");
+
+            var options = await fixture.Table.InitialStorageOptions();
+
+            Assert.Null(options);
+        }
+
+        /// <summary>
+        /// LatestStorageOptions on a local table should return null (no custom storage options).
+        /// </summary>
+        [Fact]
+        public async Task LatestStorageOptions_LocalTable_ReturnsNull()
+        {
+            using var fixture = await TestFixture.CreateWithTable("latest_so");
+
+            var options = await fixture.Table.LatestStorageOptions();
+
+            Assert.Null(options);
         }
     }
 }
