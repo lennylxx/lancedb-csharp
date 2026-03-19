@@ -34,7 +34,7 @@ dotnet add package LanceDB
 Or add it to your `.csproj`:
 
 ```xml
-<PackageReference Include="LanceDB" Version="2.1.0" />
+<PackageReference Include="LanceDB" Version="2.2.0" />
 ```
 
 The package includes pre-built native libraries for **Linux x64** and **Windows x64**. No Rust toolchain required.
