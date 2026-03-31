@@ -46,6 +46,12 @@
       <Pack>true</Pack>
       <PackagePath>runtimes/win-x64/native/</PackagePath>
     </Content>
+    <Content Include="..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.dylib" Condition="Exists('..\pinvoke\target\$(CargoProfile)\liblancedb_ffi.dylib')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Link>liblancedb_ffi.dylib</Link>
+      <Pack>true</Pack>
+      <PackagePath>runtimes/osx-arm64/native/</PackagePath>
+    </Content>
   </ItemGroup>
 
   <!-- NuGet package content -->

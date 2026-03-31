@@ -37,7 +37,7 @@ Or add it to your `.csproj`:
 <PackageReference Include="LanceDB" Version="2.2.0" />
 ```
 
-The package includes pre-built native libraries for **Linux x64** and **Windows x64**. No Rust toolchain required.
+The package includes pre-built native libraries for **Linux x64**, **Windows x64**, and **macOS arm64**. No Rust toolchain required.
 
 ### Supported Platforms
 
@@ -45,6 +45,7 @@ The package includes pre-built native libraries for **Linux x64** and **Windows 
 |----------|---------|--------|
 | Linux x64 | .NET 8.0+ / .NET Standard 2.0 | ✅ |
 | Windows x64 | .NET 8.0+ / .NET Standard 2.0 | ✅ |
+| macOS arm64 | .NET 8.0+ / .NET Standard 2.0 | ✅ |
 
 ## Building from Source
 
