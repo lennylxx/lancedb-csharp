@@ -9,7 +9,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-lancedb = "0.27.0"
+lancedb = { version = "0.27.0", features = ["aws", "azure", "gcs", "oss", "dynamodb", "huggingface"] }
 lance-namespace = "=3.0.0"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 libc = "0.2"

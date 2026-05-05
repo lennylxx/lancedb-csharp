@@ -1342,5 +1342,129 @@ namespace lancedb.tests
                 }
             }
         }
+        /// <summary>
+        /// Connecting to an S3 URI with dummy credentials should reach the S3
+        /// backend and fail with a credential or network error, proving the aws
+        /// feature is compiled in.
+        /// </summary>
+        [Fact]
+        public async Task Connect_S3Uri_CloudBackendRegistered()
+        {
+            var connection = new Connection();
+            var ex = await Assert.ThrowsAsync<LanceDbException>(async () =>
+            {
+                await connection.Connect("s3://nonexistent-bucket/test-db", new ConnectionOptions
+                {
+                    StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "aws_access_key_id", "test" },
+                        { "aws_secret_access_key", "test" },
+                        { "aws_region", "us-east-1" },
+                        { "aws_endpoint", "http://localhost:9999" },
+                        { "allow_http", "true" }
+                    }
+                });
+                await connection.TableNames();
+            });
+            // The error should be an S3-specific error, proving the backend is registered.
+            Assert.Contains("S3", ex.Message);
+        }
+
+        /// <summary>
+        /// Connecting to an Azure Blob Storage URI should reach the Azure
+        /// backend and fail with a credential or network error, proving the
+        /// azure feature is compiled in.
+        /// </summary>
+        [Fact]
+        public async Task Connect_AzureUri_CloudBackendRegistered()
+        {
+            var connection = new Connection();
+            var ex = await Assert.ThrowsAsync<LanceDbException>(async () =>
+            {
+                await connection.Connect("az://nonexistent-container/test-db", new ConnectionOptions
+                {
+                    StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "azure_storage_account_name", "devstoreaccount1" },
+                        { "azure_storage_account_key", "dGVzdA==" },
+                        { "azure_storage_endpoint", "http://localhost:10000/devstoreaccount1" },
+                        { "allow_http", "true" }
+                    }
+                });
+                await connection.TableNames();
+            });
+            // The error should be Azure-specific, proving the backend is registered.
+            Assert.Contains("Azure", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Connecting to a Google Cloud Storage URI should reach the GCS
+        /// backend and fail with a credential or network error, proving the
+        /// gcs feature is compiled in.
+        /// </summary>
+        [Fact]
+        public async Task Connect_GcsUri_CloudBackendRegistered()
+        {
+            var connection = new Connection();
+            var ex = await Assert.ThrowsAsync<LanceDbException>(async () =>
+            {
+                await connection.Connect("gs://nonexistent-bucket/test-db", new ConnectionOptions
+                {
+                    StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "google_service_account_key", "{}" },
+                        { "allow_http", "true" }
+                    }
+                });
+                await connection.TableNames();
+            });
+            // The error should be GCS-specific, proving the backend is registered.
+            Assert.Contains("GCS", ex.Message);
+        }
+
+        /// <summary>
+        /// Connecting to an Alibaba Cloud OSS URI should reach the OSS backend
+        /// and fail with an OSS-specific error, proving the oss feature is
+        /// compiled in.
+        /// </summary>
+        [Fact]
+        public async Task Connect_OssUri_CloudBackendRegistered()
+        {
+            var connection = new Connection();
+            var ex = await Assert.ThrowsAsync<LanceDbException>(async () =>
+            {
+                await connection.Connect("oss://nonexistent-bucket/test-db", new ConnectionOptions
+                {
+                    StorageOptions = new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        { "access_key_id", "test" },
+                        { "access_key_secret", "test" },
+                        { "endpoint", "http://localhost:9999" },
+                        { "allow_http", "true" }
+                    }
+                });
+                await connection.TableNames();
+            });
+            // The error should be OSS-specific, proving the backend is registered.
+            Assert.Contains("OSS", ex.Message);
+        }
+
+        /// <summary>
+        /// Connecting to a Hugging Face Hub URI should reach the huggingface
+        /// backend and fail with a Huggingface-specific URL parsing error,
+        /// proving the huggingface feature is compiled in.
+        /// </summary>
+        [Fact]
+        public async Task Connect_HuggingFaceUri_CloudBackendRegistered()
+        {
+            var connection = new Connection();
+            var ex = await Assert.ThrowsAsync<LanceDbException>(async () =>
+            {
+                await connection.Connect("hf://nonexistent-org/nonexistent-dataset", new ConnectionOptions());
+                await connection.TableNames();
+            });
+            // The error should be Huggingface-specific, proving the backend is registered.
+            Assert.Contains("Huggingface", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }
