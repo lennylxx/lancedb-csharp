@@ -7,6 +7,7 @@ namespace lancedb.tests
     using Apache.Arrow;
     using Apache.Arrow.Types;
     using Xunit;
+    using static TestHelpers;
 
     public class HybridQueryTests
     {
@@ -15,7 +16,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_ReturnsFTSQuery()
         {
-            using var fixture = await CreateHybridFixture("fts_type");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_type");
             var ftsQuery = fixture.Table.Query().NearestToText("apple");
             Assert.IsType<FTSQuery>(ftsQuery);
         }
@@ -23,7 +24,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_ToArrow_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("fts_exec");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_exec");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .ToArrow();
@@ -33,7 +34,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_WithLimit_RespectsLimit()
         {
-            using var fixture = await CreateHybridFixture("fts_limit");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_limit");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .Limit(1)
@@ -44,7 +45,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_NearestTo_ReturnsHybridQuery()
         {
-            using var fixture = await CreateHybridFixture("fts_to_hybrid");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_to_hybrid");
             var hybridQuery = fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
@@ -56,7 +57,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_Rerank_AppliesReranker()
         {
-            using var fixture = await CreateHybridFixture("fts_rerank");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_rerank");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .Rerank(new FtsTestReranker())
@@ -69,7 +70,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_Rerank_ToBatches_AppliesReranker()
         {
-            using var fixture = await CreateHybridFixture("fts_rerank_batches");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_rerank_batches");
             using var reader = await fixture.Table.Query()
                 .NearestToText("apple")
                 .Rerank(new FtsTestReranker())
@@ -87,7 +88,7 @@ namespace lancedb.tests
         [Fact]
         public async Task FTSQuery_WithoutRerank_NoRelevanceScore()
         {
-            using var fixture = await CreateHybridFixture("fts_no_rerank");
+            using var fixture = await TestFixture.CreateHybridFixture("fts_no_rerank");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .ToArrow();
@@ -101,7 +102,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_Rerank_AppliesReranker()
         {
-            using var fixture = await CreateHybridFixture("vec_rerank");
+            using var fixture = await TestFixture.CreateHybridFixture("vec_rerank");
             var results = await fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
                 .Rerank(new VectorTestReranker(), "apple")
@@ -114,7 +115,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_Rerank_ToBatches_AppliesReranker()
         {
-            using var fixture = await CreateHybridFixture("vec_rerank_batches");
+            using var fixture = await TestFixture.CreateHybridFixture("vec_rerank_batches");
             using var reader = await fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
                 .Rerank(new VectorTestReranker(), "apple")
@@ -132,7 +133,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_Rerank_RequiresQueryString()
         {
-            using var fixture = await CreateHybridFixture("vec_rerank_no_qs");
+            using var fixture = await TestFixture.CreateHybridFixture("vec_rerank_no_qs");
             Assert.Throws<ArgumentException>(() =>
                 fixture.Table.Query()
                     .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -166,7 +167,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_FromFTSQuery_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_from_fts");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_from_fts");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -177,7 +178,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_FromVectorQuery_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_from_vec");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_from_vec");
             var results = await fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
                 .NearestToText("apple")
@@ -188,7 +189,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_FromTableEntry_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_table");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_table");
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
                 .ToArrow();
@@ -198,7 +199,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_DefaultReranker_IsRRF()
         {
-            using var fixture = await CreateHybridFixture("hybrid_default_rrf");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_default_rrf");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -214,7 +215,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithRowId_IncludesRowId()
         {
-            using var fixture = await CreateHybridFixture("hybrid_with_rowid");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_with_rowid");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -228,7 +229,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithRRFReranker_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_rrf");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_rrf");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -241,7 +242,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithLinearCombination_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_linear");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_linear");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -277,7 +278,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_ReturnScoreRelevance_StripsDistanceAndScore()
         {
-            using var fixture = await CreateHybridFixture("hybrid_retscore_rel");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_retscore_rel");
 
             // RRF default (returnScore="relevance") — should NOT have _distance or _score
             var results = await fixture.Table.Query()
@@ -294,7 +295,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_ReturnScoreAll_KeepsDistanceAndScore()
         {
-            using var fixture = await CreateHybridFixture("hybrid_retscore_all");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_retscore_all");
 
             // RRF with returnScore="all" — should have _distance AND _score
             var results = await fixture.Table.Query()
@@ -311,7 +312,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithLimit_RespectsLimit()
         {
-            using var fixture = await CreateHybridFixture("hybrid_limit");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_limit");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -343,7 +344,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_LimitPropagatedToSubQueries_MatchesPython()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_lim_prop");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_lim_prop");
 
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
@@ -365,7 +366,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_OffsetThenLimit_ReturnsCorrectCount()
         {
-            using var fixture = await CreateHybridFixture("hybrid_off_lim");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_off_lim");
             var allResults = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -388,7 +389,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithWhere_FiltersResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_where");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_where");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -406,7 +407,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_WithSelect_ProjectsColumns()
         {
-            using var fixture = await CreateHybridFixture("hybrid_select");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_select");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -443,7 +444,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_SelectDict_PassesExpressionsToSubQueries()
         {
-            using var fixture = await CreateHybridFixtureWithPrice("hybrid_sel_expr");
+            using var fixture = await TestFixture.CreateHybridFixtureWithPrice("hybrid_sel_expr");
             var results = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -478,7 +479,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_ToList_ReturnsResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_tolist");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_tolist");
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
                 .ToList();
@@ -504,7 +505,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_DistanceRange_FiltersResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_distrange");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_distrange");
             // Without distance range: all 3 rows
             var allResults = await fixture.Table.Query()
                 .NearestToText("apple")
@@ -535,7 +536,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_ExplainPlan_ReturnsBothPlans()
         {
-            using var fixture = await CreateHybridFixture("hybrid_explain");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_explain");
             var plan = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -558,7 +559,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_AnalyzePlan_ReturnsBothPlans()
         {
-            using var fixture = await CreateHybridFixture("hybrid_analyze");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_analyze");
             var plan = await fixture.Table.Query()
                 .NearestToText("apple")
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -582,7 +583,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_ToBatches_ReturnsStreamingResults()
         {
-            using var fixture = await CreateHybridFixture("hybrid_batches");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_batches");
             var batches = new System.Collections.Generic.List<RecordBatch>();
             using var reader = await fixture.Table.Query()
                 .NearestToText("apple")
@@ -636,7 +637,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_EmptyFts_LinearCombination_MatchesPython()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_lc");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_empty_fts_lc");
             var reranker = new LinearCombinationReranker(weight: 0.7f, fill: 1.0f);
             var results = await fixture.Table
                 .HybridSearch("nonexistent_xyz", new double[] { 1.0, 0.0 })
@@ -682,7 +683,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_EmptyFts_LinearCombination_ReturnScoreAll_HasNanScore()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_lc_all");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_empty_fts_lc_all");
             var reranker = new LinearCombinationReranker(weight: 0.7f, fill: 1.0f,
                 returnScore: "all");
             var results = await fixture.Table
@@ -726,7 +727,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_EmptyFts_RRF_StillWorks()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_empty_fts_rrf");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_empty_fts_rrf");
             var reranker = new RRFReranker();
             var results = await fixture.Table
                 .HybridSearch("nonexistent_xyz", new double[] { 1.0, 0.0 })
@@ -785,7 +786,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_LinearCombination_NormalizesScoresBeforeReranking()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_norm");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_norm");
             var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0 })
@@ -834,7 +835,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_LinearCombination_NormalizeRank_MatchesPython()
         {
-            using var fixture = await CreateNormalizationFixture("hybrid_rank_norm");
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_rank_norm");
             var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0 })
@@ -865,7 +866,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_BadReranker_ThrowsInvalidOperation()
         {
-            using var fixture = await CreateHybridFixture("hybrid_bad_reranker");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_bad_reranker");
             var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
             {
                 await fixture.Table
@@ -882,7 +883,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_RRFReranker_PassesValidation()
         {
-            using var fixture = await CreateHybridFixture("hybrid_rrf_validation");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_rrf_validation");
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
                 .Rerank(new RRFReranker())
@@ -898,7 +899,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_LinearCombinationReranker_PassesValidation()
         {
-            using var fixture = await CreateHybridFixture("hybrid_lc_validation");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_lc_validation");
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
                 .Rerank(new LinearCombinationReranker())
@@ -914,7 +915,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridQuery_MRRReranker_PassesValidation()
         {
-            using var fixture = await CreateHybridFixture("hybrid_mrr_validation");
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_mrr_validation");
             var results = await fixture.Table
                 .HybridSearch("apple", new double[] { 1.0, 0.0, 0.0 })
                 .Rerank(new MRRReranker())
@@ -924,176 +925,6 @@ namespace lancedb.tests
             Assert.True(results.Schema.GetFieldIndex("_relevance_score") >= 0);
         }
 
-        // ----- Fixture -----
-
-        /// <summary>
-        /// Creates a fixture with 5 items designed to test score normalization.
-        /// Vectors produce L2 distances in range [0, 2], FTS scores are all identical.
-        /// </summary>
-        private static async Task<TestFixture> CreateNormalizationFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-
-            var idBuilder = new Int32Array.Builder();
-            var contentBuilder = new StringArray.Builder();
-
-            // id=1: matches FTS + closest vector
-            // id=2: no FTS match + farthest vector
-            // id=3: matches FTS + mid vector
-            // id=4: no FTS match + close vector
-            // id=5: matches FTS + far vector
-            string[] texts = new[]
-            {
-                "apple banana fruit",
-                "cherry date sweet",
-                "apple cherry tart",
-                "banana fig jam",
-                "apple pie dessert",
-            };
-            float[][] vectors = new[]
-            {
-                new float[] { 1.0f, 0.0f },   // dist=0.0 from [1,0]
-                new float[] { 0.0f, 1.0f },   // dist=2.0
-                new float[] { 0.5f, 0.5f },   // dist=0.5
-                new float[] { 0.9f, 0.1f },   // dist=0.02
-                new float[] { 0.0f, 0.9f },   // dist=1.81
-            };
-
-            var valueField = new Field("item", FloatType.Default, nullable: false);
-            var vectorBuilder = new FixedSizeListArray.Builder(valueField, 2);
-            var valueBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                idBuilder.Append(i + 1);
-                contentBuilder.Append(texts[i]);
-                vectorBuilder.Append();
-                foreach (var v in vectors[i])
-                {
-                    valueBuilder.Append(v);
-                }
-            }
-
-            var vectorType = new FixedSizeListType(valueField, 2);
-            var schema = new Schema.Builder()
-                .Field(new Field("id", Int32Type.Default, nullable: false))
-                .Field(new Field("content", StringType.Default, nullable: false))
-                .Field(new Field("vector", vectorType, nullable: false))
-                .Build();
-
-            var batch = new RecordBatch(schema,
-                new IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), vectorBuilder.Build() },
-                texts.Length);
-            var table = await connection.CreateTable(tableName, batch);
-            await table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            return new TestFixture(connection, table, tmpDir);
-        }
-
-        private static async Task<TestFixture> CreateHybridFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-
-            var idBuilder = new Int32Array.Builder();
-            var contentBuilder = new StringArray.Builder();
-
-            string[] texts = new[] { "apple banana fruit", "cherry date sweet", "elderberry fig tart" };
-            float[][] vectors = new[]
-            {
-                new float[] { 1.0f, 0.0f, 0.0f },
-                new float[] { 0.0f, 1.0f, 0.0f },
-                new float[] { 0.0f, 0.0f, 1.0f },
-            };
-
-            var valueField = new Field("item", FloatType.Default, nullable: false);
-            var vectorBuilder = new FixedSizeListArray.Builder(valueField, 3);
-            var valueBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                idBuilder.Append(i);
-                contentBuilder.Append(texts[i]);
-                vectorBuilder.Append();
-                foreach (var v in vectors[i])
-                {
-                    valueBuilder.Append(v);
-                }
-            }
-
-            var vectorType = new FixedSizeListType(valueField, 3);
-            var schema = new Schema.Builder()
-                .Field(new Field("id", Int32Type.Default, nullable: false))
-                .Field(new Field("content", StringType.Default, nullable: false))
-                .Field(new Field("vector", vectorType, nullable: false))
-                .Build();
-
-            var batch = new RecordBatch(schema,
-                new IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), vectorBuilder.Build() },
-                texts.Length);
-            var table = await connection.CreateTable(tableName, batch);
-
-            // Create FTS index on content column
-            await table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            return new TestFixture(connection, table, tmpDir);
-        }
-
-        private static async Task<TestFixture> CreateHybridFixtureWithPrice(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-
-            var idBuilder = new Int32Array.Builder();
-            var contentBuilder = new StringArray.Builder();
-            var priceBuilder = new Int32Array.Builder();
-
-            string[] texts = new[] { "apple banana fruit", "cherry date sweet", "elderberry fig tart" };
-            int[] prices = new[] { 10, 20, 30 };
-            float[][] vectors = new[]
-            {
-                new float[] { 1.0f, 0.0f, 0.0f },
-                new float[] { 0.0f, 1.0f, 0.0f },
-                new float[] { 0.0f, 0.0f, 1.0f },
-            };
-
-            var valueField = new Field("item", FloatType.Default, nullable: false);
-            var vectorBuilder = new FixedSizeListArray.Builder(valueField, 3);
-            var valueBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                idBuilder.Append(i);
-                contentBuilder.Append(texts[i]);
-                priceBuilder.Append(prices[i]);
-                vectorBuilder.Append();
-                foreach (var v in vectors[i])
-                {
-                    valueBuilder.Append(v);
-                }
-            }
-
-            var vectorType = new FixedSizeListType(valueField, 3);
-            var schema = new Schema.Builder()
-                .Field(new Field("id", Int32Type.Default, nullable: false))
-                .Field(new Field("content", StringType.Default, nullable: false))
-                .Field(new Field("price", Int32Type.Default, nullable: false))
-                .Field(new Field("vector", vectorType, nullable: false))
-                .Build();
-
-            var batch = new RecordBatch(schema,
-                new IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), priceBuilder.Build(), vectorBuilder.Build() },
-                texts.Length);
-            var table = await connection.CreateTable(tableName, batch);
-
-            await table.CreateIndex(new[] { "content" }, new FtsIndex());
-
-            return new TestFixture(connection, table, tmpDir);
-        }
     }
 
     /// <summary>
@@ -1147,23 +978,6 @@ namespace lancedb.tests
             throw new NotSupportedException();
         }
 
-        private static RecordBatch AddRelevanceScore(RecordBatch batch)
-        {
-            var scoreBuilder = new FloatArray.Builder();
-            for (int i = 0; i < batch.Length; i++)
-            {
-                scoreBuilder.Append(1.0f / (i + 1));
-            }
-            var fields = new List<Field>(batch.Schema.FieldsList);
-            fields.Add(new Field("_relevance_score", FloatType.Default, false));
-            var arrays = new List<IArrowArray>();
-            for (int i = 0; i < batch.ColumnCount; i++)
-            {
-                arrays.Add(batch.Column(i));
-            }
-            arrays.Add(scoreBuilder.Build());
-            return new RecordBatch(new Schema(fields, null), arrays, batch.Length);
-        }
     }
 
     /// <summary>
@@ -1188,22 +1002,5 @@ namespace lancedb.tests
             return Task.FromResult(AddRelevanceScore(vectorResults));
         }
 
-        private static RecordBatch AddRelevanceScore(RecordBatch batch)
-        {
-            var scoreBuilder = new FloatArray.Builder();
-            for (int i = 0; i < batch.Length; i++)
-            {
-                scoreBuilder.Append(1.0f / (i + 1));
-            }
-            var fields = new List<Field>(batch.Schema.FieldsList);
-            fields.Add(new Field("_relevance_score", FloatType.Default, false));
-            var arrays = new List<IArrowArray>();
-            for (int i = 0; i < batch.ColumnCount; i++)
-            {
-                arrays.Add(batch.Column(i));
-            }
-            arrays.Add(scoreBuilder.Build());
-            return new RecordBatch(new Schema(fields, null), arrays, batch.Length);
-        }
     }
 }

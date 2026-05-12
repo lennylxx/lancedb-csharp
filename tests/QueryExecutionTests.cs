@@ -1,5 +1,7 @@
 namespace lancedb.tests
 {
+    using static TestHelpers;
+
     /// <summary>
     /// Tests for Query and VectorQuery execution.
     /// </summary>
@@ -62,7 +64,7 @@ namespace lancedb.tests
         [Fact]
         public async Task Select_Columns_ReturnsOnlySpecified()
         {
-            using var fixture = await CreateTwoColumnFixture("select_cols");
+            using var fixture = await TestFixture.CreateTwoColumnFixture("select_cols");
 
             using var query = fixture.Table.Query().Select(new[] { "id" });
             var batch = await query.ToArrow();
@@ -78,7 +80,7 @@ namespace lancedb.tests
         [Fact]
         public async Task Select_WithTransform_ReturnsComputedColumns()
         {
-            using var fixture = await CreateTwoColumnFixture("select_transform");
+            using var fixture = await TestFixture.CreateTwoColumnFixture("select_transform");
             await fixture.Table.Add(CreateTwoColumnBatch(3));
 
             using var query = fixture.Table.Query()
@@ -192,7 +194,7 @@ namespace lancedb.tests
         [Fact]
         public async Task ToList_MultipleTypes_ConvertsCorrectly()
         {
-            using var fixture = await CreateTwoColumnFixture("types_test");
+            using var fixture = await TestFixture.CreateTwoColumnFixture("types_test");
 
             using var query = fixture.Table.Query();
             var rows = await query.ToList();
@@ -212,7 +214,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_WithIndex_ReturnsMatchingRows()
         {
-            using var fixture = await CreateTextFixture("ntt_basic");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_basic");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -229,7 +231,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_WithChaining_Works()
         {
-            using var fixture = await CreateTextFixture("ntt_chain");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_chain");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -249,7 +251,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_NoMatch_ReturnsEmpty()
         {
-            using var fixture = await CreateTextFixture("ntt_empty");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_empty");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -265,7 +267,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_FastSearch_IsChainable()
         {
-            using var fixture = await CreateTextFixture("ntt_fast");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_fast");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -283,7 +285,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_Dispose_IsSafe()
         {
-            using var fixture = await CreateTextFixture("ntt_dispose");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_dispose");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -301,7 +303,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_DoesNotConsumeOriginalQuery()
         {
-            using var fixture = await CreateTextFixture("ntt_noconsume");
+            using var fixture = await TestFixture.CreateTextFixture("ntt_noconsume");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -321,7 +323,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_NearestTo_ReturnsHybridResults()
         {
-            using var fixture = await CreateVectorTextFixture("hybrid_exec");
+            using var fixture = await TestFixture.CreateVectorTextFixture("hybrid_exec");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -340,7 +342,7 @@ namespace lancedb.tests
         [Fact]
         public async Task HybridSearch_VectorFirst_ReturnsResults()
         {
-            using var fixture = await CreateVectorTextFixture("hybrid_vecfirst");
+            using var fixture = await TestFixture.CreateVectorTextFixture("hybrid_vecfirst");
 
             await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex());
 
@@ -358,7 +360,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_WithColumns_SearchesSpecifiedColumns()
         {
-            using var fixture = await CreateMultiTextFixture("ntt_columns");
+            using var fixture = await TestFixture.CreateMultiTextFixture("ntt_columns");
 
             await fixture.Table.CreateIndex(new[] { "title" }, new FtsIndex());
             await fixture.Table.CreateIndex(new[] { "body" }, new FtsIndex());
@@ -377,7 +379,7 @@ namespace lancedb.tests
         [Fact]
         public async Task NearestToText_WithColumnsBody_SearchesSpecifiedColumns()
         {
-            using var fixture = await CreateMultiTextFixture("fts_columns");
+            using var fixture = await TestFixture.CreateMultiTextFixture("fts_columns");
 
             await fixture.Table.CreateIndex(new[] { "title" }, new FtsIndex());
             await fixture.Table.CreateIndex(new[] { "body" }, new FtsIndex());
@@ -388,176 +390,6 @@ namespace lancedb.tests
 
             Assert.Single(rows);
             Assert.Equal("apple sauce recipe", rows[0]["body"]);
-        }
-
-        // -----------------------------------------------------------------------
-        // Helpers
-        // -----------------------------------------------------------------------
-
-        private static Apache.Arrow.RecordBatch CreateTextBatch(string[] texts)
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var contentBuilder = new Apache.Arrow.StringArray.Builder();
-            for (int i = 0; i < texts.Length; i++)
-            {
-                idBuilder.Append(i);
-                contentBuilder.Append(texts[i]);
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("content", Apache.Arrow.Types.StringType.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), contentBuilder.Build() }, texts.Length);
-        }
-
-        private static async Task<TestFixture> CreateTextFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-            var batch = CreateTextBatch(new[]
-            {
-                "apple banana",
-                "cherry date",
-                "elderberry fig"
-            });
-            var table = await connection.CreateTable(tableName, batch);
-            return new TestFixture(connection, table, tmpDir);
-        }
-
-        private static async Task<TestFixture> CreateMultiTextFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var titleBuilder = new Apache.Arrow.StringArray.Builder();
-            var bodyBuilder = new Apache.Arrow.StringArray.Builder();
-
-            idBuilder.Append(0); titleBuilder.Append("apple pie"); bodyBuilder.Append("cherry tart recipe");
-            idBuilder.Append(1); titleBuilder.Append("banana bread"); bodyBuilder.Append("apple sauce recipe");
-            idBuilder.Append(2); titleBuilder.Append("cherry cake"); bodyBuilder.Append("fig jam recipe");
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("title", Apache.Arrow.Types.StringType.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("body", Apache.Arrow.Types.StringType.Default, nullable: false))
-                .Build();
-
-            var batch = new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), titleBuilder.Build(), bodyBuilder.Build() }, 3);
-            var table = await connection.CreateTable(tableName, batch);
-            return new TestFixture(connection, table, tmpDir);
-        }
-
-        private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows, int startId = 0)
-        {
-            var idArray = new Apache.Arrow.Int32Array.Builder();
-            for (int i = startId; i < startId + numRows; i++)
-            {
-                idArray.Append(i);
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
-        }
-
-        private static Apache.Arrow.RecordBatch CreateTwoColumnBatch(int numRows)
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var nameBuilder = new Apache.Arrow.StringArray.Builder();
-            for (int i = 0; i < numRows; i++)
-            {
-                idBuilder.Append(i);
-                nameBuilder.Append($"name_{i}");
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("name", Apache.Arrow.Types.StringType.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), nameBuilder.Build() }, numRows);
-        }
-
-        private static async Task<TestFixture> CreateTwoColumnFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-            var batch = CreateTwoColumnBatch(1);
-            var table = await connection.CreateTable(tableName, batch);
-            return new TestFixture(connection, table, tmpDir);
-        }
-
-        /// <summary>
-        /// A test fixture that creates a table with id + name columns.
-        /// </summary>
-        private class TwoColumnTestFixture : TestFixture
-        {
-            public TwoColumnTestFixture(Connection connection, Table table, string tmpDir)
-                : base(connection, table, tmpDir)
-            {
-            }
-        }
-
-        private static Apache.Arrow.RecordBatch CreateVectorTextBatch()
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var contentBuilder = new Apache.Arrow.StringArray.Builder();
-
-            string[] texts = new[] { "apple banana", "cherry date", "elderberry fig" };
-            float[][] vectors = new[]
-            {
-                new float[] { 1.0f, 0.0f, 0.0f },
-                new float[] { 0.0f, 1.0f, 0.0f },
-                new float[] { 0.0f, 0.0f, 1.0f },
-            };
-
-            var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
-            var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, 3);
-            var valueBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                idBuilder.Append(i);
-                contentBuilder.Append(texts[i]);
-                vectorBuilder.Append();
-                foreach (var v in vectors[i])
-                {
-                    valueBuilder.Append(v);
-                }
-            }
-
-            var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, 3);
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("content", Apache.Arrow.Types.StringType.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), contentBuilder.Build(), vectorBuilder.Build() },
-                texts.Length);
-        }
-
-        private static async Task<TestFixture> CreateVectorTextFixture(string tableName)
-        {
-            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
-            var connection = new Connection();
-            await connection.Connect(tmpDir);
-            var batch = CreateVectorTextBatch();
-            var table = await connection.CreateTable(tableName, batch);
-            return new TestFixture(connection, table, tmpDir);
         }
 
         // ----- Query Missing Features Tests -----
@@ -682,7 +514,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_ExplainPlan_ReturnsString()
         {
-            using var fixture = await CreateVectorTextFixture("vq_explain");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_explain");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
@@ -698,7 +530,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_AnalyzePlan_ReturnsString()
         {
-            using var fixture = await CreateVectorTextFixture("vq_analyze");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_analyze");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
@@ -714,7 +546,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_OutputSchema_IncludesDistanceColumn()
         {
-            using var fixture = await CreateVectorTextFixture("vq_out_schema");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_out_schema");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
@@ -731,7 +563,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_MinimumNprobes_ChainsAndExecutes()
         {
-            using var fixture = await CreateVectorTextFixture("vq_min_nprobes");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_min_nprobes");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -748,7 +580,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_MaximumNprobes_ChainsAndExecutes()
         {
-            using var fixture = await CreateVectorTextFixture("vq_max_nprobes");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_max_nprobes");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -765,7 +597,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_MaximumNprobes_ZeroMeansUnlimited()
         {
-            using var fixture = await CreateVectorTextFixture("vq_max_np_zero");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_max_np_zero");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -782,7 +614,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_AddQueryVector_ExecutesSuccessfully()
         {
-            using var fixture = await CreateVectorTextFixture("vq_add_vec");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_add_vec");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -799,7 +631,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_ToArrow_WithTimeoutAndBatchLength()
         {
-            using var fixture = await CreateVectorTextFixture("vq_timeout_batch");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_timeout_batch");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });
@@ -878,7 +710,7 @@ namespace lancedb.tests
         [Fact]
         public async Task VectorQuery_InvalidSelectExpression_ThrowsLanceDbExceptionOnExecute()
         {
-            using var fixture = await CreateVectorTextFixture("vq_bad_select_exec");
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_bad_select_exec");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 })
@@ -945,7 +777,7 @@ namespace lancedb.tests
         [Fact]
         public async Task ToBatches_VectorQuery_StreamsResults()
         {
-            using var fixture = await CreateVectorTextFixture("tobatches_vq");
+            using var fixture = await TestFixture.CreateVectorTextFixture("tobatches_vq");
 
             using var query = fixture.Table.Query()
                 .NearestTo(new double[] { 1.0, 0.0, 0.0 });

@@ -1,5 +1,7 @@
 namespace lancedb.tests
 {
+    using static TestHelpers;
+
     /// <summary>
     /// Tests for the Connection class.
     /// Requires the Rust native library to be built first.
@@ -320,21 +322,6 @@ namespace lancedb.tests
                     Directory.Delete(tmpDir, true);
                 }
             }
-        }
-
-        private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
-        {
-            var idArray = new Apache.Arrow.Int32Array.Builder();
-            for (int i = 0; i < numRows; i++)
-            {
-                idArray.Append(i);
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
         }
 
         /// <summary>

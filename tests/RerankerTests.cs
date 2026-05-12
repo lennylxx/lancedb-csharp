@@ -5,78 +5,10 @@ namespace lancedb.tests
     using Apache.Arrow;
     using Apache.Arrow.Types;
     using Xunit;
+    using static TestHelpers;
 
     public class RerankerTests
     {
-        private static Schema CreateSchema(params string[] extraColumns)
-        {
-            var fields = new System.Collections.Generic.List<Field>();
-            foreach (var col in extraColumns)
-            {
-                if (col == "_distance")
-                {
-                    fields.Add(new Field(col, FloatType.Default, true));
-                }
-                else if (col == "_score")
-                {
-                    fields.Add(new Field(col, FloatType.Default, true));
-                }
-                else if (col == "_rowid")
-                {
-                    fields.Add(new Field(col, UInt64Type.Default, false));
-                }
-                else
-                {
-                    fields.Add(new Field(col, StringType.Default, false));
-                }
-            }
-            return new Schema(fields, null);
-        }
-
-        private static RecordBatch CreateVectorResults(string[] names, ulong[] rowIds, float[] distances)
-        {
-            var schema = CreateSchema("name", "_rowid", "_distance");
-            return new RecordBatch(schema, new IArrowArray[]
-            {
-                new StringArray.Builder().AppendRange(names).Build(),
-                new UInt64Array.Builder().AppendRange(rowIds).Build(),
-                new FloatArray.Builder().AppendRange(distances).Build(),
-            }, names.Length);
-        }
-
-        private static RecordBatch CreateFtsResults(string[] names, ulong[] rowIds, float[] scores)
-        {
-            var schema = CreateSchema("name", "_rowid", "_score");
-            return new RecordBatch(schema, new IArrowArray[]
-            {
-                new StringArray.Builder().AppendRange(names).Build(),
-                new UInt64Array.Builder().AppendRange(rowIds).Build(),
-                new FloatArray.Builder().AppendRange(scores).Build(),
-            }, names.Length);
-        }
-
-        private static RecordBatch CreateEmptyVectorResults()
-        {
-            var schema = CreateSchema("name", "_rowid", "_distance");
-            return new RecordBatch(schema, new IArrowArray[]
-            {
-                new StringArray.Builder().Build(),
-                new UInt64Array.Builder().Build(),
-                new FloatArray.Builder().Build(),
-            }, 0);
-        }
-
-        private static RecordBatch CreateEmptyFtsResults()
-        {
-            var schema = CreateSchema("name", "_rowid", "_score");
-            return new RecordBatch(schema, new IArrowArray[]
-            {
-                new StringArray.Builder().Build(),
-                new UInt64Array.Builder().Build(),
-                new FloatArray.Builder().Build(),
-            }, 0);
-        }
-
         // ===== RRF Reranker Tests =====
 
         [Fact]

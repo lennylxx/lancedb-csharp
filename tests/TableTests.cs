@@ -1,5 +1,7 @@
 namespace lancedb.tests
 {
+    using static TestHelpers;
+
     /// <summary>
     /// Tests for the Table class.
     /// These tests verify that Rust Arc ownership is handled correctly —
@@ -459,21 +461,6 @@ namespace lancedb.tests
             Assert.Equal("count", field.Metadata["unit"]);
         }
 
-        private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows)
-        {
-            var idArray = new Apache.Arrow.Int32Array.Builder();
-            for (int i = 0; i < numRows; i++)
-            {
-                idArray.Append(i);
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
-        }
-
         /// <summary>
         /// Version should return a positive value for a new table.
         /// </summary>
@@ -810,21 +797,6 @@ namespace lancedb.tests
             }
         }
 
-        private static Apache.Arrow.RecordBatch CreateTestBatch(int numRows, int startId = 0)
-        {
-            var idArray = new Apache.Arrow.Int32Array.Builder();
-            for (int i = startId; i < startId + numRows; i++)
-            {
-                idArray.Append(i);
-            }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema, new Apache.Arrow.IArrowArray[] { idArray.Build() }, numRows);
-        }
-
         /// <summary>
         /// CreateTag and ListTags should create a tag and return it.
         /// </summary>
@@ -924,24 +896,6 @@ namespace lancedb.tests
                     Directory.Delete(tmpDir, true);
                 }
             }
-        }
-
-        // Helper to create a batch with id and value columns for MergeInsert tests
-        private static Apache.Arrow.RecordBatch CreateIdValueBatch(int[] ids, string[] values)
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var valueBuilder = new Apache.Arrow.StringArray.Builder();
-            foreach (var id in ids) { idBuilder.Append(id); }
-            foreach (var val in values) { valueBuilder.Append(val); }
-
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("value", Apache.Arrow.Types.StringType.Default, nullable: true))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), valueBuilder.Build() },
-                ids.Length);
         }
 
         [Fact]
@@ -1298,35 +1252,6 @@ namespace lancedb.tests
         }
 
         // ----- Bad Vector Handling Tests -----
-
-        private static Apache.Arrow.RecordBatch CreateVectorBatch(float[][] vectors)
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
-            int dim = vectors[0].Length;
-            var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, dim);
-            var valueBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
-
-            for (int i = 0; i < vectors.Length; i++)
-            {
-                idBuilder.Append(i);
-                vectorBuilder.Append();
-                foreach (var v in vectors[i])
-                {
-                    valueBuilder.Append(v);
-                }
-            }
-
-            var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, dim);
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), vectorBuilder.Build() },
-                vectors.Length);
-        }
 
         /// <summary>
         /// Add with OnBadVectors=Error should throw when vectors contain NaN.
@@ -1735,34 +1660,6 @@ namespace lancedb.tests
                 .Execute(newData);
 
             Assert.Equal(5, await fixture.Table.CountRows());
-        }
-
-        private static Apache.Arrow.RecordBatch CreateVectorBatch(int numRows, int dimension = 8)
-        {
-            var idBuilder = new Apache.Arrow.Int32Array.Builder();
-            var valueField = new Apache.Arrow.Field("item", Apache.Arrow.Types.FloatType.Default, nullable: false);
-            var vectorBuilder = new Apache.Arrow.FixedSizeListArray.Builder(valueField, dimension);
-            var floatBuilder = (Apache.Arrow.FloatArray.Builder)vectorBuilder.ValueBuilder;
-            var rng = new Random(42);
-
-            for (int i = 0; i < numRows; i++)
-            {
-                idBuilder.Append(i);
-                vectorBuilder.Append();
-                for (int d = 0; d < dimension; d++)
-                {
-                    floatBuilder.Append((float)rng.NextDouble());
-                }
-            }
-
-            var vectorType = new Apache.Arrow.Types.FixedSizeListType(valueField, dimension);
-            var schema = new Apache.Arrow.Schema.Builder()
-                .Field(new Apache.Arrow.Field("id", Apache.Arrow.Types.Int32Type.Default, nullable: false))
-                .Field(new Apache.Arrow.Field("vector", vectorType, nullable: false))
-                .Build();
-
-            return new Apache.Arrow.RecordBatch(schema,
-                new Apache.Arrow.IArrowArray[] { idBuilder.Build(), vectorBuilder.Build() }, numRows);
         }
 
         /// <summary>
