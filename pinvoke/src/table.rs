@@ -5,7 +5,7 @@ use libc::c_char;
 use sonic_rs::JsonValueTrait;
 use std::ffi::CString;
 
-use crate::ffi::{callback_error, FfiCallback};
+use crate::ffi::{callback_error, FfiCallback, UserData};
 use crate::ffi;
 
 /// C-compatible struct for update results, passed across FFI.
@@ -59,7 +59,9 @@ pub extern "C" fn table_count_rows(
     table_ptr: *const Table,
     filter: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let filter = if filter.is_null() {
         None
@@ -69,9 +71,9 @@ pub extern "C" fn table_count_rows(
     crate::spawn(async move {
         match table.count_rows(filter).await {
             Ok(count) => {
-                completion(count as *const std::ffi::c_void, std::ptr::null());
+                completion(count as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -82,7 +84,9 @@ pub extern "C" fn table_delete(
     table_ptr: *const Table,
     predicate: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let predicate = crate::ffi::to_string(predicate);
     crate::spawn(async move {
@@ -92,9 +96,9 @@ pub extern "C" fn table_delete(
                     version: result.version,
                     num_deleted_rows: result.num_deleted_rows,
                 });
-                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -115,7 +119,9 @@ pub extern "C" fn table_update(
     filter: *const c_char,
     column_sqlexprs_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let filter = if filter.is_null() {
         None
@@ -128,7 +134,7 @@ pub extern "C" fn table_update(
         let column_sqlexprs: Vec<(String, String)> = match sonic_rs::from_str(&column_sqlexprs_str) {
             Ok(c) => c,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -147,9 +153,9 @@ pub extern "C" fn table_update(
                     version: result.version,
                     rows_updated: result.rows_updated,
                 });
-                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -169,7 +175,9 @@ pub extern "C" fn table_update_result_free(ptr: *mut FfiUpdateResult) {
 pub extern "C" fn table_schema(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.schema().await {
@@ -179,12 +187,12 @@ pub extern "C" fn table_schema(
                 ) {
                     Ok(ffi_schema) => {
                         let ptr = Box::into_raw(Box::new(ffi_schema));
-                        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                        completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                     }
-                    Err(e) => callback_error(completion, e),
+                    Err(e) => callback_error(completion, user_data, e),
                 }
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -202,13 +210,15 @@ pub extern "C" fn table_add(
     batch_count: usize,
     mode: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
 
     let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
@@ -226,9 +236,9 @@ pub extern "C" fn table_add(
     crate::spawn(async move {
         match table.add(batches).mode(add_mode).execute().await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -238,14 +248,16 @@ pub extern "C" fn table_add(
 pub extern "C" fn table_version(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.version().await {
             Ok(version) => {
-                completion(version as *const std::ffi::c_void, std::ptr::null());
+                completion(version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -255,18 +267,20 @@ pub extern "C" fn table_version(
 pub extern "C" fn table_uses_v2_manifest_paths(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.as_native() {
             Some(native) => match native.uses_v2_manifest_paths().await {
                 Ok(uses_v2) => {
-                    completion(uses_v2 as usize as *const std::ffi::c_void, std::ptr::null());
+                    completion(uses_v2 as usize as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                 }
-                Err(e) => callback_error(completion, e),
+                Err(e) => callback_error(completion, user_data, e),
             },
             None => callback_error(
-                completion,
+                completion, user_data,
                 lancedb::Error::NotSupported {
                     message: "uses_v2_manifest_paths is only supported for local tables".into(),
                 },
@@ -280,18 +294,20 @@ pub extern "C" fn table_uses_v2_manifest_paths(
 pub extern "C" fn table_migrate_manifest_paths_v2(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.as_native() {
             Some(native) => match native.migrate_manifest_paths_v2().await {
                 Ok(()) => {
-                    completion(1 as *const std::ffi::c_void, std::ptr::null());
+                    completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                 }
-                Err(e) => callback_error(completion, e),
+                Err(e) => callback_error(completion, user_data, e),
             },
             None => callback_error(
-                completion,
+                completion, user_data,
                 lancedb::Error::NotSupported {
                     message: "migrate_manifest_paths_v2 is only supported for local tables".into(),
                 },
@@ -309,7 +325,9 @@ pub extern "C" fn table_replace_field_metadata(
     field_name: *const c_char,
     metadata_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let field_name = ffi::to_string(field_name);
     let metadata: std::collections::HashMap<String, String> =
@@ -317,7 +335,7 @@ pub extern "C" fn table_replace_field_metadata(
             Some(m) => m,
             None => {
                 callback_error(
-                    completion,
+                    completion, user_data,
                     lancedb::Error::InvalidInput {
                         message: "metadata_json must be a valid JSON object".into(),
                     },
@@ -331,7 +349,7 @@ pub extern "C" fn table_replace_field_metadata(
                 let manifest = match native.manifest().await {
                     Ok(m) => m,
                     Err(e) => {
-                        callback_error(completion, e);
+                        callback_error(completion, user_data, e);
                         return;
                     }
                 };
@@ -339,7 +357,7 @@ pub extern "C" fn table_replace_field_metadata(
                     Some(f) => f,
                     None => {
                         callback_error(
-                            completion,
+                            completion, user_data,
                             lancedb::Error::InvalidInput {
                                 message: format!("Field '{}' not found in schema", field_name),
                             },
@@ -353,13 +371,13 @@ pub extern "C" fn table_replace_field_metadata(
                     .await
                 {
                     Ok(()) => {
-                        completion(1 as *const std::ffi::c_void, std::ptr::null());
+                        completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                     }
-                    Err(e) => callback_error(completion, e),
+                    Err(e) => callback_error(completion, user_data, e),
                 }
             }
             None => callback_error(
-                completion,
+                completion, user_data,
                 lancedb::Error::NotSupported {
                     message: "replace_field_metadata is only supported for local tables".into(),
                 },
@@ -374,7 +392,9 @@ pub extern "C" fn table_replace_field_metadata(
 pub extern "C" fn table_list_versions(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.list_versions().await {
@@ -391,9 +411,9 @@ pub extern "C" fn table_list_versions(
                     .collect();
                 let json = sonic_rs::to_string(&json_versions).unwrap_or_default();
                 let c_str = CString::new(json).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -404,14 +424,16 @@ pub extern "C" fn table_checkout(
     table_ptr: *const Table,
     version: u64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.checkout(version).await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -422,15 +444,17 @@ pub extern "C" fn table_checkout_tag(
     table_ptr: *const Table,
     tag: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag = crate::ffi::to_string(tag);
     crate::spawn(async move {
         match table.checkout_tag(&tag).await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -440,14 +464,16 @@ pub extern "C" fn table_checkout_tag(
 pub extern "C" fn table_checkout_latest(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.checkout_latest().await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -457,14 +483,16 @@ pub extern "C" fn table_checkout_latest(
 pub extern "C" fn table_restore(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.restore().await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -475,15 +503,17 @@ pub extern "C" fn table_restore(
 pub extern "C" fn table_uri(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.uri().await {
             Ok(uri) => {
                 let c_str = CString::new(uri).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -506,7 +536,9 @@ pub extern "C" fn table_create_index(
     train: bool,
     wait_timeout_ms: i64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let columns_str = crate::ffi::to_string(columns_json);
     let config_str = if config_json.is_null() {
@@ -524,7 +556,7 @@ pub extern "C" fn table_create_index(
         let columns: Vec<String> = match sonic_rs::from_str(&columns_str) {
             Ok(c) => c,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -532,7 +564,7 @@ pub extern "C" fn table_create_index(
         let config: sonic_rs::Value = match sonic_rs::from_str(&config_str) {
             Ok(c) => c,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -540,7 +572,7 @@ pub extern "C" fn table_create_index(
         let index = match build_index(index_type, &config) {
             Ok(idx) => idx,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -558,9 +590,9 @@ pub extern "C" fn table_create_index(
         }
         match builder.execute().await {
             Ok(_) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -763,7 +795,9 @@ fn build_index(index_type: i32, config: &sonic_rs::Value) -> Result<LanceIndex, 
 pub extern "C" fn table_list_indices(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.list_indices().await {
@@ -780,9 +814,9 @@ pub extern "C" fn table_list_indices(
                     .collect();
                 let json = sonic_rs::to_string(&json_indices).unwrap_or_default();
                 let c_str = CString::new(json).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -794,7 +828,9 @@ pub extern "C" fn table_add_columns(
     table_ptr: *const Table,
     transforms_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let transforms_str = crate::ffi::to_string(transforms_json);
     let pairs: Vec<(String, String)> = sonic_rs::from_str(&transforms_str).unwrap_or_default();
@@ -803,9 +839,9 @@ pub extern "C" fn table_add_columns(
         let transform = NewColumnTransform::SqlExpressions(pairs);
         match table.add_columns(transform, None).await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -816,7 +852,9 @@ pub extern "C" fn table_add_columns_null(
     table_ptr: *const Table,
     schema_ptr: *mut arrow_schema::ffi::FFI_ArrowSchema,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
 
     let schema = match unsafe {
@@ -824,7 +862,7 @@ pub extern "C" fn table_add_columns_null(
     } {
         Ok(s) => s,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
@@ -833,9 +871,9 @@ pub extern "C" fn table_add_columns_null(
         let transform = NewColumnTransform::AllNulls(std::sync::Arc::new(schema));
         match table.add_columns(transform, None).await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -848,7 +886,9 @@ pub extern "C" fn table_alter_columns(
     table_ptr: *const Table,
     alterations_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let json_str = crate::ffi::to_string(alterations_json);
     let raw: Vec<sonic_rs::Value> = sonic_rs::from_str(&json_str).unwrap_or_default();
@@ -871,9 +911,9 @@ pub extern "C" fn table_alter_columns(
     crate::spawn(async move {
         match table.alter_columns(&alterations).await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -885,7 +925,9 @@ pub extern "C" fn table_drop_columns(
     table_ptr: *const Table,
     columns_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let json_str = crate::ffi::to_string(columns_json);
     let columns: Vec<String> = sonic_rs::from_str(&json_str).unwrap_or_default();
@@ -894,9 +936,9 @@ pub extern "C" fn table_drop_columns(
         let col_refs: Vec<&str> = columns.iter().map(|s| s.as_str()).collect();
         match table.drop_columns(&col_refs).await {
             Ok(result) => {
-                completion(result.version as *const std::ffi::c_void, std::ptr::null());
+                completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -912,7 +954,9 @@ pub extern "C" fn table_optimize(
     cleanup_older_than_ms: i64,
     delete_unverified: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
 
     crate::spawn(async move {
@@ -926,7 +970,7 @@ pub extern "C" fn table_optimize(
         {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -948,7 +992,7 @@ pub extern "C" fn table_optimize(
         {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -958,7 +1002,7 @@ pub extern "C" fn table_optimize(
             .optimize(OptimizeAction::Index(Default::default()))
             .await
         {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
 
@@ -975,7 +1019,7 @@ pub extern "C" fn table_optimize(
             })),
         });
         let c_str = CString::new(json.to_string()).unwrap_or_default();
-        completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+        completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
     });
 }
 
@@ -984,7 +1028,9 @@ pub extern "C" fn table_optimize(
 pub extern "C" fn table_tags_list(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.tags().await {
@@ -999,11 +1045,11 @@ pub extern "C" fn table_tags_list(
                     }
                     let json = sonic_rs::to_string(&json_map).unwrap_or_default();
                     let c_str = CString::new(json).unwrap_or_default();
-                    completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                    completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                 }
-                Err(e) => callback_error(completion, e),
+                Err(e) => callback_error(completion, user_data, e),
             },
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1015,16 +1061,18 @@ pub extern "C" fn table_tags_create(
     tag: *const c_char,
     version: u64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
     crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.create(&tag_name, version).await {
-                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => callback_error(completion, e),
+                Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+                Err(e) => callback_error(completion, user_data, e),
             },
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1035,16 +1083,18 @@ pub extern "C" fn table_tags_delete(
     table_ptr: *const Table,
     tag: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
     crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.delete(&tag_name).await {
-                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => callback_error(completion, e),
+                Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+                Err(e) => callback_error(completion, user_data, e),
             },
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1056,16 +1106,18 @@ pub extern "C" fn table_tags_update(
     tag: *const c_char,
     version: u64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
     crate::spawn(async move {
         match table.tags().await {
             Ok(mut tags) => match tags.update(&tag_name, version).await {
-                Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-                Err(e) => callback_error(completion, e),
+                Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+                Err(e) => callback_error(completion, user_data, e),
             },
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1076,18 +1128,20 @@ pub extern "C" fn table_tags_get_version(
     table_ptr: *const Table,
     tag: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let tag_name = crate::ffi::to_string(tag);
     crate::spawn(async move {
         match table.tags().await {
             Ok(tags) => match tags.get_version(&tag_name).await {
                 Ok(version) => {
-                    completion(version as *const std::ffi::c_void, std::ptr::null());
+                    completion(version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                 }
-                Err(e) => callback_error(completion, e),
+                Err(e) => callback_error(completion, user_data, e),
             },
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1098,13 +1152,15 @@ pub extern "C" fn table_drop_index(
     table_ptr: *const Table,
     name: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let index_name = crate::ffi::to_string(name);
     crate::spawn(async move {
         match table.drop_index(&index_name).await {
-            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => callback_error(completion, e),
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1115,13 +1171,15 @@ pub extern "C" fn table_prewarm_index(
     table_ptr: *const Table,
     name: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let index_name = crate::ffi::to_string(name);
     crate::spawn(async move {
         match table.prewarm_index(&index_name).await {
-            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => callback_error(completion, e),
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1133,7 +1191,9 @@ pub extern "C" fn table_wait_for_index(
     index_names_json: *const c_char,
     timeout_ms: i64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let json_str = crate::ffi::to_string(index_names_json);
     let names: Vec<String> = sonic_rs::from_str(&json_str).unwrap_or_default();
@@ -1145,8 +1205,8 @@ pub extern "C" fn table_wait_for_index(
     crate::spawn(async move {
         let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
         match table.wait_for_index(&name_refs, timeout).await {
-            Ok(()) => completion(std::ptr::null(), std::ptr::null()),
-            Err(e) => callback_error(completion, e),
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1171,7 +1231,9 @@ pub extern "C" fn table_index_stats(
     table_ptr: *const Table,
     index_name: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let name = crate::ffi::to_string(index_name);
     crate::spawn(async move {
@@ -1185,12 +1247,12 @@ pub extern "C" fn table_index_stats(
                     num_indices: stats.num_indices.unwrap_or(0),
                 });
                 let ptr = Box::into_raw(ffi_stats);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
             Ok(None) => {
-                completion(std::ptr::null(), std::ptr::null());
+                completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1244,7 +1306,9 @@ pub struct FfiTableStats {
 pub extern "C" fn table_stats(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.stats().await {
@@ -1268,9 +1332,9 @@ pub extern "C" fn table_stats(
                     },
                 });
                 let ptr = Box::into_raw(ffi_stats);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1306,7 +1370,9 @@ pub extern "C" fn table_merge_insert(
     use_index: bool,
     timeout_ms: i64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let on_columns_str = crate::ffi::to_string(on_columns_json);
 
@@ -1325,7 +1391,7 @@ pub extern "C" fn table_merge_insert(
     let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
@@ -1340,7 +1406,7 @@ pub extern "C" fn table_merge_insert(
         let on_columns: Vec<String> = match sonic_rs::from_str(&on_columns_str) {
             Ok(c) => c,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1377,9 +1443,9 @@ pub extern "C" fn table_merge_insert(
                     num_deleted_rows: result.num_deleted_rows,
                     num_attempts: result.num_attempts,
                 });
-                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null());
+                completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -1405,7 +1471,9 @@ pub extern "C" fn table_take_offsets(
     columns_json: *const c_char,
     with_row_id: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let offset_vec: Vec<u64> = unsafe { std::slice::from_raw_parts(offsets, offsets_len) }.to_vec();
     let columns_str = if columns_json.is_null() {
@@ -1425,7 +1493,7 @@ pub extern "C" fn table_take_offsets(
             let columns: Vec<String> = match sonic_rs::from_str(&cols) {
                 Ok(c) => c,
                 Err(e) => {
-                    callback_error(completion, e);
+                    callback_error(completion, user_data, e);
                     return;
                 }
             };
@@ -1440,7 +1508,7 @@ pub extern "C" fn table_take_offsets(
         let stream = match query.execute().await {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1449,7 +1517,7 @@ pub extern "C" fn table_take_offsets(
         let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1462,7 +1530,7 @@ pub extern "C" fn table_take_offsets(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    callback_error(completion, e);
+                    callback_error(completion, user_data, e);
                     return;
                 }
             }
@@ -1475,7 +1543,7 @@ pub extern "C" fn table_take_offsets(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1485,7 +1553,7 @@ pub extern "C" fn table_take_offsets(
             schema: Box::into_raw(Box::new(ffi_schema)),
         });
         let ptr = Box::into_raw(cdata);
-        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
     });
 }
 
@@ -1502,7 +1570,9 @@ pub extern "C" fn table_take_row_ids(
     columns_json: *const c_char,
     with_row_id: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     let id_vec: Vec<u64> = unsafe { std::slice::from_raw_parts(row_ids, row_ids_len) }.to_vec();
     let columns_str = if columns_json.is_null() {
@@ -1522,7 +1592,7 @@ pub extern "C" fn table_take_row_ids(
             let columns: Vec<String> = match sonic_rs::from_str(&cols) {
                 Ok(c) => c,
                 Err(e) => {
-                    callback_error(completion, e);
+                    callback_error(completion, user_data, e);
                     return;
                 }
             };
@@ -1537,7 +1607,7 @@ pub extern "C" fn table_take_row_ids(
         let stream = match query.execute().await {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1546,7 +1616,7 @@ pub extern "C" fn table_take_row_ids(
         let batches: Vec<arrow_array::RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1559,7 +1629,7 @@ pub extern "C" fn table_take_row_ids(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    callback_error(completion, e);
+                    callback_error(completion, user_data, e);
                     return;
                 }
             }
@@ -1572,7 +1642,7 @@ pub extern "C" fn table_take_row_ids(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -1582,7 +1652,7 @@ pub extern "C" fn table_take_row_ids(
             schema: Box::into_raw(Box::new(ffi_schema)),
         });
         let ptr = Box::into_raw(cdata);
-        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
     });
 }
 
@@ -1592,7 +1662,9 @@ pub extern "C" fn table_take_row_ids(
 pub extern "C" fn table_initial_storage_options(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         let opts = table.initial_storage_options().await;
@@ -1600,10 +1672,10 @@ pub extern "C" fn table_initial_storage_options(
             Some(map) => {
                 let json = sonic_rs::to_string(&map).unwrap_or_default();
                 let c_str = CString::new(json).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
             None => {
-                completion(std::ptr::null(), std::ptr::null());
+                completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr());
             }
         }
     });
@@ -1615,19 +1687,21 @@ pub extern "C" fn table_initial_storage_options(
 pub extern "C" fn table_latest_storage_options(
     table_ptr: *const Table,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
     crate::spawn(async move {
         match table.latest_storage_options().await {
             Ok(Some(map)) => {
                 let json = sonic_rs::to_string(&map).unwrap_or_default();
                 let c_str = CString::new(json).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
             Ok(None) => {
-                completion(std::ptr::null(), std::ptr::null());
+                completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }

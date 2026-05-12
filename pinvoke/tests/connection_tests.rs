@@ -9,189 +9,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 #[test]
-fn test_connection_connect_and_close() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-
-    let ptr = common::connect_sync(uri);
-    assert!(!ptr.is_null());
-
-    connection_close(ptr);
-}
-
-#[test]
-fn test_table_names_empty_database() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-    let ptr = common::connect_sync(uri);
-
-    let names = common::table_names_sync(ptr);
-    assert!(names.is_empty());
-
-    connection_close(ptr);
-}
-
-#[test]
-fn test_table_names_returns_sorted_names() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-    let ptr = common::connect_sync(uri);
-
-    let _t1 = common::create_table_sync(ptr, "zebra");
-    let _t2 = common::create_table_sync(ptr, "alpha");
-
-    let names = common::table_names_sync(ptr);
-    assert_eq!(names, vec!["alpha", "zebra"]);
-
-    table_close(_t1);
-    table_close(_t2);
-    connection_close(ptr);
-}
-
-#[test]
-fn test_drop_table() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-    let ptr = common::connect_sync(uri);
-
-    let t = common::create_table_sync(ptr, "to_drop");
-    table_close(t);
-
-    common::drop_table_sync(ptr, "to_drop");
-
-    let names = common::table_names_sync(ptr);
-    assert!(names.is_empty());
-
-    connection_close(ptr);
-}
-
-#[test]
-fn test_drop_all_tables() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-    let ptr = common::connect_sync(uri);
-
-    let t1 = common::create_table_sync(ptr, "a");
-    let t2 = common::create_table_sync(ptr, "b");
-    table_close(t1);
-    table_close(t2);
-
-    common::drop_all_tables_sync(ptr);
-
-    let names = common::table_names_sync(ptr);
-    assert!(names.is_empty());
-
-    connection_close(ptr);
-}
-
-#[test]
-fn test_create_table_with_data() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, false)]));
-    let batch =
-        RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "my_table", vec![batch]);
-    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
-
-    let names = common::table_names_sync(conn_ptr);
-    assert_eq!(names, vec!["my_table"]);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_create_table_exist_ok_returns_existing() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![Field::new("x", DataType::Int32, false)]));
-    let batch =
-        RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(vec![1, 2, 3]))]).unwrap();
-    let table1 = common::create_table_with_data_sync(conn_ptr, "dup_table", vec![batch.clone()]);
-    let table2 = common::create_table_exist_ok_sync(conn_ptr, "dup_table", vec![batch]);
-
-    assert_eq!(common::count_rows_sync(table2, None), 3);
-
-    table_close(table1);
-    table_close(table2);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_create_empty_table_with_custom_schema() {
-    use arrow_schema::{DataType, Field, Schema};
-    use std::sync::Arc;
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("name", DataType::Utf8, true),
-        Field::new("score", DataType::Float64, false),
-    ]));
-
-    let table_ptr = common::create_empty_table_with_schema_sync(conn_ptr, "custom_schema", schema);
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 0);
-
-    let schema = common::schema_sync(table_ptr);
-    assert_eq!(schema.fields().len(), 2);
-    assert_eq!(schema.field(0).name(), "name");
-    assert_eq!(schema.field(1).name(), "score");
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-// -----------------------------------------------------------------------
-// Session tests
-// -----------------------------------------------------------------------
-
-#[test]
-fn test_connection_connect_with_session_both_cache_sizes() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-
-    let ptr = common::connect_with_session_sync(
-        uri,
-        512 * 1024 * 1024,
-        128 * 1024 * 1024,
-    );
-    assert!(!ptr.is_null());
-
-    let t = common::create_table_sync(ptr, "session_test");
-    let names = common::table_names_sync(ptr);
-    assert_eq!(names, vec!["session_test"]);
-
-    table_close(t);
-    connection_close(ptr);
-}
-
-#[test]
-fn test_connection_connect_with_session_default_sizes() {
-    let tmp = TempDir::new().unwrap();
-    let uri = tmp.path().to_str().unwrap();
-
-    // Use lance defaults: 6 GiB index, 1 GiB metadata
-    let ptr = common::connect_with_session_sync(
-        uri,
-        6 * 1024 * 1024 * 1024,
-        1024 * 1024 * 1024,
-    );
-    assert!(!ptr.is_null());
-
-    let names = common::table_names_sync(ptr);
-    assert!(names.is_empty());
-
-    connection_close(ptr);
-}
-
-#[test]
-fn test_connection_connect_ffi_with_session() {
-    let _lock = common::ffi_lock();
+fn test_connection_connect_with_session_returns_handle() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
@@ -202,9 +21,10 @@ fn test_connection_connect_ffi_with_session() {
         512 * 1024 * 1024, // index_cache_size_bytes
         128 * 1024 * 1024, // metadata_cache_size_bytes
         common::ffi_callback,
+        ctx.user_data(),
     );
 
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
     let conn_ptr = result as *const lancedb::connection::Connection;
 
@@ -215,8 +35,8 @@ fn test_connection_connect_ffi_with_session() {
 }
 
 #[test]
-fn test_connection_connect_ffi_with_session_defaults() {
-    let _lock = common::ffi_lock();
+fn test_connection_connect_with_session_defaults_returns_handle() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
@@ -228,9 +48,10 @@ fn test_connection_connect_ffi_with_session_defaults() {
         0,  // index_cache_size_bytes: 0 → use default
         0,  // metadata_cache_size_bytes: 0 → use default
         common::ffi_callback,
+        ctx.user_data(),
     );
 
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
     let conn_ptr = result as *const lancedb::connection::Connection;
 
@@ -238,8 +59,8 @@ fn test_connection_connect_ffi_with_session_defaults() {
 }
 
 #[test]
-fn test_connection_connect_ffi_without_session() {
-    let _lock = common::ffi_lock();
+fn test_connection_connect_without_session_returns_handle() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let uri_cstr = std::ffi::CString::new(tmp.path().to_str().unwrap()).unwrap();
 
@@ -251,11 +72,127 @@ fn test_connection_connect_ffi_without_session() {
         -1, // index_cache_size_bytes: negative → no session
         -1, // metadata_cache_size_bytes: negative → no session
         common::ffi_callback,
+        ctx.user_data(),
     );
 
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
     let conn_ptr = result as *const lancedb::connection::Connection;
 
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_connection_table_names_returns_joined_names() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let t1 = common::create_table_sync(conn_ptr, "alpha");
+    let t2 = common::create_table_sync(conn_ptr, "beta");
+
+    let ctx = common::FfiTestContext::new();
+    connection_table_names(
+        conn_ptr,
+        std::ptr::null(), // start_after
+        0,                // limit: 0 → no limit
+        std::ptr::null(), // namespace_json
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+
+    let result = ctx.wait_success();
+    assert!(!result.is_null());
+
+    let joined = unsafe { std::ffi::CStr::from_ptr(result as *const libc::c_char) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    let names: Vec<&str> = joined.split('\n').collect();
+    assert!(names.contains(&"alpha"), "expected 'alpha' in {:?}", names);
+    assert!(names.contains(&"beta"), "expected 'beta' in {:?}", names);
+    assert_eq!(names.len(), 2);
+
+    free_string(result as *mut libc::c_char);
+    table_close(t1);
+    table_close(t2);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_connection_create_empty_table_null_schema_uses_minimal() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let table_name = std::ffi::CString::new("created_empty_ffi").unwrap();
+
+    let ctx = common::FfiTestContext::new();
+    connection_create_empty_table(
+        conn_ptr,
+        table_name.as_ptr(),
+        std::ptr::null_mut(), // schema_cdata: null → minimal_schema
+        std::ptr::null(),     // mode
+        std::ptr::null(),     // storage_options_json
+        std::ptr::null(),     // location
+        std::ptr::null(),     // namespace_json
+        false,                // exist_ok
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+
+    let result = ctx.wait_success();
+    assert!(!result.is_null());
+    let table_ptr = result as *const lancedb::table::Table;
+
+    let names = common::table_names_sync(conn_ptr);
+    assert!(names.contains(&"created_empty_ffi".to_string()));
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_connection_create_table_with_data_returns_table() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
+    let batch = RecordBatch::try_new(
+        schema,
+        vec![Arc::new(Int32Array::from(vec![10, 20, 30]))],
+    )
+    .unwrap();
+
+    use arrow_array::Array;
+    let struct_array: arrow_array::StructArray = batch.into();
+    let data = struct_array.to_data();
+    let mut ffi_array = arrow_data::ffi::FFI_ArrowArray::new(&data);
+    let mut ffi_schema =
+        arrow_schema::ffi::FFI_ArrowSchema::try_from(data.data_type()).unwrap();
+
+    let table_name = std::ffi::CString::new("created_with_data_ffi").unwrap();
+
+    let ctx = common::FfiTestContext::new();
+    connection_create_table(
+        conn_ptr,
+        table_name.as_ptr(),
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,
+        std::ptr::null(),
+        std::ptr::null(),
+        std::ptr::null(),
+        std::ptr::null(),
+        false,
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+
+    let result = ctx.wait_success();
+    assert!(!result.is_null());
+    let table_ptr = result as *const lancedb::table::Table;
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
+
+    table_close(table_ptr);
     connection_close(conn_ptr);
 }

@@ -8,7 +8,7 @@ use std::slice;
 use std::sync::Arc;
 
 use crate::ffi;
-use crate::ffi::{callback_error, FfiCallback};
+use crate::ffi::{callback_error, FfiCallback, UserData};
 
 /// Parses a JSON string into a Select enum.
 /// JSON array of strings → Select::Columns, JSON object → Select::Dynamic.
@@ -236,6 +236,7 @@ fn execute_to_cdata_with_options<Q>(
     query: Arc<Q>,
     options: QueryExecutionOptions,
     completion: FfiCallback,
+    user_data: UserData,
 ) where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
@@ -249,7 +250,7 @@ fn execute_to_cdata_with_options<Q>(
         let stream = match query.execute_with_options(options).await {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -258,7 +259,7 @@ fn execute_to_cdata_with_options<Q>(
         let batches: Vec<RecordBatch> = match stream.try_collect().await {
             Ok(b) => b,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -272,7 +273,7 @@ fn execute_to_cdata_with_options<Q>(
             match arrow_select::concat::concat_batches(&schema, &batches) {
                 Ok(b) => b,
                 Err(e) => {
-                    callback_error(completion, e);
+                    callback_error(completion, user_data, e);
                     return;
                 }
             }
@@ -286,7 +287,7 @@ fn execute_to_cdata_with_options<Q>(
         let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         };
@@ -296,13 +297,17 @@ fn execute_to_cdata_with_options<Q>(
             schema: Box::into_raw(Box::new(ffi_schema)),
         });
         let ptr = Box::into_raw(cdata);
-        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+        completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
     });
 }
 
 /// Shared implementation for explain_plan across query types.
-fn explain_plan_impl<Q>(query: Arc<Q>, verbose: bool, completion: FfiCallback)
-where
+fn explain_plan_impl<Q>(
+    query: Arc<Q>,
+    verbose: bool,
+    completion: FfiCallback,
+    user_data: UserData,
+) where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
     crate::spawn(async move {
@@ -313,15 +318,16 @@ where
                 completion(
                     c_str.into_raw() as *const std::ffi::c_void,
                     std::ptr::null(),
+                    user_data.as_ptr(),
                 );
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
 
 /// Shared implementation for analyze_plan across query types.
-fn analyze_plan_impl<Q>(query: Arc<Q>, completion: FfiCallback)
+fn analyze_plan_impl<Q>(query: Arc<Q>, completion: FfiCallback, user_data: UserData)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
@@ -333,16 +339,17 @@ where
                 completion(
                     c_str.into_raw() as *const std::ffi::c_void,
                     std::ptr::null(),
+                    user_data.as_ptr(),
                 );
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
 
 /// Shared implementation for output_schema across query types.
 /// Returns a heap-allocated FFI_ArrowSchema (caller must free with free_ffi_schema).
-fn output_schema_impl<Q>(query: Arc<Q>, completion: FfiCallback)
+fn output_schema_impl<Q>(query: Arc<Q>, completion: FfiCallback, user_data: UserData)
 where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
@@ -354,12 +361,12 @@ where
                 ) {
                     Ok(ffi_schema) => {
                         let ptr = Box::into_raw(Box::new(ffi_schema));
-                        completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                        completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
                     }
-                    Err(e) => callback_error(completion, e),
+                    Err(e) => callback_error(completion, user_data, e),
                 }
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -376,24 +383,26 @@ pub extern "C" fn query_execute(
     timeout_ms: i64,
     max_batch_length: u32,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_cdata_with_options(Arc::new(query), options, completion);
+    execute_to_cdata_with_options(Arc::new(query), options, completion, user_data);
 }
 
 /// Builds a Query from table + JSON params and returns the explain plan.
@@ -403,23 +412,25 @@ pub extern "C" fn query_explain_plan(
     params_json: *const c_char,
     verbose: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    explain_plan_impl(Arc::new(query), verbose, completion);
+    explain_plan_impl(Arc::new(query), verbose, completion, user_data);
 }
 
 /// Builds a Query from table + JSON params and returns the analyze plan.
@@ -428,23 +439,25 @@ pub extern "C" fn query_analyze_plan(
     table_ptr: *const Table,
     params_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    analyze_plan_impl(Arc::new(query), completion);
+    analyze_plan_impl(Arc::new(query), completion, user_data);
 }
 
 /// Builds a Query from table + JSON params and returns the output schema.
@@ -453,23 +466,25 @@ pub extern "C" fn query_output_schema(
     table_ptr: *const Table,
     params_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    output_schema_impl(Arc::new(query), completion);
+    output_schema_impl(Arc::new(query), completion, user_data);
 }
 
 // ---------------------------------------------------------------------------
@@ -486,11 +501,13 @@ pub extern "C" fn vector_query_execute(
     timeout_ms: i64,
     max_batch_length: u32,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            callback_error(completion, "Vector pointer is null");
+            callback_error(completion, user_data, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -498,19 +515,19 @@ pub extern "C" fn vector_query_execute(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_to_cdata_with_options(Arc::new(vq), options, completion);
+    execute_to_cdata_with_options(Arc::new(vq), options, completion, user_data);
 }
 
 /// Builds a VectorQuery from table + vector + JSON params and returns explain plan.
@@ -522,11 +539,13 @@ pub extern "C" fn vector_query_explain_plan(
     params_json: *const c_char,
     verbose: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            callback_error(completion, "Vector pointer is null");
+            callback_error(completion, user_data, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -534,18 +553,18 @@ pub extern "C" fn vector_query_explain_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    explain_plan_impl(Arc::new(vq), verbose, completion);
+    explain_plan_impl(Arc::new(vq), verbose, completion, user_data);
 }
 
 /// Builds a VectorQuery from table + vector + JSON params and returns analyze plan.
@@ -556,11 +575,13 @@ pub extern "C" fn vector_query_analyze_plan(
     vector_len: size_t,
     params_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            callback_error(completion, "Vector pointer is null");
+            callback_error(completion, user_data, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -568,18 +589,18 @@ pub extern "C" fn vector_query_analyze_plan(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    analyze_plan_impl(Arc::new(vq), completion);
+    analyze_plan_impl(Arc::new(vq), completion, user_data);
 }
 
 /// Builds a VectorQuery from table + vector + JSON params and returns output schema.
@@ -590,11 +611,13 @@ pub extern "C" fn vector_query_output_schema(
     vector_len: size_t,
     params_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            callback_error(completion, "Vector pointer is null");
+            callback_error(completion, user_data, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -602,18 +625,18 @@ pub extern "C" fn vector_query_output_schema(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
-    output_schema_impl(Arc::new(vq), completion);
+    output_schema_impl(Arc::new(vq), completion, user_data);
 }
 
 // ---------------------------------------------------------------------------
@@ -627,6 +650,7 @@ fn execute_stream_impl<Q>(
     query: Arc<Q>,
     options: QueryExecutionOptions,
     completion: FfiCallback,
+    user_data: UserData,
 ) where
     Q: ExecutableQuery + Send + Sync + 'static,
 {
@@ -635,9 +659,9 @@ fn execute_stream_impl<Q>(
             Ok(stream) => {
                 let handle = Arc::new(tokio::sync::Mutex::new(stream));
                 let ptr = Arc::into_raw(handle);
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -650,24 +674,26 @@ pub extern "C" fn query_execute_stream(
     timeout_ms: i64,
     max_batch_length: u32,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let query = match build_query(table, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_stream_impl(Arc::new(query), options, completion);
+    execute_stream_impl(Arc::new(query), options, completion, user_data);
 }
 
 /// Execute a VectorQuery and return a stream handle for incremental batch retrieval.
@@ -680,11 +706,13 @@ pub extern "C" fn vector_query_execute_stream(
     timeout_ms: i64,
     max_batch_length: u32,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table = ffi_borrow!(table_ptr, Table);
     let vector = unsafe {
         if vector_ptr.is_null() {
-            callback_error(completion, "Vector pointer is null");
+            callback_error(completion, user_data, "Vector pointer is null");
             return;
         }
         slice::from_raw_parts(vector_ptr, vector_len as usize)
@@ -692,19 +720,19 @@ pub extern "C" fn vector_query_execute_stream(
     let params = match parse_query_params(params_json) {
         Ok(p) => p,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let vq = match build_vector_query(table, vector, &params) {
         Ok(q) => q,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
     let options = build_execution_options(timeout_ms, max_batch_length);
-    execute_stream_impl(Arc::new(vq), options, completion);
+    execute_stream_impl(Arc::new(vq), options, completion, user_data);
 }
 
 /// Get the next batch from a stream. Returns FfiCData via callback, or null
@@ -713,7 +741,9 @@ pub extern "C" fn vector_query_execute_stream(
 pub extern "C" fn stream_next(
     stream_ptr: *const StreamHandle,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let stream = ffi_clone_arc!(stream_ptr, StreamHandle);
     crate::spawn(async move {
         use arrow_array::Array;
@@ -730,7 +760,7 @@ pub extern "C" fn stream_next(
                 let ffi_schema = match FFI_ArrowSchema::try_from(data.data_type()) {
                     Ok(s) => s,
                     Err(e) => {
-                        callback_error(completion, e);
+                        callback_error(completion, user_data, e);
                         return;
                     }
                 };
@@ -738,12 +768,12 @@ pub extern "C" fn stream_next(
                     array: Box::into_raw(Box::new(ffi_array)),
                     schema: Box::into_raw(Box::new(ffi_schema)),
                 });
-                completion(Box::into_raw(cdata) as *const std::ffi::c_void, std::ptr::null());
+                completion(Box::into_raw(cdata) as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Some(Err(e)) => callback_error(completion, e),
+            Some(Err(e)) => callback_error(completion, user_data, e),
             None => {
                 // Stream exhausted — signal with null pointer and no error
-                completion(std::ptr::null(), std::ptr::null());
+                completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr());
             }
         }
     });

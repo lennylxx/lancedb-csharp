@@ -21,27 +21,27 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_execute(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
-            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion);
+            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_execute_stream(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
-            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion);
+            long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_explain_plan(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
-            [MarshalAs(UnmanagedType.U1)] bool verbose, NativeCall.FfiCallback completion);
+            [MarshalAs(UnmanagedType.U1)] bool verbose, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_analyze_plan(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_output_schema(
             IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         internal readonly double[] _vector;
 
@@ -130,36 +130,36 @@ namespace lancedb
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExecute(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback)
+            NativeCall.FfiCallback callback, IntPtr userData)
             => vector_query_execute(
                 tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson,
-                timeoutMs, maxBatchLength, callback);
+                timeoutMs, maxBatchLength, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExplainPlan(
-            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback)
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback, IntPtr userData)
             => vector_query_explain_plan(
-                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, verbose, callback);
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, verbose, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedAnalyzePlan(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData)
             => vector_query_analyze_plan(
-                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback);
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedOutputSchema(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData)
             => vector_query_output_schema(
-                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback);
+                tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExecuteStream(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback)
+            NativeCall.FfiCallback callback, IntPtr userData)
             => vector_query_execute_stream(
                 tablePtr, _vector, (UIntPtr)_vector.Length, paramsJson,
-                timeoutMs, maxBatchLength, callback);
+                timeoutMs, maxBatchLength, callback, userData);
 
         /// <summary>
         /// Set the vector column to query.

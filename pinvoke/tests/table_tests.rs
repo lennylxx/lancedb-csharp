@@ -35,7 +35,7 @@ fn test_table_get_name_does_not_consume_pointer() {
 }
 
 #[test]
-fn test_table_is_open() {
+fn test_table_is_open_open_table_returns_true() {
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "open_table");
@@ -58,306 +58,14 @@ fn test_free_string_null_is_safe() {
 }
 
 #[test]
-fn test_count_rows_empty_table() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "count_test");
-
-    let count = common::count_rows_sync(table_ptr, None);
-    assert_eq!(count, 0);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_schema_returns_valid_fields() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "schema_test");
-
-    let schema = common::schema_sync(table_ptr);
-    assert_eq!(schema.fields().len(), 1);
-    assert_eq!(schema.field(0).name(), "id");
-    assert_eq!(*schema.field(0).data_type(), DataType::Int32);
-    assert!(!schema.field(0).is_nullable());
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
 fn test_free_ffi_cdata_null_is_safe() {
     free_ffi_cdata(ptr::null_mut());
-}
-
-#[test]
-fn test_add_data_and_count_rows() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "add_test");
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 0);
-
-    common::add_sync(table_ptr, vec![create_test_batch(3)]);
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_add_data_append_mode() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "append_test");
-
-    common::add_sync(table_ptr, vec![create_test_batch(2)]);
-    common::add_sync(table_ptr, vec![create_test_batch(3)]);
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
 }
 
 fn create_test_batch(num_rows: usize) -> RecordBatch {
     let schema = Arc::new(Schema::new(vec![Field::new("id", DataType::Int32, false)]));
     let ids: Vec<i32> = (0..num_rows as i32).collect();
     RecordBatch::try_new(schema, vec![Arc::new(Int32Array::from(ids))]).unwrap()
-}
-
-#[test]
-fn test_version_increments_on_add() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "version_test");
-
-    let v1 = common::version_sync(table_ptr);
-    common::add_sync(table_ptr, vec![create_test_batch(3)]);
-    let v2 = common::version_sync(table_ptr);
-
-    assert!(v2 > v1);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_checkout_and_restore() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "checkout_test");
-
-    let v1 = common::version_sync(table_ptr);
-    common::add_sync(table_ptr, vec![create_test_batch(5)]);
-    let v2 = common::version_sync(table_ptr);
-    assert!(v2 > v1);
-
-    common::checkout_sync(table_ptr, v1);
-    assert_eq!(common::count_rows_sync(table_ptr, None), 0);
-
-    common::checkout_latest_sync(table_ptr);
-    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_create_btree_index_and_list_indices() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "index_test");
-
-    common::add_sync(table_ptr, vec![create_test_batch(100)]);
-    common::create_btree_index_sync(table_ptr, "id");
-
-    let indices = common::list_indices_sync(table_ptr);
-    assert!(!indices.is_empty());
-    assert!(indices.iter().any(|i| i.columns.contains(&"id".to_string())));
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_list_indices_empty_table() {
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-    let table_ptr = common::create_table_sync(conn_ptr, "no_index");
-
-    let indices = common::list_indices_sync(table_ptr);
-    assert!(indices.is_empty());
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_add_columns_with_sql_expression() {
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "add_cols", vec![batch]);
-
-    common::add_columns_sync(
-        table_ptr,
-        vec![("doubled".to_string(), "id * 2".to_string())],
-    );
-
-    let schema = common::schema_sync(table_ptr);
-    assert!(schema.fields().len() > 0);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_alter_columns_rename() {
-    use lancedb::table::ColumnAlteration;
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("old_name", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "alter_cols", vec![batch]);
-
-    let mut alt = ColumnAlteration::new("old_name".to_string());
-    alt.rename = Some("new_name".to_string());
-    common::alter_columns_sync(table_ptr, vec![alt]);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_drop_columns() {
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("keep", DataType::Int32, false),
-        Field::new("remove", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![
-            Arc::new(Int32Array::from(vec![1, 2, 3])),
-            Arc::new(Int32Array::from(vec![4, 5, 6])),
-        ],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "drop_cols", vec![batch]);
-
-    common::drop_columns_sync(table_ptr, &["remove"]);
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 3);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_optimize_after_modifications() {
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "optimize_test", vec![batch]);
-
-    let batch2 = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![4, 5, 6]))],
-    ).unwrap();
-    common::add_sync(table_ptr, vec![batch2]);
-
-    common::optimize_sync(table_ptr);
-
-    assert_eq!(common::count_rows_sync(table_ptr, None), 6);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_tags_create_and_list() {
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "tags_test", vec![batch]);
-
-    let version = common::version_sync(table_ptr);
-    common::create_tag_sync(table_ptr, "v1", version);
-
-    let tags = common::list_tags_sync(table_ptr);
-    assert!(tags.contains_key("v1"));
-    assert_eq!(tags["v1"].version, version);
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
-}
-
-#[test]
-fn test_tags_delete() {
-
-    let tmp = TempDir::new().unwrap();
-    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
-
-    let schema = Arc::new(Schema::new(vec![
-        Field::new("id", DataType::Int32, false),
-    ]));
-    let batch = RecordBatch::try_new(
-        schema.clone(),
-        vec![Arc::new(Int32Array::from(vec![1, 2, 3]))],
-    ).unwrap();
-
-    let table_ptr = common::create_table_with_data_sync(conn_ptr, "tags_del", vec![batch]);
-
-    let version = common::version_sync(table_ptr);
-    common::create_tag_sync(table_ptr, "temp_tag", version);
-    assert!(common::list_tags_sync(table_ptr).contains_key("temp_tag"));
-
-    common::delete_tag_sync(table_ptr, "temp_tag");
-    assert!(!common::list_tags_sync(table_ptr).contains_key("temp_tag"));
-
-    table_close(table_ptr);
-    connection_close(conn_ptr);
 }
 
 fn create_id_value_batch(ids: &[i32], values: &[&str]) -> RecordBatch {
@@ -376,8 +84,8 @@ fn create_id_value_batch(ids: &[i32], values: &[&str]) -> RecordBatch {
 }
 
 #[test]
-fn test_create_index_with_name_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_create_index_with_name_succeeds() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "idx_name_ffi");
@@ -398,8 +106,9 @@ fn test_create_index_with_name_ffi() {
         true,
         -1,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let indices = common::list_indices_sync(table_ptr);
@@ -410,8 +119,8 @@ fn test_create_index_with_name_ffi() {
 }
 
 #[test]
-fn test_create_index_train_false_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_create_index_train_false_succeeds() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "idx_no_train_ffi");
@@ -431,8 +140,9 @@ fn test_create_index_train_false_ffi() {
         false,
         -1,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let indices = common::list_indices_sync(table_ptr);
@@ -443,8 +153,8 @@ fn test_create_index_train_false_ffi() {
 }
 
 #[test]
-fn test_optimize_with_params_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_optimize_with_params_succeeds() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "opt_params_ffi");
@@ -453,8 +163,8 @@ fn test_optimize_with_params_ffi() {
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     // cleanup_older_than_ms = 0 (prune immediately), delete_unverified = true
-    table_optimize(table_ptr, 0, true, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_optimize(table_ptr, 0, true, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     // The result is a JSON string pointer; free it
@@ -467,8 +177,8 @@ fn test_optimize_with_params_ffi() {
 }
 
 #[test]
-fn test_optimize_default_params_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_optimize_default_params_succeeds() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "opt_default_ffi");
@@ -476,11 +186,107 @@ fn test_optimize_default_params_ffi() {
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     // cleanup_older_than_ms = -1 (default), delete_unverified = false
-    table_optimize(table_ptr, -1, false, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_optimize(table_ptr, -1, false, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
     free_string(result as *mut libc::c_char);
 
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_count_rows_returns_count() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr =
+        common::create_table_with_data_sync(conn_ptr, "count_ffi", vec![create_test_batch(7)]);
+
+    let ctx = common::FfiTestContext::new();
+    table_count_rows(
+        table_ptr,
+        ptr::null(), // no filter
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    let result = ctx.wait_success();
+    assert_eq!(result as usize, 7);
+
+    // Filtered call: id < 3 should match 3 rows (0, 1, 2).
+    let filter = std::ffi::CString::new("id < 3").unwrap();
+    let ctx2 = common::FfiTestContext::new();
+    table_count_rows(
+        table_ptr,
+        filter.as_ptr(),
+        common::ffi_callback,
+        ctx2.user_data(),
+    );
+    let result2 = ctx2.wait_success();
+    assert_eq!(result2 as usize, 3);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_add_appends_batch() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr =
+        common::create_table_with_data_sync(conn_ptr, "add_ffi", vec![create_test_batch(2)]);
+
+    let (mut ffi_array, mut ffi_schema) = batch_to_cdata(&create_test_batch(5));
+
+    let ctx = common::FfiTestContext::new();
+    table_add(
+        table_ptr,
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,           // batch_count
+        ptr::null(), // mode: null → append
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    let _version = ctx.wait_success();
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 7);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_list_indices_returns_json() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_with_data_sync(
+        conn_ptr,
+        "list_idx_ffi",
+        vec![create_test_batch(10)],
+    );
+    common::create_btree_index_sync(table_ptr, "id");
+
+    let ctx = common::FfiTestContext::new();
+    table_list_indices(table_ptr, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
+    assert!(!result.is_null());
+
+    let json = unsafe { std::ffi::CStr::from_ptr(result as *const libc::c_char) }
+        .to_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        json.contains("\"columns\""),
+        "expected index JSON to include 'columns' field, got {}",
+        json
+    );
+    assert!(
+        json.contains("\"id\""),
+        "expected index JSON to reference 'id' column, got {}",
+        json
+    );
+
+    free_string(result as *mut libc::c_char);
     table_close(table_ptr);
     connection_close(conn_ptr);
 }
@@ -499,8 +305,8 @@ fn batch_to_cdata(
 }
 
 #[test]
-fn test_merge_insert_upsert_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_merge_insert_upsert_updates_and_inserts() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -525,8 +331,9 @@ fn test_merge_insert_upsert_ffi() {
         true,          // use_index
         -1,            // timeout_ms (no timeout)
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     assert_eq!(common::count_rows_sync(table_ptr, None), 4);
@@ -536,8 +343,8 @@ fn test_merge_insert_upsert_ffi() {
 }
 
 #[test]
-fn test_merge_insert_insert_only_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_merge_insert_insert_only_appends_new_rows() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -562,8 +369,9 @@ fn test_merge_insert_insert_only_ffi() {
         true,          // use_index
         -1,            // timeout_ms
         common::ffi_callback,
+        ctx.user_data(),
     );
-    common::ffi_wait_success();
+    ctx.wait_success();
 
     assert_eq!(common::count_rows_sync(table_ptr, None), 3);
 
@@ -572,8 +380,8 @@ fn test_merge_insert_insert_only_ffi() {
 }
 
 #[test]
-fn test_merge_insert_delete_not_in_source_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_merge_insert_delete_not_in_source_removes_rows() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -598,8 +406,9 @@ fn test_merge_insert_delete_not_in_source_ffi() {
         true,          // use_index
         -1,            // timeout_ms
         common::ffi_callback,
+        ctx.user_data(),
     );
-    common::ffi_wait_success();
+    ctx.wait_success();
 
     assert_eq!(common::count_rows_sync(table_ptr, None), 1);
 
@@ -608,8 +417,8 @@ fn test_merge_insert_delete_not_in_source_ffi() {
 }
 
 #[test]
-fn test_take_offsets_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_take_offsets_returns_rows() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -624,8 +433,9 @@ fn test_take_offsets_ffi() {
         ptr::null(),
         false,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     // Result is FfiCData pointer with Arrow C Data Interface
@@ -649,8 +459,8 @@ fn test_take_offsets_ffi() {
 }
 
 #[test]
-fn test_take_offsets_with_columns_ffi() {
-    let _lock = common::ffi_lock();
+fn test_table_take_offsets_with_columns_returns_subset() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -666,8 +476,9 @@ fn test_take_offsets_with_columns_ffi() {
         columns_json.as_ptr(),
         false,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
 
     let cdata = result as *mut FfiCData;
     let (array_ptr, schema_ptr) = unsafe { ((*cdata).array, (*cdata).schema) };
@@ -685,11 +496,11 @@ fn test_take_offsets_with_columns_ffi() {
 }
 
 #[test]
-fn test_take_row_ids_ffi() {
+fn test_table_take_row_ids_returns_rows() {
     use arrow_array::cast::AsArray;
     use lancedb::query::{ExecutableQuery, QueryBase};
 
-    let _lock = common::ffi_lock();
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -722,8 +533,9 @@ fn test_take_row_ids_ffi() {
         ptr::null(),
         false,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
 
     let cdata = result as *mut FfiCData;
     let (array_ptr, schema_ptr) = unsafe { ((*cdata).array, (*cdata).schema) };
@@ -769,8 +581,8 @@ fn test_table_stats_free_null_is_safe() {
 // ===== table_delete FFI: returns FfiDeleteResult =====
 
 #[test]
-fn test_table_delete_ffi_returns_delete_result() {
-    let _lock = common::ffi_lock();
+fn test_table_delete_returns_delete_result() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -778,8 +590,8 @@ fn test_table_delete_ffi_returns_delete_result() {
     let table_ptr = common::create_table_with_data_sync(conn_ptr, "delete_result_ffi", vec![batch]);
 
     let predicate = std::ffi::CString::new("id > 3").unwrap();
-    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_result = result as *mut FfiDeleteResult;
@@ -793,8 +605,8 @@ fn test_table_delete_ffi_returns_delete_result() {
 }
 
 #[test]
-fn test_table_delete_ffi_no_matching_rows() {
-    let _lock = common::ffi_lock();
+fn test_table_delete_no_matching_rows_returns_zero() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -802,8 +614,8 @@ fn test_table_delete_ffi_no_matching_rows() {
     let table_ptr = common::create_table_with_data_sync(conn_ptr, "delete_none_ffi", vec![batch]);
 
     let predicate = std::ffi::CString::new("id > 100").unwrap();
-    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_delete(table_ptr, predicate.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_result = result as *mut FfiDeleteResult;
@@ -820,8 +632,8 @@ fn test_table_delete_ffi_no_matching_rows() {
 // ===== table_update FFI: returns FfiUpdateResult =====
 
 #[test]
-fn test_table_update_ffi_returns_update_result() {
-    let _lock = common::ffi_lock();
+fn test_table_update_returns_update_result() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -835,8 +647,9 @@ fn test_table_update_ffi_returns_update_result() {
         filter.as_ptr(),
         columns_json.as_ptr(),
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_result = result as *mut FfiUpdateResult;
@@ -852,8 +665,8 @@ fn test_table_update_ffi_returns_update_result() {
 // ===== table_merge_insert FFI: returns FfiMergeResult =====
 
 #[test]
-fn test_table_merge_insert_ffi_returns_merge_result() {
-    let _lock = common::ffi_lock();
+fn test_table_merge_insert_returns_merge_result() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
@@ -878,8 +691,9 @@ fn test_table_merge_insert_ffi_returns_merge_result() {
         true,
         -1,
         common::ffi_callback,
+        ctx.user_data(),
     );
-    let result = common::ffi_wait_success();
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_result = result as *mut FfiMergeResult;
@@ -899,8 +713,8 @@ fn test_table_merge_insert_ffi_returns_merge_result() {
 // ===== table_index_stats FFI: returns FfiIndexStats =====
 
 #[test]
-fn test_table_index_stats_ffi_returns_stats() {
-    let _lock = common::ffi_lock();
+fn test_table_index_stats_returns_stats() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "idx_stats_ffi");
@@ -912,8 +726,8 @@ fn test_table_index_stats_ffi_returns_stats() {
     let idx_name = &indices[0].name;
     let name_cstr = std::ffi::CString::new(idx_name.as_str()).unwrap();
 
-    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_stats = result as *mut FfiIndexStats;
@@ -928,15 +742,15 @@ fn test_table_index_stats_ffi_returns_stats() {
 }
 
 #[test]
-fn test_table_index_stats_ffi_nonexistent_returns_null() {
-    let _lock = common::ffi_lock();
+fn test_table_index_stats_nonexistent_returns_null() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "idx_stats_none_ffi");
 
     let name_cstr = std::ffi::CString::new("nonexistent_index").unwrap();
-    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_index_stats(table_ptr, name_cstr.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(result.is_null());
 
     table_close(table_ptr);
@@ -946,16 +760,16 @@ fn test_table_index_stats_ffi_nonexistent_returns_null() {
 // ===== table_stats FFI: returns FfiTableStats =====
 
 #[test]
-fn test_table_stats_ffi_returns_stats() {
-    let _lock = common::ffi_lock();
+fn test_table_stats_returns_stats() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
 
     let batch = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
     let table_ptr = common::create_table_with_data_sync(conn_ptr, "table_stats_ffi", vec![batch]);
 
-    table_stats(table_ptr, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_stats(table_ptr, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let ffi_stats = result as *mut FfiTableStats;
@@ -972,14 +786,14 @@ fn test_table_stats_ffi_returns_stats() {
 // ===== table_initial_storage_options / table_latest_storage_options FFI =====
 
 #[test]
-fn test_table_initial_storage_options_ffi_local_returns_null() {
-    let _lock = common::ffi_lock();
+fn test_table_initial_storage_options_local_returns_null() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "init_opts_ffi");
 
-    table_initial_storage_options(table_ptr, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_initial_storage_options(table_ptr, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(result.is_null());
 
     table_close(table_ptr);
@@ -987,14 +801,14 @@ fn test_table_initial_storage_options_ffi_local_returns_null() {
 }
 
 #[test]
-fn test_table_latest_storage_options_ffi_local_returns_null() {
-    let _lock = common::ffi_lock();
+fn test_table_latest_storage_options_local_returns_null() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "latest_opts_ffi");
 
-    table_latest_storage_options(table_ptr, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    table_latest_storage_options(table_ptr, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(result.is_null());
 
     table_close(table_ptr);

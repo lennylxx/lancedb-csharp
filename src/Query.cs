@@ -23,26 +23,26 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_execute(
             IntPtr table_ptr, IntPtr params_json, long timeout_ms, uint max_batch_length,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_execute_stream(
             IntPtr table_ptr, IntPtr params_json, long timeout_ms, uint max_batch_length,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_explain_plan(
             IntPtr table_ptr, IntPtr params_json,
             [MarshalAs(UnmanagedType.U1)] bool verbose,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_analyze_plan(
-            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void query_output_schema(
-            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr params_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         internal Query(IntPtr tablePtr)
             : base(tablePtr)
@@ -52,29 +52,29 @@ namespace lancedb
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExecute(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback)
-            => query_execute(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback);
+            NativeCall.FfiCallback callback, IntPtr userData)
+            => query_execute(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExplainPlan(
-            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback)
-            => query_explain_plan(tablePtr, paramsJson, verbose, callback);
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback, IntPtr userData)
+            => query_explain_plan(tablePtr, paramsJson, verbose, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedAnalyzePlan(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
-            => query_analyze_plan(tablePtr, paramsJson, callback);
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData)
+            => query_analyze_plan(tablePtr, paramsJson, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedOutputSchema(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback)
-            => query_output_schema(tablePtr, paramsJson, callback);
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData)
+            => query_output_schema(tablePtr, paramsJson, callback, userData);
 
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExecuteStream(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback)
-            => query_execute_stream(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback);
+            NativeCall.FfiCallback callback, IntPtr userData)
+            => query_execute_stream(tablePtr, paramsJson, timeoutMs, maxBatchLength, callback, userData);
 
         /// <summary>
         /// Find the nearest vectors to the given query vector.

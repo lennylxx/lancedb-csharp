@@ -26,7 +26,7 @@ Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust
 
 1. Add the `#[unsafe(no_mangle)] pub extern "C" fn` in the appropriate Rust file under `pinvoke/src/` (edition 2024 requires `unsafe(...)` for `no_mangle`).
 2. Add a matching `[DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]` declaration in the corresponding C# class.
-3. For async Rust operations: use `crate::spawn` with a completion callback on the Rust side, and `TaskCompletionSource<IntPtr>` with a pinned `GCHandle` delegate on the C# side. The `spawn` function dispatches to the least-loaded runtime in the pool.
+3. For async Rust operations: the FFI fn takes a `FfiCallback` (3-arg: `result`, `error`, `user_data`) and an opaque `user_data: *mut c_void`. Use `crate::spawn` to dispatch the async work to the least-loaded runtime in the pool, and forward `user_data` unchanged to the callback. On the C# side, allocate a per-call `GCHandle` over a `TaskCompletionSource<IntPtr>` and pass `GCHandle.ToIntPtr(handle)` as `userData`. A single static `[UnmanagedFunctionPointer]` dispatcher (`NativeCall.Dispatch`) recovers the `TaskCompletionSource` from `user_data` and completes it. This eliminates per-call delegate allocation and avoids the callback-vs-completion race.
 
 ## Conventions
 
@@ -41,5 +41,6 @@ Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust
 - **C# tests** live in `tests/` as an xUnit project (`tests.csproj`).
   - Test naming convention: `MethodName_Scenario_ExpectedResult` (e.g., `Connect_ValidUri_ReturnsConnection`).
 - **Rust tests** live in `pinvoke/tests/` as Cargo integration tests.
-  - Test the FFI functions directly using raw pointers to verify ownership and memory safety.
-  - Async FFI functions are tested by calling the underlying lancedb API directly (extern "C" callbacks can't capture state).
+  - Drive the FFI surface directly using raw pointers and the `FfiCallback` ABI to verify ownership, memory safety, and the `user_data` dispatch path.
+  - Async FFI functions are exercised through real callbacks: each test allocates an `FfiTestContext` (per-call mailbox) and passes `ctx.user_data()` as the `user_data` slot. `ctx.wait_success()` blocks on a `Condvar` until the callback fires. Tests run in parallel with no global lock.
+  - Sync helpers in `tests/common/mod.rs` (e.g., `connect_sync`, `create_table_sync`) call upstream `lancedb` directly and exist only for test setup — never use them to assert behavior of the FFI under test.

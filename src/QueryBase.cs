@@ -111,32 +111,32 @@ namespace lancedb
         /// </summary>
         private protected abstract void NativeConsolidatedExecute(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback);
+            NativeCall.FfiCallback callback, IntPtr userData);
 
         /// <summary>
         /// Calls the native consolidated explain_plan FFI function.
         /// </summary>
         private protected abstract void NativeConsolidatedExplainPlan(
-            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback);
+            IntPtr tablePtr, IntPtr paramsJson, bool verbose, NativeCall.FfiCallback callback, IntPtr userData);
 
         /// <summary>
         /// Calls the native consolidated analyze_plan FFI function.
         /// </summary>
         private protected abstract void NativeConsolidatedAnalyzePlan(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback);
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData);
 
         /// <summary>
         /// Calls the native consolidated output_schema FFI function.
         /// </summary>
         private protected abstract void NativeConsolidatedOutputSchema(
-            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback);
+            IntPtr tablePtr, IntPtr paramsJson, NativeCall.FfiCallback callback, IntPtr userData);
 
         /// <summary>
         /// Calls the native consolidated execute_stream FFI function.
         /// </summary>
         private protected abstract void NativeConsolidatedExecuteStream(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
-            NativeCall.FfiCallback callback);
+            NativeCall.FfiCallback callback, IntPtr userData);
 
         /// <summary>
         /// Copies base parameters from another query builder.
@@ -305,9 +305,9 @@ namespace lancedb
             byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr ffiCDataPtr = await CallWithPinnedJson(jsonHandle, completion =>
+            IntPtr ffiCDataPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
             {
-                NativeConsolidatedExecute(_tablePtr, pJson, timeoutMs, batchLen, completion);
+                NativeConsolidatedExecute(_tablePtr, pJson, timeoutMs, batchLen, completion, userData);
             }).ConfigureAwait(false);
 
             try
@@ -366,9 +366,9 @@ namespace lancedb
             byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr streamPtr = await CallWithPinnedJson(jsonHandle, completion =>
+            IntPtr streamPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
             {
-                NativeConsolidatedExecuteStream(_tablePtr, pJson, timeoutMs, batchLen, completion);
+                NativeConsolidatedExecuteStream(_tablePtr, pJson, timeoutMs, batchLen, completion, userData);
             }).ConfigureAwait(false);
 
             return AsyncRecordBatchReader.FromNativeStream(streamPtr);
@@ -389,9 +389,9 @@ namespace lancedb
             byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
+            IntPtr result = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
             {
-                NativeConsolidatedExplainPlan(_tablePtr, pJson, verbose, completion);
+                NativeConsolidatedExplainPlan(_tablePtr, pJson, verbose, completion, userData);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -409,9 +409,9 @@ namespace lancedb
             byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr result = await CallWithPinnedJson(jsonHandle, completion =>
+            IntPtr result = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
             {
-                NativeConsolidatedAnalyzePlan(_tablePtr, pJson, completion);
+                NativeConsolidatedAnalyzePlan(_tablePtr, pJson, completion, userData);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -429,9 +429,9 @@ namespace lancedb
             byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
-            IntPtr ffiSchemaPtr = await CallWithPinnedJson(jsonHandle, completion =>
+            IntPtr ffiSchemaPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
             {
-                NativeConsolidatedOutputSchema(_tablePtr, pJson, completion);
+                NativeConsolidatedOutputSchema(_tablePtr, pJson, completion, userData);
             }).ConfigureAwait(false);
 
             try
@@ -449,7 +449,7 @@ namespace lancedb
         /// The byte array is pinned using GCHandle and unpinned after the FFI function is called.
         /// </summary>
         private static async Task<IntPtr> CallWithPinnedJson(
-            GCHandle jsonHandle, Action<NativeCall.FfiCallback> invokeWithCallback)
+            GCHandle jsonHandle, Action<NativeCall.FfiCallback, IntPtr> invokeWithCallback)
         {
             try
             {

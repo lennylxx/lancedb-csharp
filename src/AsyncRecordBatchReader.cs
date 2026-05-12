@@ -49,7 +49,7 @@ namespace lancedb
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void stream_next(
-            IntPtr stream_ptr, NativeCall.FfiCallback completion);
+            IntPtr stream_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void stream_close(IntPtr stream_ptr);
@@ -69,9 +69,9 @@ namespace lancedb
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                IntPtr result = await NativeCall.Async(completion =>
+                IntPtr result = await NativeCall.Async((completion, userData) =>
                 {
-                    stream_next(_handle, completion);
+                    stream_next(_handle, completion, userData);
                 }).ConfigureAwait(false);
 
                 if (result == IntPtr.Zero)

@@ -8,7 +8,7 @@ use libc::c_char;
 use std::ffi::CString;
 
 use crate::ffi;
-use crate::ffi::{callback_error, FfiCallback};
+use crate::ffi::{callback_error, FfiCallback, UserData};
 
 #[unsafe(no_mangle)]
 pub extern "C" fn connection_connect(
@@ -18,7 +18,9 @@ pub extern "C" fn connection_connect(
     index_cache_size_bytes: i64,
     metadata_cache_size_bytes: i64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let dataset_uri = ffi::to_string(uri);
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
     let rci_secs = if read_consistency_interval_secs.is_nan() {
@@ -58,9 +60,9 @@ pub extern "C" fn connection_connect(
         match builder.execute().await {
             Ok(conn) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(conn));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -72,7 +74,9 @@ pub extern "C" fn connection_connect_namespace(
     storage_options_json: *const c_char,
     read_consistency_interval_secs: f64,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let ns_impl_str = ffi::to_string(ns_impl);
     let properties = ffi::parse_optional_json_map(properties_json).unwrap_or_default();
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
@@ -93,9 +97,9 @@ pub extern "C" fn connection_connect_namespace(
         match builder.execute().await {
             Ok(conn) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(conn));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -109,7 +113,9 @@ pub extern "C" fn connection_open_table(
     location: *const c_char,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table_name = ffi::to_string(table_name);
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
     let location_str = ffi::parse_optional_string(location);
@@ -132,9 +138,9 @@ pub extern "C" fn connection_open_table(
         match builder.execute().await {
             Ok(table) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -150,7 +156,9 @@ pub extern "C" fn connection_create_empty_table(
     namespace_json: *const c_char,
     exist_ok: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
 
@@ -160,7 +168,7 @@ pub extern "C" fn connection_create_empty_table(
         match ffi::import_schema(schema_cdata) {
             Ok(s) => s,
             Err(e) => {
-                callback_error(completion, e);
+                callback_error(completion, user_data, e);
                 return;
             }
         }
@@ -197,9 +205,9 @@ pub extern "C" fn connection_create_empty_table(
         match builder.execute().await {
             Ok(table) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -217,7 +225,9 @@ pub extern "C" fn connection_create_table(
     namespace_json: *const c_char,
     exist_ok: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table_name = ffi::to_string(table_name);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     let storage_opts = ffi::parse_optional_json_map(storage_options_json);
@@ -227,7 +237,7 @@ pub extern "C" fn connection_create_table(
     let (batches, _schema_ref) = match ffi::import_batches(arrays, schema, batch_count) {
         Ok(r) => r,
         Err(e) => {
-            callback_error(completion, e);
+            callback_error(completion, user_data, e);
             return;
         }
     };
@@ -261,9 +271,9 @@ pub extern "C" fn connection_create_table(
         match builder.execute().await {
             Ok(table) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -280,7 +290,9 @@ pub extern "C" fn connection_table_names(
     limit: u32,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     let start_after_str = ffi::parse_optional_string(start_after);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
@@ -299,9 +311,9 @@ pub extern "C" fn connection_table_names(
             Ok(names) => {
                 let joined = names.join("\n");
                 let c_str = CString::new(joined).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -313,7 +325,9 @@ pub extern "C" fn connection_list_tables(
     limit: u32,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     let page_token_str = ffi::parse_optional_string(page_token);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
@@ -334,9 +348,9 @@ pub extern "C" fn connection_list_tables(
                 });
                 let json_str = sonic_rs::to_string(&json).unwrap_or_default();
                 let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -347,7 +361,9 @@ pub extern "C" fn connection_drop_table(
     table_name: *const c_char,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let table_name = ffi::to_string(table_name);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
@@ -355,9 +371,9 @@ pub extern "C" fn connection_drop_table(
         let ns = namespace_list.unwrap_or_default();
         match connection.drop_table(&table_name, &ns).await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -367,16 +383,18 @@ pub extern "C" fn connection_drop_all_tables(
     connection_ptr: *const Connection,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let namespace_list = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     crate::spawn(async move {
         let ns = namespace_list.unwrap_or_default();
         match connection.drop_all_tables(&ns).await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -389,7 +407,9 @@ pub extern "C" fn connection_rename_table(
     cur_namespace_json: *const c_char,
     new_namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let old_name = ffi::to_string(old_name);
     let new_name = ffi::to_string(new_name);
     let cur_ns = ffi::parse_optional_json_list(cur_namespace_json).unwrap_or_default();
@@ -398,9 +418,9 @@ pub extern "C" fn connection_rename_table(
     crate::spawn(async move {
         match connection.rename_table(&old_name, &new_name, &cur_ns, &new_ns).await {
             Ok(()) => {
-                completion(1 as *const std::ffi::c_void, std::ptr::null());
+                completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -412,7 +432,9 @@ pub extern "C" fn connection_list_namespaces(
     page_token: *const c_char,
     limit: i32,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let parent_ns = ffi::parse_optional_json_list(namespace_json);
     let page_token_str = ffi::parse_optional_string(page_token);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
@@ -431,9 +453,9 @@ pub extern "C" fn connection_list_namespaces(
                 });
                 let json_str = sonic_rs::to_string(&json).unwrap_or_default();
                 let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -445,7 +467,9 @@ pub extern "C" fn connection_create_namespace(
     mode: *const c_char,
     properties_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let ns = ffi::parse_optional_json_list(namespace_json);
     let mode_str = ffi::parse_optional_string(mode);
     let props = ffi::parse_optional_json_map(properties_json);
@@ -463,9 +487,9 @@ pub extern "C" fn connection_create_namespace(
                 });
                 let json_str = sonic_rs::to_string(&json).unwrap_or_default();
                 let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -477,7 +501,9 @@ pub extern "C" fn connection_drop_namespace(
     mode: *const c_char,
     behavior: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let ns = ffi::parse_optional_json_list(namespace_json);
     let mode_str = ffi::parse_optional_string(mode);
     let behavior_str = ffi::parse_optional_string(behavior);
@@ -495,9 +521,9 @@ pub extern "C" fn connection_drop_namespace(
                 });
                 let json_str = sonic_rs::to_string(&json).unwrap_or_default();
                 let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -507,7 +533,9 @@ pub extern "C" fn connection_describe_namespace(
     connection_ptr: *const Connection,
     namespace_json: *const c_char,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let ns = ffi::parse_optional_json_list(namespace_json);
     let connection = ffi_clone_arc!(connection_ptr, Connection);
     crate::spawn(async move {
@@ -520,9 +548,9 @@ pub extern "C" fn connection_describe_namespace(
                 });
                 let json_str = sonic_rs::to_string(&json).unwrap_or_default();
                 let c_str = CString::new(json_str).unwrap_or_default();
-                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null());
+                completion(c_str.into_raw() as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }
@@ -537,7 +565,9 @@ pub extern "C" fn connection_clone_table(
     source_tag: *const c_char,
     is_shallow: bool,
     completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
 ) {
+    let user_data = UserData(user_data);
     let target_name = ffi::to_string(target_table_name);
     let src_uri = ffi::to_string(source_uri);
     let target_ns = ffi::parse_optional_json_list(target_namespace_json);
@@ -560,9 +590,9 @@ pub extern "C" fn connection_clone_table(
         match builder.execute().await {
             Ok(table) => {
                 let ptr = std::sync::Arc::into_raw(std::sync::Arc::new(table));
-                completion(ptr as *const std::ffi::c_void, std::ptr::null());
+                completion(ptr as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }
-            Err(e) => callback_error(completion, e),
+            Err(e) => callback_error(completion, user_data, e),
         }
     });
 }

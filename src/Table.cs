@@ -35,11 +35,11 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_count_rows(
-            IntPtr table_ptr, IntPtr filter, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr filter, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_delete(
-            IntPtr table_ptr, IntPtr predicate, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr predicate, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_delete_result_free(IntPtr ptr);
@@ -47,7 +47,7 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_update(
             IntPtr table_ptr, IntPtr filter, IntPtr columns_json,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_update_result_free(IntPtr ptr);
@@ -57,131 +57,131 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_schema(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern unsafe void table_add(
             IntPtr table_ptr, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
-            IntPtr mode, NativeCall.FfiCallback completion);
+            IntPtr mode, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_version(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_uses_v2_manifest_paths(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_migrate_manifest_paths_v2(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_replace_field_metadata(
             IntPtr table_ptr, IntPtr field_name, IntPtr metadata_json,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_versions(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_checkout(
-            IntPtr table_ptr, ulong version, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, ulong version, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_checkout_tag(
-            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_checkout_latest(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_restore(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_uri(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_create_index(
             IntPtr table_ptr, IntPtr columns_json, int index_type, IntPtr config_json,
             bool replace, IntPtr name, bool train, long wait_timeout_ms,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_list_indices(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_drop_index(
-            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_prewarm_index(
-            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr name, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_wait_for_index(
             IntPtr table_ptr, IntPtr index_names_json, long timeout_ms,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_index_stats(
-            IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_index_stats_free(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_add_columns(
-            IntPtr table_ptr, IntPtr transforms_json, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr transforms_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern unsafe void table_add_columns_null(
-            IntPtr table_ptr, CArrowSchema* schema, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, CArrowSchema* schema, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_alter_columns(
-            IntPtr table_ptr, IntPtr alterations_json, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr alterations_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_drop_columns(
-            IntPtr table_ptr, IntPtr columns_json, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr columns_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_optimize(
             IntPtr table_ptr, long cleanup_older_than_ms, bool delete_unverified,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_stats(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_stats_free(IntPtr ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_list(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_create(
-            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_delete(
-            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_update(
-            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr tag, ulong version, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_tags_get_version(
-            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, IntPtr tag, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern unsafe void table_merge_insert(
@@ -191,27 +191,27 @@ namespace lancedb
             bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
             CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
             [MarshalAs(UnmanagedType.U1)] bool use_index, long timeout_ms,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_take_offsets(
             IntPtr table_ptr, IntPtr offsets, nuint offsets_len, IntPtr columns_json,
             [MarshalAs(UnmanagedType.U1)] bool with_row_id,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_take_row_ids(
             IntPtr table_ptr, IntPtr row_ids, nuint row_ids_len, IntPtr columns_json,
             [MarshalAs(UnmanagedType.U1)] bool with_row_id,
-            NativeCall.FfiCallback completion);
+            NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_initial_storage_options(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_latest_storage_options(
-            IntPtr table_ptr, NativeCall.FfiCallback completion);
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         private TableHandle? _handle;
 
@@ -346,22 +346,22 @@ namespace lancedb
             IntPtr result;
             if (filter == null)
             {
-                result = await NativeCall.Async(completion =>
+                result = await NativeCall.Async((completion, userData) =>
                 {
-                    table_count_rows(_handle!.DangerousGetHandle(), IntPtr.Zero, completion);
+                    table_count_rows(_handle!.DangerousGetHandle(), IntPtr.Zero, completion, userData);
                 }).ConfigureAwait(false);
             }
             else
             {
                 byte[] utf8Filter = NativeCall.ToUtf8(filter);
-                result = await NativeCall.Async(completion =>
+                result = await NativeCall.Async((completion, userData) =>
                 {
                     unsafe
                     {
                         fixed (byte* p = utf8Filter)
                         {
                             table_count_rows(
-                                _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                                _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                         }
                     }
                 }).ConfigureAwait(false);
@@ -382,9 +382,9 @@ namespace lancedb
         /// </returns>
         public async Task<TableStatistics> Stats()
         {
-            var result = await NativeCall.Async(completion =>
+            var result = await NativeCall.Async((completion, userData) =>
             {
-                table_stats(_handle!.DangerousGetHandle(), completion);
+                table_stats(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
 
             try
@@ -416,14 +416,14 @@ namespace lancedb
         public async Task<DeleteResult> Delete(string predicate)
         {
             byte[] utf8Predicate = NativeCall.ToUtf8(predicate);
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Predicate)
                     {
                         table_delete(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -473,7 +473,7 @@ namespace lancedb
             IntPtr resultPtr;
             if (@where == null)
             {
-                resultPtr = await NativeCall.Async(completion =>
+                resultPtr = await NativeCall.Async((completion, userData) =>
                 {
                     unsafe
                     {
@@ -481,7 +481,7 @@ namespace lancedb
                         {
                             table_update(
                                 _handle!.DangerousGetHandle(), IntPtr.Zero, (IntPtr)pc,
-                                completion);
+                                completion, userData);
                         }
                     }
                 }).ConfigureAwait(false);
@@ -489,7 +489,7 @@ namespace lancedb
             else
             {
                 byte[] utf8Where = NativeCall.ToUtf8(@where);
-                resultPtr = await NativeCall.Async(completion =>
+                resultPtr = await NativeCall.Async((completion, userData) =>
                 {
                     unsafe
                     {
@@ -498,7 +498,7 @@ namespace lancedb
                         {
                             table_update(
                                 _handle!.DangerousGetHandle(), (IntPtr)pw, (IntPtr)pc,
-                                completion);
+                                completion, userData);
                         }
                     }
                 }).ConfigureAwait(false);
@@ -522,9 +522,9 @@ namespace lancedb
         /// </returns>
         public async Task<Schema> Schema()
         {
-            IntPtr ffiSchemaPtr = await NativeCall.Async(completion =>
+            IntPtr ffiSchemaPtr = await NativeCall.Async((completion, userData) =>
             {
-                table_schema(_handle!.DangerousGetHandle(), completion);
+                table_schema(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
 
             try
@@ -585,7 +585,7 @@ namespace lancedb
 
             byte[] utf8Mode = NativeCall.ToUtf8(options.Mode);
 
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -611,7 +611,7 @@ namespace lancedb
                                     _handle!.DangerousGetHandle(),
                                     pArrays, pSchema, (nuint)processed.Length,
                                     (IntPtr)pMode,
-                                    completion);
+                                    completion, userData);
                             }
                         }
                     }
@@ -666,9 +666,9 @@ namespace lancedb
         /// <returns>The current version number.</returns>
         public async Task<ulong> Version()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_version(_handle!.DangerousGetHandle(), completion);
+                table_version(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             return (ulong)result.ToInt64();
         }
@@ -682,9 +682,9 @@ namespace lancedb
         /// <returns><c>true</c> if the table uses V2 manifest paths; otherwise, <c>false</c>.</returns>
         public async Task<bool> UsesV2ManifestPaths()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_uses_v2_manifest_paths(_handle!.DangerousGetHandle(), completion);
+                table_uses_v2_manifest_paths(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             return result.ToInt64() != 0;
         }
@@ -699,9 +699,9 @@ namespace lancedb
         /// </remarks>
         public async Task MigrateManifestPathsV2()
         {
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
-                table_migrate_manifest_paths_v2(_handle!.DangerousGetHandle(), completion);
+                table_migrate_manifest_paths_v2(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
         }
 
@@ -714,7 +714,7 @@ namespace lancedb
         {
             byte[] fieldBytes = NativeCall.ToUtf8(fieldName);
             byte[] metaBytes = NativeCall.ToUtf8(JsonSerializer.Serialize(metadata));
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -724,7 +724,7 @@ namespace lancedb
                         table_replace_field_metadata(
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pField, (IntPtr)pMeta,
-                            completion);
+                            completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -736,9 +736,9 @@ namespace lancedb
         /// <returns>A list of <see cref="VersionInfo"/> describing each version.</returns>
         public async Task<IReadOnlyList<VersionInfo>> ListVersions()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_list_versions(_handle!.DangerousGetHandle(), completion);
+                table_list_versions(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<List<VersionInfo>>(json)
@@ -770,9 +770,9 @@ namespace lancedb
         /// <param name="version">The version number to check out.</param>
         public async Task Checkout(ulong version)
         {
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
-                table_checkout(_handle!.DangerousGetHandle(), version, completion);
+                table_checkout(_handle!.DangerousGetHandle(), version, completion, userData);
             }).ConfigureAwait(false);
         }
 
@@ -802,14 +802,14 @@ namespace lancedb
         public async Task Checkout(string tag)
         {
             byte[] tagBytes = NativeCall.ToUtf8(tag);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = tagBytes)
                     {
                         table_checkout_tag(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -824,9 +824,9 @@ namespace lancedb
         /// </remarks>
         public async Task CheckoutLatest()
         {
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
-                table_checkout_latest(_handle!.DangerousGetHandle(), completion);
+                table_checkout_latest(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
         }
 
@@ -849,9 +849,9 @@ namespace lancedb
         /// </remarks>
         public async Task Restore()
         {
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
-                table_restore(_handle!.DangerousGetHandle(), completion);
+                table_restore(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
         }
 
@@ -911,9 +911,9 @@ namespace lancedb
         /// <returns>The full storage location of the table (e.g., S3/GCS path or local path).</returns>
         public async Task<string> Uri()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_uri(_handle!.DangerousGetHandle(), completion);
+                table_uri(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             return NativeCall.ReadStringAndFree(result);
         }
@@ -961,7 +961,7 @@ namespace lancedb
                 ? (long)waitTimeout.Value.TotalMilliseconds
                 : -1;
 
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -973,7 +973,7 @@ namespace lancedb
                             _handle!.DangerousGetHandle(),
                             (IntPtr)pColumns, indexType, (IntPtr)pConfig,
                             replace, (IntPtr)pName, train, waitTimeoutMs,
-                            completion);
+                            completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -985,9 +985,9 @@ namespace lancedb
         /// <returns>A list of <see cref="IndexConfig"/> describing each index.</returns>
         public async Task<IReadOnlyList<IndexConfig>> ListIndices()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_list_indices(_handle!.DangerousGetHandle(), completion);
+                table_list_indices(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<List<IndexConfig>>(json)
@@ -1010,14 +1010,14 @@ namespace lancedb
         public async Task DropIndex(string name)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = nameBytes)
                     {
                         table_drop_index(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1047,14 +1047,14 @@ namespace lancedb
         public async Task PrewarmIndex(string name)
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = nameBytes)
                     {
                         table_prewarm_index(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1084,7 +1084,7 @@ namespace lancedb
             byte[] namesJson = NativeCall.ToUtf8(
                 JsonSerializer.Serialize(indexNames));
 
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -1092,7 +1092,7 @@ namespace lancedb
                     {
                         table_wait_for_index(
                             _handle!.DangerousGetHandle(), (IntPtr)p, timeoutMs,
-                            completion);
+                            completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1108,14 +1108,14 @@ namespace lancedb
         public async Task<IndexStatistics?> IndexStats(string indexName)
         {
             byte[] nameBytes = NativeCall.ToUtf8(indexName);
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = nameBytes)
                     {
                         table_index_stats(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1156,14 +1156,14 @@ namespace lancedb
             var pairs = transforms.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(pairs));
 
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Json)
                     {
                         table_add_columns(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1188,7 +1188,7 @@ namespace lancedb
         /// </returns>
         public async Task<AddColumnsResult> AddColumns(Apache.Arrow.Schema schema)
         {
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -1197,7 +1197,7 @@ namespace lancedb
                     {
                         CArrowSchemaExporter.ExportSchema(schema, pSchema);
                         table_add_columns_null(
-                            _handle!.DangerousGetHandle(), pSchema, completion);
+                            _handle!.DangerousGetHandle(), pSchema, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1228,14 +1228,14 @@ namespace lancedb
         {
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(alterations));
 
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Json)
                     {
                         table_alter_columns(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1254,14 +1254,14 @@ namespace lancedb
         {
             byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
 
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Json)
                     {
                         table_drop_columns(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1307,10 +1307,10 @@ namespace lancedb
                 ? (long)cleanupOlderThan.Value.TotalMilliseconds
                 : -1;
 
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
                 table_optimize(
-                    _handle!.DangerousGetHandle(), cleanupMs, deleteUnverified, completion);
+                    _handle!.DangerousGetHandle(), cleanupMs, deleteUnverified, completion, userData);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<OptimizeStats>(json) ?? new OptimizeStats();
@@ -1377,7 +1377,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(whenNotMatchedBySourceDeleteFilter) : null;
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
 
-            IntPtr resultPtr = await NativeCall.Async(completion =>
+            IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -1409,7 +1409,7 @@ namespace lancedb
                                     whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
                                     pArrays, pSchema, (nuint)data.Count,
                                     useIndex, timeoutMs,
-                                    completion);
+                                    completion, userData);
                             }
                         }
                     }
@@ -1486,7 +1486,7 @@ namespace lancedb
             byte[]? columnsBytes = columns != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
 
-            IntPtr ffiCDataPtr = await NativeCall.Async(completion =>
+            IntPtr ffiCDataPtr = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
@@ -1498,14 +1498,14 @@ namespace lancedb
                             table_take_row_ids(
                                 _handle!.DangerousGetHandle(),
                                 (IntPtr)pIds, (nuint)ids.Length,
-                                (IntPtr)pColumns, withRowId, completion);
+                                (IntPtr)pColumns, withRowId, completion, userData);
                         }
                         else
                         {
                             table_take_offsets(
                                 _handle!.DangerousGetHandle(),
                                 (IntPtr)pIds, (nuint)ids.Length,
-                                (IntPtr)pColumns, withRowId, completion);
+                                (IntPtr)pColumns, withRowId, completion, userData);
                         }
                     }
                 }
@@ -1544,9 +1544,9 @@ namespace lancedb
         /// <returns>A dictionary mapping tag names to <see cref="TagInfo"/>.</returns>
         public async Task<Dictionary<string, TagInfo>> ListTags()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
-                table_tags_list(_handle!.DangerousGetHandle(), completion);
+                table_tags_list(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
             string json = NativeCall.ReadStringAndFree(result);
             return JsonSerializer.Deserialize<Dictionary<string, TagInfo>>(json)
@@ -1561,14 +1561,14 @@ namespace lancedb
         public async Task CreateTag(string tag, ulong version)
         {
             byte[] utf8Tag = NativeCall.ToUtf8(tag);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Tag)
                     {
                         table_tags_create(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1581,14 +1581,14 @@ namespace lancedb
         public async Task DeleteTag(string tag)
         {
             byte[] utf8Tag = NativeCall.ToUtf8(tag);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Tag)
                     {
                         table_tags_delete(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1602,14 +1602,14 @@ namespace lancedb
         public async Task UpdateTag(string tag, ulong version)
         {
             byte[] utf8Tag = NativeCall.ToUtf8(tag);
-            await NativeCall.Async(completion =>
+            await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Tag)
                     {
                         table_tags_update(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, version, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1624,14 +1624,14 @@ namespace lancedb
         public async Task<ulong> GetTagVersion(string tag)
         {
             byte[] utf8Tag = NativeCall.ToUtf8(tag);
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
                 unsafe
                 {
                     fixed (byte* p = utf8Tag)
                     {
                         table_tags_get_version(
-                            _handle!.DangerousGetHandle(), (IntPtr)p, completion);
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -1658,10 +1658,10 @@ namespace lancedb
         /// </returns>
         public async Task<Dictionary<string, string>?> InitialStorageOptions()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
                 table_initial_storage_options(
-                    _handle!.DangerousGetHandle(), completion);
+                    _handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
 
             if (result == IntPtr.Zero)
@@ -1689,10 +1689,10 @@ namespace lancedb
         /// </returns>
         public async Task<Dictionary<string, string>?> LatestStorageOptions()
         {
-            IntPtr result = await NativeCall.Async(completion =>
+            IntPtr result = await NativeCall.Async((completion, userData) =>
             {
                 table_latest_storage_options(
-                    _handle!.DangerousGetHandle(), completion);
+                    _handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
 
             if (result == IntPtr.Zero)

@@ -15,9 +15,12 @@ namespace lancedb
         /// On success, result is set and error is IntPtr.Zero.
         /// On error, result is IntPtr.Zero and error points to a UTF-8 error string
         /// (caller must free with free_string).
+        /// userData is the opaque pointer the call site passed alongside this callback;
+        /// the FFI layer returns it verbatim so the managed side can recover the
+        /// per-call context (a pinned GCHandle pointing at the TaskCompletionSource).
         /// </summary>
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        internal delegate void FfiCallback(IntPtr result, IntPtr error);
+        internal delegate void FfiCallback(IntPtr result, IntPtr error, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void free_string(IntPtr ptr);
@@ -32,36 +35,86 @@ namespace lancedb
         private static extern IntPtr ffi_get_last_error();
 
         /// <summary>
-        /// Calls an async FFI function that uses the unified (result, error) callback pattern.
-        /// Returns the result IntPtr on success, or throws LanceDbException on error.
+        /// Single static dispatcher used by every async FFI call. The Rust side
+        /// returns the GCHandle pointer we passed in via <c>userData</c>; we
+        /// recover the TaskCompletionSource, free the handle, and resolve the
+        /// task. The body is wrapped in try/catch so that an exception thrown
+        /// while reading the error string (or any other unexpected failure)
+        /// still terminates the task instead of leaving it pending forever.
         /// </summary>
-        internal static async Task<IntPtr> Async(Action<FfiCallback> invoke)
-        {
-            var tcs = new TaskCompletionSource<IntPtr>();
+        private static readonly FfiCallback s_dispatcher = Dispatch;
 
-            FfiCallback callback = (result, error) =>
+        private static void Dispatch(IntPtr result, IntPtr error, IntPtr userData)
+        {
+            if (userData == IntPtr.Zero)
             {
+                return;
+            }
+
+            GCHandle handle = GCHandle.FromIntPtr(userData);
+            TaskCompletionSource<IntPtr>? tcs = handle.Target as TaskCompletionSource<IntPtr>;
+
+            try
+            {
+                if (tcs == null)
+                {
+                    return;
+                }
+
                 if (error != IntPtr.Zero)
                 {
-                    string message = ReadUtf8AndFree(error);
-                    tcs.SetException(new LanceDbException(message));
+                    string message;
+                    try
+                    {
+                        message = ReadUtf8AndFree(error);
+                    }
+                    catch (Exception ex)
+                    {
+                        tcs.TrySetException(ex);
+                        return;
+                    }
+                    tcs.TrySetException(new LanceDbException(message));
                 }
                 else
                 {
-                    tcs.SetResult(result);
+                    tcs.TrySetResult(result);
                 }
-            };
-
-            GCHandle handle = GCHandle.Alloc(callback, GCHandleType.Normal);
-            try
+            }
+            catch (Exception ex)
             {
-                invoke(callback);
-                return await tcs.Task.ConfigureAwait(false);
+                tcs?.TrySetException(ex);
             }
             finally
             {
                 handle.Free();
             }
+        }
+
+        /// <summary>
+        /// Calls an async FFI function that uses the unified (result, error, userData) callback pattern.
+        /// Returns the result IntPtr on success, or throws LanceDbException on error.
+        /// </summary>
+        /// <remarks>
+        /// The caller's <paramref name="invoke"/> lambda receives the static dispatcher and
+        /// an <see cref="IntPtr"/> pinning a per-call <see cref="TaskCompletionSource{TResult}"/>.
+        /// It must pass both to the underlying P/Invoke. The dispatcher frees the GCHandle
+        /// when the callback fires.
+        /// </remarks>
+        internal static async Task<IntPtr> Async(Action<FfiCallback, IntPtr> invoke)
+        {
+            var tcs = new TaskCompletionSource<IntPtr>(TaskCreationOptions.RunContinuationsAsynchronously);
+            GCHandle handle = GCHandle.Alloc(tcs, GCHandleType.Normal);
+            try
+            {
+                invoke(s_dispatcher, GCHandle.ToIntPtr(handle));
+            }
+            catch
+            {
+                handle.Free();
+                throw;
+            }
+
+            return await tcs.Task.ConfigureAwait(false);
         }
 
         /// <summary>

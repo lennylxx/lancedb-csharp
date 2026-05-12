@@ -23,49 +23,49 @@ namespace lancedb
     public class Connection : IDisposable
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion);
+        private static extern void connection_connect(IntPtr uri, double read_consistency_interval_secs, IntPtr storage_options_json, long index_cache_size_bytes, long metadata_cache_size_bytes, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_connect_namespace(IntPtr ns_impl, IntPtr properties_json, IntPtr storage_options_json, double read_consistency_interval_secs, NativeCall.FfiCallback completion);
+        private static extern void connection_connect_namespace(IntPtr ns_impl, IntPtr properties_json, IntPtr storage_options_json, double read_consistency_interval_secs, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_open_table(IntPtr connection_ptr, IntPtr table_name, IntPtr storage_options_json, uint index_cache_size, IntPtr location, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern unsafe void connection_create_empty_table(IntPtr connection_ptr, IntPtr table_name, CArrowSchema* schema_cdata, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void connection_create_empty_table(IntPtr connection_ptr, IntPtr table_name, CArrowSchema* schema_cdata, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern unsafe void connection_create_table(IntPtr connection_ptr, IntPtr table_name, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion);
+        private static extern unsafe void connection_create_table(IntPtr connection_ptr, IntPtr table_name, CArrowArray* arrays, CArrowSchema* schema, nuint batch_count, IntPtr mode, IntPtr storage_options_json, IntPtr location, IntPtr namespace_json, [MarshalAs(UnmanagedType.U1)] bool exist_ok, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_table_names(IntPtr connection_ptr, IntPtr start_after, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_list_tables(IntPtr connection_ptr, IntPtr page_token, uint limit, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_drop_table(IntPtr connection_ptr, IntPtr table_name, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_table(IntPtr connection_ptr, IntPtr table_name, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_drop_all_tables(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_all_tables(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_rename_table(IntPtr connection_ptr, IntPtr old_name, IntPtr new_name, IntPtr cur_namespace_json, IntPtr new_namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_rename_table(IntPtr connection_ptr, IntPtr old_name, IntPtr new_name, IntPtr cur_namespace_json, IntPtr new_namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_clone_table(IntPtr connection_ptr, IntPtr target_table_name, IntPtr source_uri, IntPtr target_namespace_json, long source_version, IntPtr source_tag, [MarshalAs(UnmanagedType.U1)] bool is_shallow, NativeCall.FfiCallback completion);
+        private static extern void connection_clone_table(IntPtr connection_ptr, IntPtr target_table_name, IntPtr source_uri, IntPtr target_namespace_json, long source_version, IntPtr source_tag, [MarshalAs(UnmanagedType.U1)] bool is_shallow, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_list_namespaces(IntPtr connection_ptr, IntPtr namespace_json, IntPtr page_token, int limit, NativeCall.FfiCallback completion);
+        private static extern void connection_list_namespaces(IntPtr connection_ptr, IntPtr namespace_json, IntPtr page_token, int limit, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_create_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr properties_json, NativeCall.FfiCallback completion);
+        private static extern void connection_create_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr properties_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_drop_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr behavior, NativeCall.FfiCallback completion);
+        private static extern void connection_drop_namespace(IntPtr connection_ptr, IntPtr namespace_json, IntPtr mode, IntPtr behavior, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
-        private static extern void connection_describe_namespace(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion);
+        private static extern void connection_describe_namespace(IntPtr connection_ptr, IntPtr namespace_json, NativeCall.FfiCallback completion, IntPtr userData);
 
         private ConnectionHandle? _handle;
 
@@ -102,7 +102,7 @@ namespace lancedb
                 ? (options.Session.MetadataCacheSizeBytes ?? 0)
                 : -1;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -115,7 +115,7 @@ namespace lancedb
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
                             indexCacheSizeBytes,
                             metadataCacheSizeBytes,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -154,7 +154,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -167,7 +167,7 @@ namespace lancedb
                             new IntPtr(pProps),
                             storageJson != null ? new IntPtr(pStorage) : IntPtr.Zero,
                             rciSecs,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -226,7 +226,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
                 : null;
 
-            IntPtr tablePtr = await NativeCall.Async(callback =>
+            IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -242,7 +242,7 @@ namespace lancedb
                             0,
                             locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -277,7 +277,7 @@ namespace lancedb
                 : null;
             bool existOk = options?.ExistOk ?? false;
 
-            IntPtr tablePtr = await NativeCall.Async(callback =>
+            IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -305,7 +305,7 @@ namespace lancedb
                                 locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
                                 namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                                 existOk,
-                                callback);
+                                callback, userData);
                         }
                     }
                 }
@@ -354,7 +354,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
                 : null;
 
-            IntPtr tablePtr = await NativeCall.Async(callback =>
+            IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -389,7 +389,7 @@ namespace lancedb
                                     locationBytes != null ? new IntPtr(pLocation) : IntPtr.Zero,
                                     namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                                     options.ExistOk,
-                                    callback);
+                                    callback, userData);
                             }
                         }
                     }
@@ -450,7 +450,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -462,7 +462,7 @@ namespace lancedb
                             startAfterBytes != null ? new IntPtr(pStartAfter) : IntPtr.Zero,
                             limit,
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -505,7 +505,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -517,7 +517,7 @@ namespace lancedb
                             pageTokenBytes != null ? new IntPtr(pPageToken) : IntPtr.Zero,
                             limit,
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -552,7 +552,7 @@ namespace lancedb
                 byte[]? namespaceJson = ns != null
                     ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
                     : null;
-                await NativeCall.Async(callback =>
+                await NativeCall.Async((callback, userData) =>
                 {
                     unsafe
                     {
@@ -563,7 +563,7 @@ namespace lancedb
                                 _handle!.DangerousGetHandle(),
                                 new IntPtr(p),
                                 namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                                callback);
+                                callback, userData);
                         }
                     }
                 }).ConfigureAwait(false);
@@ -597,7 +597,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(newNamespace))
                 : null;
 
-            await NativeCall.Async(callback =>
+            await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -612,7 +612,7 @@ namespace lancedb
                             new IntPtr(pNew),
                             curNsJson != null ? new IntPtr(pCurNs) : IntPtr.Zero,
                             newNsJson != null ? new IntPtr(pNewNs) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -664,7 +664,7 @@ namespace lancedb
                 : null;
             long versionSentinel = sourceVersion.HasValue ? (long)sourceVersion.Value : -1;
 
-            IntPtr tablePtr = await NativeCall.Async(callback =>
+            IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -681,7 +681,7 @@ namespace lancedb
                             versionSentinel,
                             sourceTagBytes != null ? new IntPtr(pSourceTag) : IntPtr.Zero,
                             isShallow,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -700,7 +700,7 @@ namespace lancedb
             byte[]? namespaceJson = ns != null
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
                 : null;
-            await NativeCall.Async(callback =>
+            await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -709,7 +709,7 @@ namespace lancedb
                         connection_drop_all_tables(
                             _handle!.DangerousGetHandle(),
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -742,7 +742,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(pageToken)
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -754,7 +754,7 @@ namespace lancedb
                             namespaceJson != null ? new IntPtr(pNamespace) : IntPtr.Zero,
                             pageTokenBytes != null ? new IntPtr(pPageToken) : IntPtr.Zero,
                             limit,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -798,7 +798,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(JsonSerializer.Serialize(properties))
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -811,7 +811,7 @@ namespace lancedb
                             new IntPtr(pNamespace),
                             modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
                             propsJson != null ? new IntPtr(pProps) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -857,7 +857,7 @@ namespace lancedb
                 ? NativeCall.ToUtf8(behavior)
                 : null;
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -870,7 +870,7 @@ namespace lancedb
                             new IntPtr(pNamespace),
                             modeBytes != null ? new IntPtr(pMode) : IntPtr.Zero,
                             behaviorBytes != null ? new IntPtr(pBehavior) : IntPtr.Zero,
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);
@@ -895,7 +895,7 @@ namespace lancedb
         {
             byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
 
-            IntPtr ptr = await NativeCall.Async(callback =>
+            IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {
                 unsafe
                 {
@@ -904,7 +904,7 @@ namespace lancedb
                         connection_describe_namespace(
                             _handle!.DangerousGetHandle(),
                             new IntPtr(pNamespace),
-                            callback);
+                            callback, userData);
                     }
                 }
             }).ConfigureAwait(false);

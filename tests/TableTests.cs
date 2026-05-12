@@ -126,6 +126,55 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Fires N FFI calls concurrently against distinct tables with distinct row counts
+        /// and asserts each Task resolves with its own table's count. Validates that the
+        /// per-call user_data routing in NativeCall.Dispatch never crosses wires under load —
+        /// any swapped TaskCompletionSources would produce at least two mismatched results.
+        /// </summary>
+        [Fact]
+        public async Task CountRows_ManyConcurrentCalls_EachReturnsItsOwnResult()
+        {
+            const int N = 32;
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+
+                var tables = new Table[N];
+                for (int i = 0; i < N; i++)
+                {
+                    tables[i] = await connection.CreateTable($"concurrent_{i}", CreateTestBatch(i + 1));
+                }
+
+                var tasks = new Task<long>[N];
+                for (int i = 0; i < N; i++)
+                {
+                    tasks[i] = tables[i].CountRows();
+                }
+                long[] counts = await Task.WhenAll(tasks);
+
+                for (int i = 0; i < N; i++)
+                {
+                    Assert.Equal(i + 1, counts[i]);
+                }
+
+                foreach (var t in tables)
+                {
+                    t.Dispose();
+                }
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
         /// Schema should return valid Apache.Arrow.Schema for the table.
         /// </summary>
         [Fact]

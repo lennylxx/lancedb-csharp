@@ -14,7 +14,7 @@ fn test_to_string_returns_owned_string() {
 }
 
 #[test]
-fn test_to_string_utf8() {
+fn test_to_string_utf8_input_returns_decoded_string() {
     let c_str = std::ffi::CString::new("你好世界").unwrap();
     let result = ffi::to_string(c_str.as_ptr());
     assert_eq!(result, "你好世界");
@@ -31,7 +31,7 @@ fn test_parse_optional_json_map_null_returns_none() {
 }
 
 #[test]
-fn test_parse_optional_json_map_valid_json() {
+fn test_parse_optional_json_map_valid_json_returns_map() {
     let json = std::ffi::CString::new(r#"{"key1":"val1","key2":"val2"}"#).unwrap();
     let result = ffi::parse_optional_json_map(json.as_ptr()).unwrap();
     assert_eq!(result.len(), 2);
@@ -40,7 +40,7 @@ fn test_parse_optional_json_map_valid_json() {
 }
 
 #[test]
-fn test_parse_optional_json_map_empty_object() {
+fn test_parse_optional_json_map_empty_object_returns_empty_map() {
     let json = std::ffi::CString::new("{}").unwrap();
     let result = ffi::parse_optional_json_map(json.as_ptr()).unwrap();
     assert!(result.is_empty());
@@ -52,14 +52,14 @@ fn test_parse_optional_json_list_null_returns_none() {
 }
 
 #[test]
-fn test_parse_optional_json_list_valid_json() {
+fn test_parse_optional_json_list_valid_json_returns_list() {
     let json = std::ffi::CString::new(r#"["team","project"]"#).unwrap();
     let result = ffi::parse_optional_json_list(json.as_ptr()).unwrap();
     assert_eq!(result, vec!["team", "project"]);
 }
 
 #[test]
-fn test_parse_optional_json_list_empty_array() {
+fn test_parse_optional_json_list_empty_array_returns_empty_list() {
     let json = std::ffi::CString::new("[]").unwrap();
     let result = ffi::parse_optional_json_list(json.as_ptr()).unwrap();
     assert!(result.is_empty());
@@ -71,7 +71,7 @@ fn test_parse_optional_string_null_returns_none() {
 }
 
 #[test]
-fn test_parse_optional_string_valid() {
+fn test_parse_optional_string_valid_returns_some() {
     let c_str = std::ffi::CString::new("s3://my-bucket/tables/foo").unwrap();
     let result = ffi::parse_optional_string(c_str.as_ptr()).unwrap();
     assert_eq!(result, "s3://my-bucket/tables/foo");
@@ -84,7 +84,7 @@ fn test_import_record_batch_null_is_error() {
 }
 
 #[test]
-fn test_import_record_batch_valid() {
+fn test_import_record_batch_valid_returns_batch() {
     use arrow_array::{Int32Array, RecordBatch, StructArray};
     use arrow_data::ffi::FFI_ArrowArray;
     use arrow_schema::ffi::FFI_ArrowSchema;
@@ -116,7 +116,7 @@ fn test_import_schema_null_is_error() {
 }
 
 #[test]
-fn test_import_schema_valid() {
+fn test_import_schema_valid_returns_schema() {
     use arrow_schema::ffi::FFI_ArrowSchema;
     use arrow_schema::{DataType, Field, Schema};
 
@@ -158,7 +158,7 @@ fn test_get_last_error_returns_null_when_no_error() {
 }
 
 #[test]
-fn test_get_last_error_clears_after_read() {
+fn test_get_last_error_after_read_clears_message() {
     ffi::set_last_error("first error");
     let err_ptr = ffi::ffi_get_last_error();
     assert!(!err_ptr.is_null());
@@ -175,7 +175,7 @@ fn test_import_batches_null_is_error() {
 }
 
 #[test]
-fn test_import_batches_valid() {
+fn test_import_batches_valid_returns_batches() {
     use arrow_array::{Int32Array, RecordBatch, StructArray};
     use arrow_data::ffi::FFI_ArrowArray;
     use arrow_schema::ffi::FFI_ArrowSchema;

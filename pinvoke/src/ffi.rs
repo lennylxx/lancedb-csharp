@@ -9,12 +9,45 @@ use std::sync::Arc;
 /// Callback type for async FFI operations.
 /// On success: result is non-null, error is null.
 /// On error: result is null, error is a UTF-8 C string (caller must free with free_string).
-pub type FfiCallback = extern "C" fn(result: *const std::ffi::c_void, error: *const c_char);
+/// user_data is the opaque pointer the caller supplied alongside this callback;
+/// it is returned to the caller verbatim so they can recover their own context
+/// (e.g. a managed handle on the C# side) without relying on global state.
+pub type FfiCallback = extern "C" fn(
+    result: *const std::ffi::c_void,
+    error: *const c_char,
+    user_data: *mut std::ffi::c_void,
+);
+
+/// Send-safe wrapper around the opaque `user_data` pointer.
+///
+/// Raw `*mut c_void` is neither `Send` nor `Sync`, so it can't be captured by
+/// an `async move` block targeted at the Tokio runtime. Each FFI entry point
+/// wraps the incoming pointer in `UserData` immediately and then captures the
+/// wrapper. The pointer itself is only read on the callback hand-off, which
+/// is safe because the C# side keeps the underlying GCHandle alive until the
+/// callback fires.
+#[derive(Copy, Clone)]
+pub struct UserData(pub *mut std::ffi::c_void);
+unsafe impl Send for UserData {}
+unsafe impl Sync for UserData {}
+
+impl UserData {
+    /// Returns the raw pointer. Using this method (rather than the
+    /// `.0` field) is what async closures should call inside their
+    /// bodies: Rust's 2021 disjoint-capture rules would otherwise
+    /// capture just the raw pointer (which isn't `Send`) when a
+    /// closure only references `.0`. A method call uses the whole
+    /// receiver, which keeps `UserData` itself in the capture set.
+    #[inline]
+    pub fn as_ptr(self) -> *mut std::ffi::c_void {
+        self.0
+    }
+}
 
 /// Helper to invoke a callback with an error string.
-pub fn callback_error(completion: FfiCallback, err: impl std::fmt::Display) {
+pub fn callback_error(completion: FfiCallback, user_data: UserData, err: impl std::fmt::Display) {
     let msg = CString::new(err.to_string()).unwrap_or_default();
-    completion(std::ptr::null(), msg.into_raw());
+    completion(std::ptr::null(), msg.into_raw(), user_data.0);
 }
 
 thread_local! {

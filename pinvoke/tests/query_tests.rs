@@ -57,16 +57,16 @@ fn test_free_ffi_cdata_null_is_safe() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_query_execute_with_empty_params() {
-    let _lock = common::ffi_lock();
+fn test_query_execute_empty_params_returns_batch() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "query_empty_params");
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let params = CString::new("{}").unwrap();
-    query_execute(table_ptr, params.as_ptr(), -1, 0, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    query_execute(table_ptr, params.as_ptr(), -1, 0, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     free_ffi_cdata(result as *mut FfiCData);
@@ -75,15 +75,15 @@ fn test_query_execute_with_empty_params() {
 }
 
 #[test]
-fn test_query_execute_with_null_params() {
-    let _lock = common::ffi_lock();
+fn test_query_execute_null_params_returns_batch() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "query_null_params");
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
-    query_execute(table_ptr, ptr::null(), -1, 0, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    query_execute(table_ptr, ptr::null(), -1, 0, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     free_ffi_cdata(result as *mut FfiCData);
@@ -92,16 +92,16 @@ fn test_query_execute_with_null_params() {
 }
 
 #[test]
-fn test_query_execute_with_limit_and_select() {
-    let _lock = common::ffi_lock();
+fn test_query_execute_with_limit_and_select_returns_subset() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "query_limit_sel");
     common::add_sync(table_ptr, vec![create_test_batch(10)]);
 
     let params = CString::new(r#"{"select":["id"],"limit":3}"#).unwrap();
-    query_execute(table_ptr, params.as_ptr(), -1, 0, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    query_execute(table_ptr, params.as_ptr(), -1, 0, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let cdata = result as *mut FfiCData;
@@ -120,16 +120,16 @@ fn test_query_execute_with_limit_and_select() {
 }
 
 #[test]
-fn test_query_explain_plan() {
-    let _lock = common::ffi_lock();
+fn test_query_explain_plan_returns_plan_text() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "query_explain");
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let params = CString::new(r#"{"limit":5}"#).unwrap();
-    query_explain_plan(table_ptr, params.as_ptr(), false, common::ffi_callback);
-    let result = common::ffi_wait_success();
+    query_explain_plan(table_ptr, params.as_ptr(), false, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let plan = unsafe { std::ffi::CStr::from_ptr(result as *const _) }
@@ -143,16 +143,16 @@ fn test_query_explain_plan() {
 }
 
 #[test]
-fn test_query_output_schema() {
-    let _lock = common::ffi_lock();
+fn test_query_output_schema_returns_arrow_schema() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_sync(conn_ptr, "query_out_schema");
     common::add_sync(table_ptr, vec![create_test_batch(5)]);
 
     let params = CString::new(r#"{"select":["id"]}"#).unwrap();
-    query_output_schema(table_ptr, params.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+    query_output_schema(table_ptr, params.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let schema_ref = unsafe { &*(result as *const arrow_schema::ffi::FFI_ArrowSchema) };
@@ -174,8 +174,8 @@ fn test_query_output_schema() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn test_vector_query_execute_basic() {
-    let _lock = common::ffi_lock();
+fn test_vector_query_execute_basic_returns_batch_with_distance() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_with_data_sync(
@@ -184,8 +184,8 @@ fn test_vector_query_execute_basic() {
     let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"limit":5}"#).unwrap();
     vector_query_execute(
-        table_ptr, vector.as_ptr(), 4, params.as_ptr(), -1, 0, common::ffi_callback);
-    let result = common::ffi_wait_success();
+        table_ptr, vector.as_ptr(), 4, params.as_ptr(), -1, 0, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let cdata = result as *mut FfiCData;
@@ -204,8 +204,8 @@ fn test_vector_query_execute_basic() {
 }
 
 #[test]
-fn test_vector_query_execute_with_all_params() {
-    let _lock = common::ffi_lock();
+fn test_vector_query_execute_with_all_params_returns_expected_columns() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_with_data_sync(
@@ -220,8 +220,8 @@ fn test_vector_query_execute_with_all_params() {
         "with_row_id": true
     }"#).unwrap();
     vector_query_execute(
-        table_ptr, vector.as_ptr(), 4, params.as_ptr(), -1, 0, common::ffi_callback);
-    let result = common::ffi_wait_success();
+        table_ptr, vector.as_ptr(), 4, params.as_ptr(), -1, 0, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let cdata = result as *mut FfiCData;
@@ -245,8 +245,8 @@ fn test_vector_query_execute_with_all_params() {
 // would require a separate FFI result slot to avoid Mutex poisoning.
 
 #[test]
-fn test_vector_query_explain_plan() {
-    let _lock = common::ffi_lock();
+fn test_vector_query_explain_plan_returns_plan_text() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_with_data_sync(
@@ -255,8 +255,8 @@ fn test_vector_query_explain_plan() {
     let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"limit":5}"#).unwrap();
     vector_query_explain_plan(
-        table_ptr, vector.as_ptr(), 4, params.as_ptr(), true, common::ffi_callback);
-    let result = common::ffi_wait_success();
+        table_ptr, vector.as_ptr(), 4, params.as_ptr(), true, common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let plan = unsafe { std::ffi::CStr::from_ptr(result as *const _) }
@@ -270,8 +270,8 @@ fn test_vector_query_explain_plan() {
 }
 
 #[test]
-fn test_vector_query_output_schema() {
-    let _lock = common::ffi_lock();
+fn test_vector_query_output_schema_returns_arrow_schema() {
+    let ctx = common::FfiTestContext::new();
     let tmp = TempDir::new().unwrap();
     let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
     let table_ptr = common::create_table_with_data_sync(
@@ -280,8 +280,8 @@ fn test_vector_query_output_schema() {
     let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"select":["id"],"limit":5}"#).unwrap();
     vector_query_output_schema(
-        table_ptr, vector.as_ptr(), 4, params.as_ptr(), common::ffi_callback);
-    let result = common::ffi_wait_success();
+        table_ptr, vector.as_ptr(), 4, params.as_ptr(), common::ffi_callback, ctx.user_data());
+    let result = ctx.wait_success();
     assert!(!result.is_null());
 
     let schema_ref = unsafe { &*(result as *const arrow_schema::ffi::FFI_ArrowSchema) };
