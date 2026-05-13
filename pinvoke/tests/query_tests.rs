@@ -181,7 +181,7 @@ fn test_vector_query_execute_basic_returns_batch_with_distance() {
     let table_ptr = common::create_table_with_data_sync(
         conn_ptr, "vs_exec", vec![create_vector_batch(20, 4)]);
 
-    let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
+    let vector: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"limit":5}"#).unwrap();
     vector_query_execute(
         table_ptr, vector.as_ptr(), 4, params.as_ptr(), -1, 0, common::ffi_callback, ctx.user_data());
@@ -211,7 +211,7 @@ fn test_vector_query_execute_with_all_params_returns_expected_columns() {
     let table_ptr = common::create_table_with_data_sync(
         conn_ptr, "vs_allparams", vec![create_vector_batch(20, 4)]);
 
-    let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
+    let vector: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{
         "select": ["id"],
         "limit": 3,
@@ -252,7 +252,7 @@ fn test_vector_query_explain_plan_returns_plan_text() {
     let table_ptr = common::create_table_with_data_sync(
         conn_ptr, "vs_explain", vec![create_vector_batch(20, 4)]);
 
-    let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
+    let vector: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"limit":5}"#).unwrap();
     vector_query_explain_plan(
         table_ptr, vector.as_ptr(), 4, params.as_ptr(), true, common::ffi_callback, ctx.user_data());
@@ -277,7 +277,7 @@ fn test_vector_query_output_schema_returns_arrow_schema() {
     let table_ptr = common::create_table_with_data_sync(
         conn_ptr, "vs_outschema", vec![create_vector_batch(20, 4)]);
 
-    let vector: [f64; 4] = [1.0, 2.0, 3.0, 4.0];
+    let vector: [f32; 4] = [1.0, 2.0, 3.0, 4.0];
     let params = CString::new(r#"{"select":["id"],"limit":5}"#).unwrap();
     vector_query_output_schema(
         table_ptr, vector.as_ptr(), 4, params.as_ptr(), common::ffi_callback, ctx.user_data());
