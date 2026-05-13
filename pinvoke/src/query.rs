@@ -1,7 +1,7 @@
 use lancedb::index::scalar::FullTextSearchQuery;
 use lancedb::query::{ExecutableQuery, Query, QueryBase, QueryExecutionOptions, Select, VectorQuery};
 use lancedb::table::Table;
-use libc::{c_char, c_double, size_t};
+use libc::{c_char, c_float, size_t};
 use serde::Deserialize;
 use sonic_rs::{JsonContainerTrait, JsonValueTrait};
 use std::slice;
@@ -203,7 +203,7 @@ fn build_query(table: &Table, params: &QueryParams) -> Result<Query, String> {
 /// Builds a VectorQuery from a table, query vector, and all params.
 fn build_vector_query(
     table: &Table,
-    vector: &[f64],
+    vector: &[f32],
     params: &QueryParams,
 ) -> Result<VectorQuery, String> {
     let query = table.query().clone();
@@ -495,7 +495,7 @@ pub extern "C" fn query_output_schema(
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_execute(
     table_ptr: *const Table,
-    vector_ptr: *const c_double,
+    vector_ptr: *const c_float,
     vector_len: size_t,
     params_json: *const c_char,
     timeout_ms: i64,
@@ -534,7 +534,7 @@ pub extern "C" fn vector_query_execute(
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_explain_plan(
     table_ptr: *const Table,
-    vector_ptr: *const c_double,
+    vector_ptr: *const c_float,
     vector_len: size_t,
     params_json: *const c_char,
     verbose: bool,
@@ -571,7 +571,7 @@ pub extern "C" fn vector_query_explain_plan(
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_analyze_plan(
     table_ptr: *const Table,
-    vector_ptr: *const c_double,
+    vector_ptr: *const c_float,
     vector_len: size_t,
     params_json: *const c_char,
     completion: FfiCallback,
@@ -607,7 +607,7 @@ pub extern "C" fn vector_query_analyze_plan(
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_output_schema(
     table_ptr: *const Table,
-    vector_ptr: *const c_double,
+    vector_ptr: *const c_float,
     vector_len: size_t,
     params_json: *const c_char,
     completion: FfiCallback,
@@ -700,7 +700,7 @@ pub extern "C" fn query_execute_stream(
 #[unsafe(no_mangle)]
 pub extern "C" fn vector_query_execute_stream(
     table_ptr: *const Table,
-    vector_ptr: *const c_double,
+    vector_ptr: *const c_float,
     vector_len: size_t,
     params_json: *const c_char,
     timeout_ms: i64,

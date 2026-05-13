@@ -138,9 +138,23 @@ namespace lancedb
         /// </remarks>
         /// <param name="vector">The query vector to search for nearest neighbors.</param>
         /// <returns>A <see cref="HybridQuery"/> that can be further parameterized.</returns>
-        public HybridQuery NearestTo(double[] vector)
+        public HybridQuery NearestTo(float[] vector)
         {
             return new HybridQuery(this, vector);
+        }
+
+        /// <summary>
+        /// Convenience overload accepting <c>double[]</c>. Values are cast to
+        /// <c>float</c> before crossing the FFI, matching Python SDK's sync
+        /// path which normalizes query vector to <c>Float32</c> before
+        /// invoking the native layer. No precision is lost. Prefer the
+        /// <c>float[]</c> overload to skip this conversion when possible.
+        /// </summary>
+        public HybridQuery NearestTo(double[] vector)
+        {
+            var f = new float[vector.Length];
+            for (int i = 0; i < vector.Length; i++) { f[i] = (float)vector[i]; }
+            return new HybridQuery(this, f);
         }
     }
 }

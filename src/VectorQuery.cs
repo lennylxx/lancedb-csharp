@@ -20,30 +20,30 @@ namespace lancedb
     {
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_execute(
-            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            IntPtr table_ptr, float[] vector, UIntPtr vector_len, IntPtr params_json,
             long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_execute_stream(
-            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            IntPtr table_ptr, float[] vector, UIntPtr vector_len, IntPtr params_json,
             long timeout_ms, uint max_batch_length, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_explain_plan(
-            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            IntPtr table_ptr, float[] vector, UIntPtr vector_len, IntPtr params_json,
             [MarshalAs(UnmanagedType.U1)] bool verbose, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_analyze_plan(
-            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            IntPtr table_ptr, float[] vector, UIntPtr vector_len, IntPtr params_json,
             NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void vector_query_output_schema(
-            IntPtr table_ptr, double[] vector, UIntPtr vector_len, IntPtr params_json,
+            IntPtr table_ptr, float[] vector, UIntPtr vector_len, IntPtr params_json,
             NativeCall.FfiCallback completion, IntPtr userData);
 
-        internal readonly double[] _vector;
+        internal readonly float[] _vector;
 
         // Vector-specific stored parameters
         internal string? _column;
@@ -60,7 +60,7 @@ namespace lancedb
         private IReranker? _reranker;
         private string? _rerankQueryString;
 
-        internal VectorQuery(IntPtr tablePtr, Query parentQuery, double[] vector)
+        internal VectorQuery(IntPtr tablePtr, Query parentQuery, float[] vector)
             : base(tablePtr)
         {
             _vector = vector;

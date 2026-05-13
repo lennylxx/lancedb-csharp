@@ -486,6 +486,25 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Exercises the primary <c>NearestTo(float[])</c> path so the f32-native
+        /// FFI route is tested directly (the existing tests use the <c>double[]</c>
+        /// back-compat overload).
+        /// </summary>
+        [Fact]
+        public async Task NearestTo_FloatVector_ExecutesOnPrimaryPath()
+        {
+            using var fixture = await TestFixture.CreateVectorTextFixture("nearest_to_float");
+
+            var query = fixture.Table.Query()
+                .NearestTo(new float[] { 1.0f, 0.0f, 0.0f })
+                .Limit(3);
+            var batch = await query.ToArrow();
+
+            Assert.NotNull(batch);
+            Assert.True(batch.Length > 0 && batch.Length <= 3);
+        }
+
+        /// <summary>
         /// OutputSchema should return the schema matching the table columns.
         /// </summary>
         [Fact]

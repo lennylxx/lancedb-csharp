@@ -304,9 +304,24 @@ namespace lancedb
         /// columns are searched.
         /// </param>
         /// <returns>A <see cref="HybridQuery"/> that can be further parameterized.</returns>
-        public HybridQuery HybridSearch(string text, double[] vector, string[]? ftsColumns = null)
+        public HybridQuery HybridSearch(string text, float[] vector, string[]? ftsColumns = null)
         {
             return new HybridQuery(_handle!.DangerousGetHandle(), text, vector, ftsColumns);
+        }
+
+        /// <summary>
+        /// Convenience overload of <see cref="HybridSearch(string, float[], string[])"/>
+        /// accepting <c>double[]</c>. Values are cast to <c>float</c> before
+        /// crossing the FFI, matching Python SDK's sync path which normalizes
+        /// query vector to <c>Float32</c> before invoking the native layer.
+        /// No precision is lost. Prefer the <c>float[]</c> overload to skip
+        /// this conversion when possible.
+        /// </summary>
+        public HybridQuery HybridSearch(string text, double[] vector, string[]? ftsColumns = null)
+        {
+            var f = new float[vector.Length];
+            for (int i = 0; i < vector.Length; i++) { f[i] = (float)vector[i]; }
+            return new HybridQuery(_handle!.DangerousGetHandle(), text, f, ftsColumns);
         }
 
         /// <summary>

@@ -113,9 +113,23 @@ namespace lancedb
         /// </remarks>
         /// <param name="vector">The query vector to search for nearest neighbors.</param>
         /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
-        public VectorQuery NearestTo(double[] vector)
+        public VectorQuery NearestTo(float[] vector)
         {
             return new VectorQuery(_tablePtr, this, vector);
+        }
+
+        /// <summary>
+        /// Convenience overload accepting <c>double[]</c>. Values are cast to
+        /// <c>float</c> before crossing the FFI, matching Python SDK's sync
+        /// path which normalizes query vector to <c>Float32</c> before
+        /// invoking the native layer. No precision is lost. Prefer the
+        /// <c>float[]</c> overload to skip this conversion when possible.
+        /// </summary>
+        public VectorQuery NearestTo(double[] vector)
+        {
+            var f = new float[vector.Length];
+            for (int i = 0; i < vector.Length; i++) { f[i] = (float)vector[i]; }
+            return new VectorQuery(_tablePtr, this, f);
         }
 
         /// <summary>

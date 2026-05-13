@@ -28,7 +28,7 @@ namespace lancedb
         private readonly IntPtr _tablePtr;
         private readonly string _ftsQuery;
         private string[]? _ftsColumns;
-        private readonly double[] _vector;
+        private readonly float[] _vector;
         private IReranker _reranker = new RRFReranker();
         private string _normalize = "score";
 
@@ -59,7 +59,7 @@ namespace lancedb
         /// <summary>
         /// Creates a HybridQuery from an FTSQuery and a vector.
         /// </summary>
-        internal HybridQuery(FTSQuery source, double[] vector)
+        internal HybridQuery(FTSQuery source, float[] vector)
         {
             _tablePtr = source._tablePtr;
             _ftsQuery = source._fullTextSearchQuery!;
@@ -98,7 +98,7 @@ namespace lancedb
         /// <summary>
         /// Creates a HybridQuery directly from a table handle.
         /// </summary>
-        internal HybridQuery(IntPtr tablePtr, string ftsQuery, double[] vector,
+        internal HybridQuery(IntPtr tablePtr, string ftsQuery, float[] vector,
             string[]? ftsColumns = null)
         {
             _tablePtr = tablePtr;
