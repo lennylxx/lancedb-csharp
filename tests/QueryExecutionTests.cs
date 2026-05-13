@@ -1,5 +1,6 @@
 namespace lancedb.tests
 {
+    using Apache.Arrow;
     using static TestHelpers;
 
     /// <summary>
@@ -439,6 +440,48 @@ namespace lancedb.tests
             string plan = await query.AnalyzePlan();
 
             Assert.NotNull(plan);
+            Assert.NotEmpty(plan);
+        }
+
+        /// <summary>
+        /// Round-trips every settable base-query parameter through SerializeParamsUtf8
+        /// and the Rust parse_query_params deserializer. If any builder field stops
+        /// being included in the serialized JSON, one of the asserted effects below
+        /// will silently revert to the default and the test will fail.
+        /// </summary>
+        [Fact]
+        public async Task FullyPopulatedQuery_AllParamsRoundTripThroughJson()
+        {
+            using var fixture = await TestFixture.CreateWithTable("params_roundtrip");
+            await fixture.Table.Add(CreateTestBatch(20));
+
+            using var query = fixture.Table.Query()
+                .Select(new[] { "id" })
+                .Where("id >= 10")
+                .Limit(3)
+                .Offset(2)
+                .WithRowId()
+                .FastSearch()
+                .Postfilter();
+
+            var batch = await query.ToArrow();
+
+            // Limit + Offset: 20 rows, filter keeps ids [10..19] (10 rows), offset 2 + limit 3 → 3 rows.
+            Assert.Equal(3, batch.Length);
+            // Select: only "id" projected (plus _rowid from WithRowId).
+            var fieldNames = batch.Schema.FieldsList.Select(f => f.Name).ToHashSet();
+            Assert.Contains("id", fieldNames);
+            Assert.Contains("_rowid", fieldNames);
+            Assert.DoesNotContain("data", fieldNames);
+            // Where + Offset: first returned id must be 10 + 2 = 12.
+            var idArray = (Int32Array)batch.Column("id");
+            Assert.Equal(12, idArray.GetValue(0));
+            Assert.Equal(13, idArray.GetValue(1));
+            Assert.Equal(14, idArray.GetValue(2));
+
+            // FastSearch + Postfilter don't affect this result set but must still
+            // deserialize without error — covered by ExplainPlan completing.
+            string plan = await query.ExplainPlan();
             Assert.NotEmpty(plan);
         }
 

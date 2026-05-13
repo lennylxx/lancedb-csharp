@@ -468,7 +468,7 @@ namespace lancedb
         public async Task<UpdateResult> Update(Dictionary<string, string> updatesSql, string? @where = null)
         {
             var columnSqlExprs = updatesSql.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
-            byte[] utf8ColumnSqlExprs = NativeCall.ToUtf8(JsonSerializer.Serialize(columnSqlExprs));
+            byte[] utf8ColumnSqlExprs = JsonSerializer.SerializeToUtf8Bytes(columnSqlExprs);
 
             IntPtr resultPtr;
             if (@where == null)
@@ -713,7 +713,7 @@ namespace lancedb
         public async Task ReplaceFieldMetadata(string fieldName, Dictionary<string, string> metadata)
         {
             byte[] fieldBytes = NativeCall.ToUtf8(fieldName);
-            byte[] metaBytes = NativeCall.ToUtf8(JsonSerializer.Serialize(metadata));
+            byte[] metaBytes = JsonSerializer.SerializeToUtf8Bytes(metadata);
             await NativeCall.Async((completion, userData) =>
             {
                 unsafe
@@ -952,10 +952,9 @@ namespace lancedb
             bool replace = true, string? name = null, bool train = true,
             TimeSpan? waitTimeout = null)
         {
-            string columnsJson = JsonSerializer.Serialize(columns);
-            byte[] columnsBytes = NativeCall.ToUtf8(columnsJson);
+            byte[] columnsBytes = JsonSerializer.SerializeToUtf8Bytes(columns);
             int indexType = (int)index.IndexType;
-            byte[] configBytes = NativeCall.ToUtf8(index.ToConfigJson());
+            byte[] configBytes = index.ToConfigJsonUtf8();
             byte[]? nameBytes = name != null ? NativeCall.ToUtf8(name) : null;
             long waitTimeoutMs = waitTimeout.HasValue
                 ? (long)waitTimeout.Value.TotalMilliseconds
@@ -1081,8 +1080,7 @@ namespace lancedb
             long timeoutMs = timeout.HasValue
                 ? (long)timeout.Value.TotalMilliseconds
                 : -1;
-            byte[] namesJson = NativeCall.ToUtf8(
-                JsonSerializer.Serialize(indexNames));
+            byte[] namesJson = JsonSerializer.SerializeToUtf8Bytes(indexNames);
 
             await NativeCall.Async((completion, userData) =>
             {
@@ -1154,7 +1152,7 @@ namespace lancedb
         public async Task<AddColumnsResult> AddColumns(Dictionary<string, string> transforms)
         {
             var pairs = transforms.Select(kv => new[] { kv.Key, kv.Value }).ToArray();
-            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(pairs));
+            byte[] utf8Json = JsonSerializer.SerializeToUtf8Bytes(pairs);
 
             IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
@@ -1226,7 +1224,7 @@ namespace lancedb
         /// </returns>
         public async Task<AlterColumnsResult> AlterColumns(IReadOnlyList<Dictionary<string, object>> alterations)
         {
-            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(alterations));
+            byte[] utf8Json = JsonSerializer.SerializeToUtf8Bytes(alterations);
 
             IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
@@ -1252,7 +1250,7 @@ namespace lancedb
         /// </returns>
         public async Task<DropColumnsResult> DropColumns(IReadOnlyList<string> columns)
         {
-            byte[] utf8Json = NativeCall.ToUtf8(JsonSerializer.Serialize(columns));
+            byte[] utf8Json = JsonSerializer.SerializeToUtf8Bytes(columns);
 
             IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
@@ -1369,8 +1367,7 @@ namespace lancedb
             IReadOnlyList<RecordBatch> data,
             bool useIndex = true, TimeSpan? timeout = null)
         {
-            string onColumnsJson = JsonSerializer.Serialize(onColumns);
-            byte[] onColumnsBytes = NativeCall.ToUtf8(onColumnsJson);
+            byte[] onColumnsBytes = JsonSerializer.SerializeToUtf8Bytes(onColumns);
             byte[]? matchedFilterBytes = whenMatchedUpdateAllFilter != null
                 ? NativeCall.ToUtf8(whenMatchedUpdateAllFilter) : null;
             byte[]? sourceDeleteFilterBytes = whenNotMatchedBySourceDeleteFilter != null
@@ -1484,7 +1481,7 @@ namespace lancedb
             ulong[] ids, bool isByRowId, IReadOnlyList<string>? columns, bool withRowId)
         {
             byte[]? columnsBytes = columns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(columns)) : null;
+                ? JsonSerializer.SerializeToUtf8Bytes(columns) : null;
 
             IntPtr ffiCDataPtr = await NativeCall.Async((completion, userData) =>
             {

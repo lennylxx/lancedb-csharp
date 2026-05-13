@@ -9,8 +9,10 @@ namespace lancedb
     /// </summary>
     public abstract class Index
     {
+        internal static readonly byte[] EmptyConfig = new byte[] { (byte)'{', (byte)'}' };
+
         internal abstract IndexType IndexType { get; }
-        internal abstract string ToConfigJson();
+        internal abstract byte[] ToConfigJsonUtf8();
     }
 
     /// <summary>
@@ -28,7 +30,7 @@ namespace lancedb
     public class BTreeIndex : Index
     {
         internal override IndexType IndexType => IndexType.BTree;
-        internal override string ToConfigJson() => "{}";
+        internal override byte[] ToConfigJsonUtf8() => EmptyConfig;
     }
 
     /// <summary>
@@ -49,7 +51,7 @@ namespace lancedb
     public class BitmapIndex : Index
     {
         internal override IndexType IndexType => IndexType.Bitmap;
-        internal override string ToConfigJson() => "{}";
+        internal override byte[] ToConfigJsonUtf8() => EmptyConfig;
     }
 
     /// <summary>
@@ -62,7 +64,7 @@ namespace lancedb
     public class LabelListIndex : Index
     {
         internal override IndexType IndexType => IndexType.LabelList;
-        internal override string ToConfigJson() => "{}";
+        internal override byte[] ToConfigJsonUtf8() => EmptyConfig;
     }
 
     /// <summary>
@@ -139,7 +141,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.FTS;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -155,7 +157,7 @@ namespace lancedb
                 ["prefix_only"] = PrefixOnly,
             };
             if (MaxTokenLength.HasValue) { dict["max_token_length"] = MaxTokenLength.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -261,7 +263,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfPq;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -273,7 +275,7 @@ namespace lancedb
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (NumSubVectors.HasValue) { dict["num_sub_vectors"] = NumSubVectors.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -337,7 +339,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfHnswPq;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -351,7 +353,7 @@ namespace lancedb
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (NumSubVectors.HasValue) { dict["num_sub_vectors"] = NumSubVectors.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -399,7 +401,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfFlat;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -409,7 +411,7 @@ namespace lancedb
             };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -451,7 +453,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfSq;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -461,7 +463,7 @@ namespace lancedb
             };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -509,7 +511,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfRq;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -520,7 +522,7 @@ namespace lancedb
             };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 
@@ -573,7 +575,7 @@ namespace lancedb
 
         internal override IndexType IndexType => IndexType.IvfHnswSq;
 
-        internal override string ToConfigJson()
+        internal override byte[] ToConfigJsonUtf8()
         {
             var dict = new System.Collections.Generic.Dictionary<string, object>
             {
@@ -585,7 +587,7 @@ namespace lancedb
             };
             if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
             if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
-            return JsonSerializer.Serialize(dict);
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
 }

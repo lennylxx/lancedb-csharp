@@ -93,7 +93,7 @@ namespace lancedb
                 ? options.ReadConsistencyInterval!.Value.TotalSeconds
                 : double.NaN;
             byte[]? storageJson = options?.StorageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.StorageOptions)
                 : null;
             long indexCacheSizeBytes = options?.Session != null
                 ? (options.Session.IndexCacheSizeBytes ?? 0)
@@ -146,12 +146,12 @@ namespace lancedb
         public async Task ConnectNamespace(string nsImpl, Dictionary<string, string> properties, ConnectionOptions? options = null)
         {
             byte[] nsImplBytes = NativeCall.ToUtf8(nsImpl);
-            byte[] propsJson = NativeCall.ToUtf8(JsonSerializer.Serialize(properties));
+            byte[] propsJson = JsonSerializer.SerializeToUtf8Bytes(properties);
             double rciSecs = options?.ReadConsistencyInterval.HasValue == true
                 ? options.ReadConsistencyInterval!.Value.TotalSeconds
                 : double.NaN;
             byte[]? storageJson = options?.StorageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.StorageOptions)
                 : null;
 
             IntPtr ptr = await NativeCall.Async((callback, userData) =>
@@ -217,13 +217,13 @@ namespace lancedb
         {
             byte[] nameBytes = NativeCall.ToUtf8(name);
             byte[]? storageJson = options?.StorageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.StorageOptions)
                 : null;
             byte[]? locationBytes = options?.Location != null
                 ? NativeCall.ToUtf8(options.Location)
                 : null;
             byte[]? namespaceJson = options?.Namespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.Namespace)
                 : null;
 
             IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
@@ -267,13 +267,13 @@ namespace lancedb
                 ? NativeCall.ToUtf8(options.Mode)
                 : null;
             byte[]? storageJson = options?.StorageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.StorageOptions)
                 : null;
             byte[]? locationBytes = options?.Location != null
                 ? NativeCall.ToUtf8(options.Location)
                 : null;
             byte[]? namespaceJson = options?.Namespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.Namespace)
                 : null;
             bool existOk = options?.ExistOk ?? false;
 
@@ -345,13 +345,13 @@ namespace lancedb
             byte[] nameBytes = NativeCall.ToUtf8(name);
             byte[] modeBytes = NativeCall.ToUtf8(options.Mode);
             byte[]? storageJson = options.StorageOptions != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.StorageOptions))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.StorageOptions)
                 : null;
             byte[]? locationBytes = options.Location != null
                 ? NativeCall.ToUtf8(options.Location)
                 : null;
             byte[]? namespaceJson = options.Namespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(options.Namespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(options.Namespace)
                 : null;
 
             IntPtr tablePtr = await NativeCall.Async((callback, userData) =>
@@ -447,7 +447,7 @@ namespace lancedb
         {
             byte[]? startAfterBytes = startAfter != null ? NativeCall.ToUtf8(startAfter) : null;
             byte[]? namespaceJson = ns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                ? JsonSerializer.SerializeToUtf8Bytes(ns)
                 : null;
 
             IntPtr ptr = await NativeCall.Async((callback, userData) =>
@@ -502,7 +502,7 @@ namespace lancedb
         {
             byte[]? pageTokenBytes = pageToken != null ? NativeCall.ToUtf8(pageToken) : null;
             byte[]? namespaceJson = ns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                ? JsonSerializer.SerializeToUtf8Bytes(ns)
                 : null;
 
             IntPtr ptr = await NativeCall.Async((callback, userData) =>
@@ -550,7 +550,7 @@ namespace lancedb
             {
                 byte[] nameBytes = NativeCall.ToUtf8(name);
                 byte[]? namespaceJson = ns != null
-                    ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                    ? JsonSerializer.SerializeToUtf8Bytes(ns)
                     : null;
                 await NativeCall.Async((callback, userData) =>
                 {
@@ -591,10 +591,10 @@ namespace lancedb
             byte[] oldNameBytes = NativeCall.ToUtf8(currentName);
             byte[] newNameBytes = NativeCall.ToUtf8(newName);
             byte[]? curNsJson = curNamespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(curNamespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(curNamespace)
                 : null;
             byte[]? newNsJson = newNamespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(newNamespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(newNamespace)
                 : null;
 
             await NativeCall.Async((callback, userData) =>
@@ -657,7 +657,7 @@ namespace lancedb
             byte[] targetNameBytes = NativeCall.ToUtf8(targetTableName);
             byte[] sourceUriBytes = NativeCall.ToUtf8(sourceUri);
             byte[]? targetNsJson = targetNamespace != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(targetNamespace))
+                ? JsonSerializer.SerializeToUtf8Bytes(targetNamespace)
                 : null;
             byte[]? sourceTagBytes = sourceTag != null
                 ? NativeCall.ToUtf8(sourceTag)
@@ -698,7 +698,7 @@ namespace lancedb
         public async Task DropAllTables(IReadOnlyList<string>? ns = null)
         {
             byte[]? namespaceJson = ns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                ? JsonSerializer.SerializeToUtf8Bytes(ns)
                 : null;
             await NativeCall.Async((callback, userData) =>
             {
@@ -736,7 +736,7 @@ namespace lancedb
         public async Task<ListNamespacesResponse> ListNamespaces(IReadOnlyList<string>? ns = null, string? pageToken = null, int limit = 0)
         {
             byte[]? namespaceJson = ns != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(ns))
+                ? JsonSerializer.SerializeToUtf8Bytes(ns)
                 : null;
             byte[]? pageTokenBytes = pageToken != null
                 ? NativeCall.ToUtf8(pageToken)
@@ -790,12 +790,12 @@ namespace lancedb
         /// </returns>
         public async Task<CreateNamespaceResponse> CreateNamespace(IReadOnlyList<string> ns, string? mode = null, Dictionary<string, string>? properties = null)
         {
-            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+            byte[] namespaceJson = JsonSerializer.SerializeToUtf8Bytes(ns);
             byte[]? modeBytes = mode != null
                 ? NativeCall.ToUtf8(mode)
                 : null;
             byte[]? propsJson = properties != null
-                ? NativeCall.ToUtf8(JsonSerializer.Serialize(properties))
+                ? JsonSerializer.SerializeToUtf8Bytes(properties)
                 : null;
 
             IntPtr ptr = await NativeCall.Async((callback, userData) =>
@@ -849,7 +849,7 @@ namespace lancedb
         /// </returns>
         public async Task<DropNamespaceResponse> DropNamespace(IReadOnlyList<string> ns, string? mode = null, string? behavior = null)
         {
-            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+            byte[] namespaceJson = JsonSerializer.SerializeToUtf8Bytes(ns);
             byte[]? modeBytes = mode != null
                 ? NativeCall.ToUtf8(mode)
                 : null;
@@ -893,7 +893,7 @@ namespace lancedb
         /// </returns>
         public async Task<DescribeNamespaceResponse> DescribeNamespace(IReadOnlyList<string> ns)
         {
-            byte[] namespaceJson = NativeCall.ToUtf8(JsonSerializer.Serialize(ns));
+            byte[] namespaceJson = JsonSerializer.SerializeToUtf8Bytes(ns);
 
             IntPtr ptr = await NativeCall.Async((callback, userData) =>
             {

@@ -99,11 +99,11 @@ namespace lancedb
         }
 
         /// <summary>
-        /// Serializes all stored parameters to a JSON string for the consolidated FFI call.
+        /// Serializes all stored parameters to a UTF-8 JSON byte array for the consolidated FFI call.
         /// </summary>
-        internal string SerializeParams()
+        internal byte[] SerializeParamsUtf8()
         {
-            return JsonSerializer.Serialize(BuildParamsDict());
+            return JsonSerializer.SerializeToUtf8Bytes(BuildParamsDict());
         }
 
         /// <summary>
@@ -302,7 +302,7 @@ namespace lancedb
         {
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
             uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
-            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            byte[] jsonBytes = SerializeParamsUtf8();
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
             IntPtr ffiCDataPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
@@ -363,7 +363,7 @@ namespace lancedb
         {
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
             uint batchLen = maxBatchLength.HasValue ? (uint)maxBatchLength.Value : 0;
-            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            byte[] jsonBytes = SerializeParamsUtf8();
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
             IntPtr streamPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
@@ -386,7 +386,7 @@ namespace lancedb
         /// <returns>A string representation of the execution plan.</returns>
         public async Task<string> ExplainPlan(bool verbose = false)
         {
-            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            byte[] jsonBytes = SerializeParamsUtf8();
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
             IntPtr result = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
@@ -406,7 +406,7 @@ namespace lancedb
         /// <returns>A string representation of the execution plan with runtime metrics.</returns>
         public async Task<string> AnalyzePlan()
         {
-            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            byte[] jsonBytes = SerializeParamsUtf8();
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
             IntPtr result = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
@@ -426,7 +426,7 @@ namespace lancedb
         /// <returns>The output <see cref="Schema"/>.</returns>
         public async Task<Schema> OutputSchema()
         {
-            byte[] jsonBytes = NativeCall.ToUtf8(SerializeParams());
+            byte[] jsonBytes = SerializeParamsUtf8();
             var jsonHandle = PinJson(jsonBytes, out IntPtr pJson);
 
             IntPtr ffiSchemaPtr = await CallWithPinnedJson(jsonHandle, (completion, userData) =>
