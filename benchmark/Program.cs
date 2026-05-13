@@ -313,19 +313,19 @@ public static class Program
 
     // ==================== QUERY GENERATION ====================
 
-    private static double[][] GenerateQueries(int numQueries, int dim)
+    private static float[][] GenerateQueries(int numQueries, int dim)
     {
         Console.WriteLine($"\nGenerating {numQueries} query vectors...");
         var sw = Stopwatch.StartNew();
         var rng = new Random();
 
-        var queries = new double[numQueries][];
+        var queries = new float[numQueries][];
         for (int i = 0; i < numQueries; i++)
         {
-            var q = new double[dim];
+            var q = new float[dim];
             for (int d = 0; d < dim; d++)
             {
-                q[d] = NextGaussian(rng);
+                q[d] = (float)NextGaussian(rng);
             }
             queries[i] = q;
         }
@@ -338,7 +338,7 @@ public static class Program
     // ==================== QUERY EXECUTION ====================
 
     private static async Task<List<double>> RunQueries(
-        List<Table> tables, double[][] queries, bool warmup)
+        List<Table> tables, float[][] queries, bool warmup)
     {
         string desc = warmup ? "Warmup queries" : "Timed queries";
         int total = queries.Length;
@@ -346,7 +346,7 @@ public static class Program
         var latencies = new System.Collections.Concurrent.ConcurrentBag<double>();
 
         // Channel for distributing work items to workers
-        var channel = System.Threading.Channels.Channel.CreateBounded<(int datasetIdx, double[] vector)>(
+        var channel = System.Threading.Channels.Channel.CreateBounded<(int datasetIdx, float[] vector)>(
             new System.Threading.Channels.BoundedChannelOptions(NumWorkers * ConcurrentQueriesPerWorker)
             {
                 SingleWriter = true,
@@ -409,7 +409,7 @@ public static class Program
         return latencies.ToList();
     }
 
-    private static async Task<double> ExecuteQuery(Table table, double[] queryVector)
+    private static async Task<double> ExecuteQuery(Table table, float[] queryVector)
     {
         var sw = Stopwatch.StartNew();
 
