@@ -568,7 +568,7 @@ namespace lancedb
                     }
                 }).ConfigureAwait(false);
             }
-            catch (LanceDbException) when (ignoreMissing)
+            catch (LanceDbException ex) when (ignoreMissing && ex.Message.Contains($"Table '{name}' was not found"))
             {
             }
         }
