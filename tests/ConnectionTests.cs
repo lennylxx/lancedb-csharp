@@ -1003,6 +1003,8 @@ namespace lancedb.tests
 
                 var response = await connection.DescribeNamespace(new[] { "described_ns" });
                 Assert.NotNull(response);
+                Assert.NotNull(response.Properties);
+                Assert.Equal("value1", response.Properties!["key1"]);
 
                 connection.Close();
             }

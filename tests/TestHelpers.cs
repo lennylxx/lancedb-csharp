@@ -211,6 +211,50 @@ namespace lancedb.tests
                 new IArrowArray[] { idBuilder.Build(), vectorBuilder.Build() }, numRows);
         }
 
+        /// <summary>
+        /// Returns a batch with an id column and a "tags" column of type <c>List&lt;Int32&gt;</c>.
+        /// Each row has three tag values <c>[i, i+1, i+2]</c>. Used to exercise
+        /// <see cref="LabelListIndex"/> which requires a list-typed column.
+        /// </summary>
+        public static RecordBatch CreateLabelBatch(int numRows)
+        {
+            var idBuilder = new Int32Array.Builder();
+            var valueField = new Field("item", Int32Type.Default, nullable: true);
+            var listType = new ListType(valueField);
+
+            var valueBuilder = new Int32Array.Builder();
+            var offsetBuilder = new ArrowBuffer.Builder<int>(numRows + 1);
+            var validityBuilder = new ArrowBuffer.BitmapBuilder(numRows);
+
+            int offset = 0;
+            offsetBuilder.Append(offset);
+            for (int i = 0; i < numRows; i++)
+            {
+                idBuilder.Append(i);
+                valueBuilder.Append(i);
+                valueBuilder.Append(i + 1);
+                valueBuilder.Append(i + 2);
+                offset += 3;
+                offsetBuilder.Append(offset);
+                validityBuilder.Append(true);
+            }
+
+            var valuesArray = valueBuilder.Build();
+            var listData = new ArrayData(
+                listType, numRows, 0, 0,
+                new[] { validityBuilder.Build(), offsetBuilder.Build() },
+                new[] { valuesArray.Data });
+            var listArray = new ListArray(listData);
+
+            var schema = new Schema.Builder()
+                .Field(new Field("id", Int32Type.Default, nullable: false))
+                .Field(new Field("tags", listType, nullable: false))
+                .Build();
+
+            return new RecordBatch(schema,
+                new IArrowArray[] { idBuilder.Build(), listArray }, numRows);
+        }
+
         // -----------------------------------------------------------------------
         // Reranker-test schema and result factories
         // -----------------------------------------------------------------------

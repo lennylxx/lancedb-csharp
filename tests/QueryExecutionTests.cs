@@ -316,6 +316,17 @@ namespace lancedb.tests
 
             Assert.Single(ftsRows);
             Assert.Equal(3, allRows.Count);
+
+            // The FTS hit must be one of the rows the base query also returns —
+            // proves the two queries share the same underlying table data and
+            // that NearestToText didn't consume the base query's state.
+            int ftsId = (int)ftsRows[0]["id"]!;
+            bool found = false;
+            foreach (var row in allRows)
+            {
+                if ((int)row["id"]! == ftsId) { found = true; break; }
+            }
+            Assert.True(found, $"FTS hit id={ftsId} should also appear in base query results");
         }
 
         /// <summary>
@@ -409,6 +420,9 @@ namespace lancedb.tests
 
             Assert.NotNull(plan);
             Assert.NotEmpty(plan);
+            // Guard against ExplainPlan returning a stub string. A real plan
+            // is substantial (operator names + line breaks + indentation).
+            Assert.True(plan.Length > 30, $"Plan unexpectedly short: '{plan}'");
         }
 
         /// <summary>
@@ -517,8 +531,9 @@ namespace lancedb.tests
             var schema = await query.OutputSchema();
 
             Assert.NotNull(schema);
-            Assert.True(schema.FieldsList.Count > 0);
+            Assert.Single(schema.FieldsList);
             Assert.Equal("id", schema.FieldsList[0].Name);
+            Assert.IsType<Apache.Arrow.Types.Int32Type>(schema.FieldsList[0].DataType);
         }
 
         /// <summary>
@@ -668,6 +683,66 @@ namespace lancedb.tests
 
             Assert.NotNull(batch);
             Assert.True(batch.Length > 0);
+        }
+
+        /// <summary>
+        /// Plain Nprobes(int) should chain successfully and execute. Mirrors the
+        /// MinimumNprobes/MaximumNprobes coverage for the single-value setter.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_Nprobes_ChainsAndExecutes()
+        {
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_nprobes");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Nprobes(20);
+            var batch = await query.ToArrow();
+
+            Assert.NotNull(batch);
+            Assert.True(batch.Length > 0);
+        }
+
+        /// <summary>
+        /// RefineFactor should chain successfully and execute.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_RefineFactor_ChainsAndExecutes()
+        {
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_refine");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .RefineFactor(10);
+            var batch = await query.ToArrow();
+
+            Assert.NotNull(batch);
+            Assert.True(batch.Length > 0);
+        }
+
+        /// <summary>
+        /// DistanceRange on a plain VectorQuery should filter results by L2 bounds.
+        /// The CreateVectorTextFixture has 3 orthogonal vectors: query (1,0,0) is at
+        /// distance 0 from row 0, and ~1.414 from the others. An upper bound of 1.0
+        /// should isolate row 0.
+        /// </summary>
+        [Fact]
+        public async Task VectorQuery_DistanceRange_FiltersResults()
+        {
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_distrange");
+
+            var allResults = await fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ToArrow();
+            Assert.Equal(3, allResults.Length);
+
+            var filtered = await fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .DistanceRange(upperBound: 1.0f)
+                .ToArrow();
+            Assert.True(filtered.Length < allResults.Length,
+                $"Expected fewer than {allResults.Length} rows under bound 1.0, got {filtered.Length}");
+            Assert.True(filtered.Length > 0);
         }
 
         /// <summary>

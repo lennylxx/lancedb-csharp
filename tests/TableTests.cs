@@ -715,6 +715,49 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// AlterColumns with "nullable": true should change a non-nullable column to nullable.
+        /// </summary>
+        [Fact]
+        public async Task AlterColumns_Nullable_ChangesNullability()
+        {
+            var tmpDir = Path.Combine(Path.GetTempPath(), "lancedb_test_" + Guid.NewGuid().ToString("N"));
+            try
+            {
+                var connection = new Connection();
+                await connection.Connect(tmpDir);
+                var batch = CreateTestBatch(3);
+                var table = await connection.CreateTable("alter_nullable", batch);
+
+                var before = await table.Schema();
+                Assert.False(before.GetFieldByName("id").IsNullable);
+
+                var alterResult = await table.AlterColumns(new List<Dictionary<string, object>>
+                {
+                    new Dictionary<string, object>
+                    {
+                        { "path", "id" },
+                        { "nullable", true }
+                    }
+                });
+
+                Assert.True(alterResult.Version > 0);
+
+                var after = await table.Schema();
+                Assert.True(after.GetFieldByName("id").IsNullable);
+
+                table.Dispose();
+                connection.Dispose();
+            }
+            finally
+            {
+                if (Directory.Exists(tmpDir))
+                {
+                    Directory.Delete(tmpDir, true);
+                }
+            }
+        }
+
+        /// <summary>
         /// DropColumns should remove a column from the table.
         /// </summary>
         [Fact]
@@ -1594,10 +1637,11 @@ namespace lancedb.tests
         }
 
         /// <summary>
-        /// PrewarmIndex should not throw for an existing index.
+        /// PrewarmIndex should succeed for an existing index and leave the index
+        /// observable via <see cref="Table.IndexStats"/> with a non-empty index type.
         /// </summary>
         [Fact]
-        public async Task PrewarmIndex_ExistingIndex_DoesNotThrow()
+        public async Task PrewarmIndex_ExistingIndex_LeavesIndexQueryable()
         {
             using var fixture = await TestFixture.CreateWithTable("prewarm_idx");
             await fixture.Table.Add(CreateTestBatch(100));
@@ -1607,13 +1651,31 @@ namespace lancedb.tests
             string indexName = indices[0].Name;
 
             await fixture.Table.PrewarmIndex(indexName);
+
+            var stats = await fixture.Table.IndexStats(indexName);
+            Assert.NotNull(stats);
+            Assert.Equal(IndexType.BTree, stats!.IndexType);
         }
 
         /// <summary>
-        /// WaitForIndex should return successfully when index is already complete.
+        /// PrewarmIndex on a non-existent index name should throw <see cref="LanceDbException"/>.
         /// </summary>
         [Fact]
-        public async Task WaitForIndex_AlreadyIndexed_ReturnsSuccessfully()
+        public async Task PrewarmIndex_NonExistent_ThrowsLanceDbException()
+        {
+            using var fixture = await TestFixture.CreateWithTable("prewarm_missing");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => fixture.Table.PrewarmIndex("no_such_index"));
+        }
+
+        /// <summary>
+        /// WaitForIndex should return promptly when the named index is already complete,
+        /// and the index should remain queryable via <see cref="Table.IndexStats"/> afterward.
+        /// </summary>
+        [Fact]
+        public async Task WaitForIndex_AlreadyIndexed_LeavesIndexQueryable()
         {
             using var fixture = await TestFixture.CreateWithTable("wait_idx");
             await fixture.Table.Add(CreateTestBatch(100));
@@ -1622,8 +1684,33 @@ namespace lancedb.tests
             var indices = await fixture.Table.ListIndices();
             string indexName = indices[0].Name;
 
+            var sw = System.Diagnostics.Stopwatch.StartNew();
             await fixture.Table.WaitForIndex(
                 new[] { indexName }, TimeSpan.FromSeconds(30));
+            sw.Stop();
+
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
+                $"WaitForIndex should return promptly for a complete index, took {sw.Elapsed.TotalSeconds}s");
+
+            var stats = await fixture.Table.IndexStats(indexName);
+            Assert.NotNull(stats);
+            Assert.Equal(IndexType.BTree, stats!.IndexType);
+        }
+
+        /// <summary>
+        /// WaitForIndex with a non-existent index name and a short timeout should
+        /// throw <see cref="LanceDbException"/> rather than waiting forever or
+        /// returning silently.
+        /// </summary>
+        [Fact]
+        public async Task WaitForIndex_NonExistent_ThrowsLanceDbException()
+        {
+            using var fixture = await TestFixture.CreateWithTable("wait_missing");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            await Assert.ThrowsAsync<LanceDbException>(
+                () => fixture.Table.WaitForIndex(
+                    new[] { "no_such_index" }, TimeSpan.FromSeconds(2)));
         }
 
         /// <summary>
@@ -1769,6 +1856,182 @@ namespace lancedb.tests
 
             var indices = await fixture.Table.ListIndices();
             Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfRq);
+        }
+
+        /// <summary>
+        /// CreateIndex with HnswSq on a vector column should succeed and report IvfHnswSq.
+        /// This is the index type used in the README quick-start example.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswSq_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_sq_idx",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswSqIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswSq);
+        }
+
+        /// <summary>
+        /// CreateIndex with HnswSq using custom parameters should succeed.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswSq_WithParams_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_sq_params",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswSqIndex
+            {
+                DistanceType = lancedb.DistanceType.Cosine,
+                NumPartitions = 2,
+                MaxIterations = 10,
+                SampleRate = 128,
+                NumEdges = 16,
+                EfConstruction = 100,
+            });
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswSq);
+        }
+
+        /// <summary>
+        /// CreateIndex with HnswPq on a vector column should succeed and report IvfHnswPq.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswPq_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_pq_idx",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswPqIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswPq);
+        }
+
+        /// <summary>
+        /// CreateIndex with HnswPq using custom parameters should succeed.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswPq_WithParams_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_pq_params",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswPqIndex
+            {
+                DistanceType = lancedb.DistanceType.Cosine,
+                NumPartitions = 2,
+                NumSubVectors = 4,
+                NumBits = 8,
+                MaxIterations = 10,
+                SampleRate = 128,
+                NumEdges = 16,
+                EfConstruction = 100,
+            });
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswPq);
+        }
+
+        /// <summary>
+        /// CreateIndex with LabelList on a list column should succeed and report LabelList.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_LabelList_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("label_list_idx",
+                CreateLabelBatch(20));
+
+            await fixture.Table.CreateIndex(new[] { "tags" }, new LabelListIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("tags") && i.IndexType == IndexType.LabelList);
+        }
+
+        /// <summary>
+        /// CreateIndex with non-default FtsIndex options should succeed. Exercises
+        /// FFI marshalling of every configurable FTS option in one call.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_Fts_WithOptions_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("fts_opts",
+                CreateTextBatch(new[] { "running fast", "the cat sat", "Apple iPhone" }));
+
+            await fixture.Table.CreateIndex(new[] { "content" }, new FtsIndex
+            {
+                WithPosition = true,
+                BaseTokenizer = "simple",
+                Language = "English",
+                MaxTokenLength = 50,
+                LowerCase = true,
+                Stem = false,
+                RemoveStopWords = false,
+                AsciiFolding = true,
+            });
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("content") && i.IndexType == IndexType.FTS);
+        }
+
+        /// <summary>
+        /// FtsIndex with Stem=true should match stemmed forms ("run" matches "running");
+        /// with Stem=false the same query should not match. Verifies the Stem option
+        /// is actually applied, not silently ignored at the FFI boundary.
+        /// </summary>
+        [Fact]
+        public async Task FtsIndex_Stem_AffectsMatching()
+        {
+            var texts = new[] { "running fast", "swimming pool" };
+
+            using var stemmed = await TestFixture.CreateWithTable("fts_stem_on",
+                CreateTextBatch(texts));
+            await stemmed.Table.CreateIndex(new[] { "content" },
+                new FtsIndex { Stem = true });
+            var stemmedResults = await stemmed.Table.Query()
+                .NearestToText("run").ToArrow();
+            Assert.True(stemmedResults.Length > 0,
+                "Stem=true should match 'running' when searching 'run'.");
+
+            using var literal = await TestFixture.CreateWithTable("fts_stem_off",
+                CreateTextBatch(texts));
+            await literal.Table.CreateIndex(new[] { "content" },
+                new FtsIndex { Stem = false });
+            var literalResults = await literal.Table.Query()
+                .NearestToText("run").ToArrow();
+            Assert.Equal(0, literalResults.Length);
+        }
+
+        /// <summary>
+        /// FtsIndex with RemoveStopWords=false should index stop words like "the";
+        /// with the default true the same query returns nothing. Verifies the
+        /// option is actually applied at the FFI boundary.
+        /// </summary>
+        [Fact]
+        public async Task FtsIndex_RemoveStopWords_AffectsMatching()
+        {
+            var texts = new[] { "the cat", "the dog" };
+
+            using var withStops = await TestFixture.CreateWithTable("fts_stop_off",
+                CreateTextBatch(texts));
+            await withStops.Table.CreateIndex(new[] { "content" },
+                new FtsIndex { RemoveStopWords = false });
+            var withStopsResults = await withStops.Table.Query()
+                .NearestToText("the").ToArrow();
+            Assert.True(withStopsResults.Length > 0,
+                "RemoveStopWords=false should index 'the' and allow matching.");
+
+            using var noStops = await TestFixture.CreateWithTable("fts_stop_on",
+                CreateTextBatch(texts));
+            await noStops.Table.CreateIndex(new[] { "content" },
+                new FtsIndex { RemoveStopWords = true });
+            var noStopsResults = await noStops.Table.Query()
+                .NearestToText("the").ToArrow();
+            Assert.Equal(0, noStopsResults.Length);
         }
 
         /// <summary>
