@@ -452,6 +452,13 @@ namespace lancedb
                             }
                         }
                     }
+                    else
+                    {
+                        throw new NotSupportedException(
+                            $"VectorValidator.SliceColumn does not support FixedSizeList " +
+                            $"with element type {fsl.Values.GetType().Name} " +
+                            $"(Arrow type: {field.DataType})");
+                    }
 
                     return builder.Build();
                 }
