@@ -31,6 +31,7 @@ namespace lancedb
         private static extern IntPtr table_get_name(IntPtr table_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.U1)]
         private static extern bool table_is_open(IntPtr table_ptr);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -108,7 +109,8 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_create_index(
             IntPtr table_ptr, IntPtr columns_json, int index_type, IntPtr config_json,
-            bool replace, IntPtr name, bool train, long wait_timeout_ms,
+            [MarshalAs(UnmanagedType.U1)] bool replace, IntPtr name,
+            [MarshalAs(UnmanagedType.U1)] bool train, long wait_timeout_ms,
             NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -153,7 +155,8 @@ namespace lancedb
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_optimize(
-            IntPtr table_ptr, long cleanup_older_than_ms, bool delete_unverified,
+            IntPtr table_ptr, long cleanup_older_than_ms,
+            [MarshalAs(UnmanagedType.U1)] bool delete_unverified,
             NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -186,9 +189,9 @@ namespace lancedb
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern unsafe void table_merge_insert(
             IntPtr table_ptr, IntPtr on_columns_json,
-            bool when_matched_update_all, IntPtr when_matched_update_all_filter,
-            bool when_not_matched_insert_all,
-            bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
+            [MarshalAs(UnmanagedType.U1)] bool when_matched_update_all, IntPtr when_matched_update_all_filter,
+            [MarshalAs(UnmanagedType.U1)] bool when_not_matched_insert_all,
+            [MarshalAs(UnmanagedType.U1)] bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
             CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
             [MarshalAs(UnmanagedType.U1)] bool use_index, long timeout_ms,
             NativeCall.FfiCallback completion, IntPtr userData);
