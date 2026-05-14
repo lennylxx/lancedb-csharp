@@ -857,9 +857,7 @@ pub extern "C" fn table_add_columns_null(
     let user_data = UserData(user_data);
     let table = ffi_clone_arc!(table_ptr, Table);
 
-    let schema = match unsafe {
-        arrow_schema::Schema::try_from(&*schema_ptr)
-    } {
+    let schema = match ffi::import_schema(schema_ptr) {
         Ok(s) => s,
         Err(e) => {
             callback_error(completion, user_data, e);
@@ -868,7 +866,7 @@ pub extern "C" fn table_add_columns_null(
     };
 
     crate::spawn(async move {
-        let transform = NewColumnTransform::AllNulls(std::sync::Arc::new(schema));
+        let transform = NewColumnTransform::AllNulls(schema);
         match table.add_columns(transform, None).await {
             Ok(result) => {
                 completion(result.version as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
