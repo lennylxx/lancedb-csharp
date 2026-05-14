@@ -1,18 +1,22 @@
 namespace lancedb
 {
+    using System;
+    using System.Runtime.InteropServices;
     using Apache.Arrow;
     using Apache.Arrow.C;
 
     /// <summary>
-    /// Helpers for exporting Arrow data via the C Data Interface.
+    /// Helpers for marshalling Arrow data across the C Data Interface — both
+    /// exporting managed RecordBatches to native code and importing
+    /// native-produced batches back into managed memory.
     /// </summary>
-    internal static class ArrowExportHelper
+    internal static class ArrowCDataHelper
     {
         /// <summary>
         /// Enables exporting managed (GC heap) memory through the Arrow C Data Interface.
         /// Must be set before any export calls.
         /// </summary>
-        static ArrowExportHelper()
+        static ArrowCDataHelper()
         {
             CArrowArrayExporter.EnableManagedMemoryExport = true;
         }
@@ -31,6 +35,43 @@ namespace lancedb
                     CloneArrayData(batch.Column(i).Data));
             }
             return new RecordBatch(batch.Schema, columns, batch.Length);
+        }
+
+        /// <summary>
+        /// Imports a RecordBatch from an FfiCData pointer produced by Rust
+        /// and frees the pointer via <c>free_ffi_cdata</c> before returning.
+        /// The FfiCData layout is { array: *FFI_ArrowArray, schema: *FFI_ArrowSchema }.
+        /// </summary>
+        internal static unsafe RecordBatch ImportRecordBatchFromCData(IntPtr ffiCDataPtr)
+        {
+            try
+            {
+                var arrayPtr = Marshal.ReadIntPtr(ffiCDataPtr);
+                var schemaPtr = Marshal.ReadIntPtr(ffiCDataPtr + IntPtr.Size);
+                var schema = CArrowSchemaImporter.ImportSchema((CArrowSchema*)schemaPtr);
+                return CArrowArrayImporter.ImportRecordBatch((CArrowArray*)arrayPtr, schema);
+            }
+            finally
+            {
+                NativeCall.free_ffi_cdata(ffiCDataPtr);
+            }
+        }
+
+        /// <summary>
+        /// Imports a standalone Arrow Schema from a heap-allocated FFI_ArrowSchema
+        /// pointer produced by Rust, and frees the pointer via <c>free_ffi_schema</c>
+        /// before returning.
+        /// </summary>
+        internal static unsafe Schema ImportSchemaFromCData(IntPtr ffiSchemaPtr)
+        {
+            try
+            {
+                return CArrowSchemaImporter.ImportSchema((CArrowSchema*)ffiSchemaPtr);
+            }
+            finally
+            {
+                NativeCall.free_ffi_schema(ffiSchemaPtr);
+            }
         }
 
         private static ArrayData CloneArrayData(ArrayData data)

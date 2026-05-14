@@ -6,7 +6,6 @@ namespace lancedb
     using System.Threading;
     using System.Threading.Tasks;
     using Apache.Arrow;
-    using Apache.Arrow.C;
 
     /// <summary>
     /// A streaming reader that yields <see cref="RecordBatch"/> results
@@ -79,25 +78,7 @@ namespace lancedb
                     yield break;
                 }
 
-                yield return ImportBatch(result);
-            }
-        }
-
-        private static unsafe RecordBatch ImportBatch(IntPtr cdataPtr)
-        {
-            try
-            {
-                var arrayPtr = Marshal.ReadIntPtr(cdataPtr);
-                var schemaPtr = Marshal.ReadIntPtr(cdataPtr + IntPtr.Size);
-
-                var schema = CArrowSchemaImporter.ImportSchema(
-                    (CArrowSchema*)schemaPtr);
-                return CArrowArrayImporter.ImportRecordBatch(
-                    (CArrowArray*)arrayPtr, schema);
-            }
-            finally
-            {
-                NativeCall.free_ffi_cdata(cdataPtr);
+                yield return ArrowCDataHelper.ImportRecordBatchFromCData(result);
             }
         }
 

@@ -372,7 +372,7 @@ namespace lancedb
                             for (int i = 0; i < options.Data.Count; i++)
                             {
                                 cArrays[i] = default;
-                                var clone = ArrowExportHelper.CloneBatchForExport(options.Data[i]);
+                                var clone = ArrowCDataHelper.CloneBatchForExport(options.Data[i]);
                                 fixed (CArrowArray* pArr = &cArrays[i])
                                 {
                                     CArrowArrayExporter.ExportRecordBatch(clone, pArr);

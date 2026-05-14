@@ -545,18 +545,7 @@ namespace lancedb
                 table_schema(_handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
 
-            try
-            {
-                unsafe
-                {
-                    return CArrowSchemaImporter.ImportSchema(
-                        (CArrowSchema*)ffiSchemaPtr);
-                }
-            }
-            finally
-            {
-                NativeCall.free_ffi_schema(ffiSchemaPtr);
-            }
+            return ArrowCDataHelper.ImportSchemaFromCData(ffiSchemaPtr);
         }
 
         /// <summary>
@@ -617,7 +606,7 @@ namespace lancedb
                             for (int i = 0; i < processed.Length; i++)
                             {
                                 cArrays[i] = default;
-                                var clone = ArrowExportHelper.CloneBatchForExport(processed[i]);
+                                var clone = ArrowCDataHelper.CloneBatchForExport(processed[i]);
                                 fixed (CArrowArray* pArr = &cArrays[i])
                                 {
                                     CArrowArrayExporter.ExportRecordBatch(clone, pArr);
@@ -1408,7 +1397,7 @@ namespace lancedb
                             for (int i = 0; i < data.Count; i++)
                             {
                                 cArrays[i] = default;
-                                var clone = ArrowExportHelper.CloneBatchForExport(data[i]);
+                                var clone = ArrowCDataHelper.CloneBatchForExport(data[i]);
                                 fixed (CArrowArray* pArr = &cArrays[i])
                                 {
                                     CArrowArrayExporter.ExportRecordBatch(clone, pArr);
@@ -1526,27 +1515,9 @@ namespace lancedb
                 }
             }).ConfigureAwait(false);
 
-            try
-            {
-                return ReadRecordBatchFromCData(ffiCDataPtr);
-            }
-            finally
-            {
-                NativeCall.free_ffi_cdata(ffiCDataPtr);
-            }
+            return ArrowCDataHelper.ImportRecordBatchFromCData(ffiCDataPtr);
         }
 
-        private static unsafe RecordBatch ReadRecordBatchFromCData(IntPtr ffiCDataPtr)
-        {
-            var arrayPtr = Marshal.ReadIntPtr(ffiCDataPtr);
-            var schemaPtr = Marshal.ReadIntPtr(ffiCDataPtr + IntPtr.Size);
-
-            var schema = CArrowSchemaImporter.ImportSchema(
-                (CArrowSchema*)schemaPtr);
-
-            return CArrowArrayImporter.ImportRecordBatch(
-                (CArrowArray*)arrayPtr, schema);
-        }
 
         /// <summary>
         /// List all tags on this table.

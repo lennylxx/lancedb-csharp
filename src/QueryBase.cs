@@ -310,14 +310,7 @@ namespace lancedb
                 NativeConsolidatedExecute(_tablePtr, pJson, timeoutMs, batchLen, completion, userData);
             }).ConfigureAwait(false);
 
-            try
-            {
-                return ReadRecordBatchFromCData(ffiCDataPtr);
-            }
-            finally
-            {
-                NativeCall.free_ffi_cdata(ffiCDataPtr);
-            }
+            return ArrowCDataHelper.ImportRecordBatchFromCData(ffiCDataPtr);
         }
 
         /// <summary>
@@ -434,14 +427,7 @@ namespace lancedb
                 NativeConsolidatedOutputSchema(_tablePtr, pJson, completion, userData);
             }).ConfigureAwait(false);
 
-            try
-            {
-                return ReadSchemaFromCData(ffiSchemaPtr);
-            }
-            finally
-            {
-                NativeCall.free_ffi_schema(ffiSchemaPtr);
-            }
+            return ArrowCDataHelper.ImportSchemaFromCData(ffiSchemaPtr);
         }
 
         /// <summary>
@@ -468,32 +454,7 @@ namespace lancedb
             return handle;
         }
 
-        private static unsafe Schema ReadSchemaFromCData(IntPtr ffiSchemaPtr)
-        {
-            return CArrowSchemaImporter.ImportSchema(
-                (CArrowSchema*)ffiSchemaPtr);
-        }
-
-        /// <summary>
-        /// Imports a RecordBatch from an FfiCData pointer using the Arrow C Data Interface.
-        /// The FfiCData struct contains pointers to FFI_ArrowArray and FFI_ArrowSchema.
-        /// </summary>
-        private static unsafe RecordBatch ReadRecordBatchFromCData(IntPtr ffiCDataPtr)
-        {
-            // FfiCData layout: { array: *mut FFI_ArrowArray, schema: *mut FFI_ArrowSchema }
-            var arrayPtr = Marshal.ReadIntPtr(ffiCDataPtr);
-            var schemaPtr = Marshal.ReadIntPtr(ffiCDataPtr + IntPtr.Size);
-
-            var schema = CArrowSchemaImporter.ImportSchema(
-                (CArrowSchema*)schemaPtr);
-
-            var recordBatch = CArrowArrayImporter.ImportRecordBatch(
-                (CArrowArray*)arrayPtr, schema);
-
-            return recordBatch;
-        }
-
-        /// <summary>
+/// <summary>
         /// Converts a RecordBatch to a list of row dictionaries.
         /// </summary>
         private static IReadOnlyList<Dictionary<string, object?>> RecordBatchToList(RecordBatch batch)
