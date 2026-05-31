@@ -16,11 +16,13 @@ The SDK has two layers:
 
 ### Ownership model
 
-Rust objects (`Connection`, `Table`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# classes use `SafeHandle` subclasses to ensure proper cleanup via the corresponding Rust free/drop functions. `RustStringHandle` extends `SafeHandle` to automatically free Rust-allocated strings via `free_string`.
+Rust objects (`Connection`, `Table`) are heap-allocated via `Arc::into_raw` on the Rust side and passed as `IntPtr` pointers to C#. C# wraps them in `SafeHandle` subclasses (`ConnectionHandle`, `TableHandle`) to ensure proper cleanup via the corresponding Rust free/drop functions. Rust-allocated strings returned across the FFI boundary are read and released by `NativeCall.ReadStringAndFree`, which copies the UTF-8 bytes and then calls `free_string`.
 
-Query builders (`Query`, `VectorQuery`) are pure C# objects with no native pointers. They store all builder parameters locally and make a single FFI call at execution time (e.g., `ToArrow()`, `ExplainPlan()`). Parameters are serialized to JSON and passed to a consolidated Rust FFI function (`query_execute` or `vector_query_execute`) that builds and executes the query in one shot. This matches the Python SDK's lazy builder pattern.
+Query builders (`Query`, `VectorQuery`, `FTSQuery`, `HybridQuery`) own no native objects — they hold only a *borrowed* `IntPtr` to the parent `Table` (which must outlive the query) and store all builder parameters locally in managed fields. They make a single FFI call at execution time (e.g., `ToArrow()`, `ExplainPlan()`). Parameters are serialized to JSON and passed to a consolidated Rust FFI function (`query_execute` or `vector_query_execute`) that builds and executes the query in one shot. This matches the Python SDK's lazy builder pattern.
 
-Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust→C#, clone-and-pin for C#→Rust).
+Streaming execution (`ToBatches()`) instead returns a native stream handle from `query_execute_stream` / `vector_query_execute_stream`. C# wraps it in an `AsyncRecordBatchReader` (`IAsyncEnumerable<RecordBatch>`) that pulls one batch at a time across the FFI boundary and must be disposed after use.
+
+Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust→C#, clone-and-pin for C#→Rust). Schemas and materialized results use `ArrowCDataHelper` for marshalling.
 
 ## Adding a new FFI function
 
@@ -31,7 +33,9 @@ Data crosses the FFI boundary via the Arrow C Data Interface (zero-copy for Rust
 ## Conventions
 
 - All C# types are in the `lancedb` namespace (no sub-namespaces).
-- Options/config classes go in `src/Options/`.
+- Options/config classes go in `src/Options/`; operation result types in `src/Results/`; namespace operation responses in `src/Responses/`.
+- Search builders cover plain (`Query`), vector (`VectorQuery`), full-text (`FTSQuery`), and hybrid (`HybridQuery`) search. Hybrid results are combined with rerankers in `src/Rerankers/` (`RRFReranker`, `MRRReranker`, `LinearCombinationReranker`).
+- Mutating helpers such as `MergeInsertBuilder` follow the same lazy-builder-then-single-FFI-call pattern as the query builders.
 - Strings crossing the FFI boundary are UTF-8 encoded byte arrays passed as `IntPtr`. On the Rust side, `ffi::to_string` converts `*const c_char` to an owned `String`. On the C# side, `Encoding.UTF8.GetBytes` is used before passing via `fixed` pointer.
 - C# uses `unsafe` blocks with `fixed` for pinning byte arrays during FFI calls.
 - Rust FFI functions that return heap objects use `Arc::into_raw`; the caller is responsible for eventually calling the matching free function to avoid leaks.
