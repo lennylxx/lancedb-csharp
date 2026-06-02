@@ -156,11 +156,13 @@ jobs:
           echo "--- All required files present ---"
 
       - name: Smoke test nupkg
+        env:
+          LANCEDB_LOCAL_FEED: ${{ github.workspace }}/artifacts
         run: |
           cp -r samples/ConsoleSample smoke-runner && cd smoke-runner
           # Swap ProjectReference for PackageReference to the nupkg
           sed -i 's|<ProjectReference Include=".*" />|<PackageReference Include="LanceDB" Version="*-*" />|' ConsoleSample.csproj
-          dotnet nuget add source "${{ github.workspace }}/artifacts" -n local
+          cp ../ci/nuget.config nuget.config
           dotnet run
 
       - name: Upload NuGet package
@@ -169,3 +171,45 @@ jobs:
         with:
           name: nuget-package
           path: ./artifacts/*.nupkg
+
+  # Verifies the native auto-copy (build/LanceDB.targets) for .NET Framework consumers,
+  # which have no deps.json-based native probing. Windows-only: net48 does not run on
+  # Linux, and the targets file ships only the win-x64 native.
+  smoke-netfx:
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download Windows native library
+        uses: actions/download-artifact@v4
+        with:
+          name: native-win-x64
+          path: pinvoke/target/debug/
+
+      - name: Pack LanceDB with win-x64 native
+        run: dotnet pack src/lancedb.csproj -o artifacts
+
+      - name: Build and run net48 smoke test
+        shell: pwsh
+        env:
+          LANCEDB_LOCAL_FEED: ${{ github.workspace }}/artifacts
+        run: |
+          Copy-Item -Recurse samples/ConsoleSample smoke-runner
+          $csproj = "smoke-runner/ConsoleSample.csproj"
+          $proj = Get-Content $csproj -Raw
+          $proj = $proj -replace '<TargetFramework>net8.0</TargetFramework>', '<TargetFramework>net48</TargetFramework><PlatformTarget>x64</PlatformTarget><AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>'
+          $proj = $proj -replace '<ProjectReference\b[^>]*/>', '<PackageReference Include="LanceDB" Version="*-*" />'
+          Set-Content $csproj $proj
+
+          Copy-Item ci/nuget.config smoke-runner/nuget.config
+
+          dotnet build $csproj -c Release
+          & "smoke-runner/bin/Release/net48/ConsoleSample.exe"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

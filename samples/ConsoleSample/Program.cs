@@ -11,7 +11,7 @@ namespace ConsoleSample
     {
         public static async Task<int> Main()
         {
-            string tempDir = Path.Combine(Path.GetTempPath(), "lancedb_sample_" + Guid.NewGuid().ToString("N")[..8]);
+            string tempDir = Path.Combine(Path.GetTempPath(), "lancedb_sample_" + Guid.NewGuid().ToString("N").Substring(0, 8));
             try
             {
                 Console.WriteLine($"Using temp directory: {tempDir}");

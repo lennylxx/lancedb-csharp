@@ -57,6 +57,7 @@
   <!-- NuGet package content -->
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="build\LanceDB.targets" Pack="true" PackagePath="build/LanceDB.targets" />
   </ItemGroup>
 
 </Project>
