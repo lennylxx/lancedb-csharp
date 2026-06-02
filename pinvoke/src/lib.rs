@@ -17,10 +17,10 @@ pub use connection::{
     connection_open_table, connection_rename_table, connection_table_names,
 };
 pub use query::{
-    query_analyze_plan, query_execute, query_execute_stream, query_explain_plan,
-    query_output_schema, stream_close, stream_next, vector_query_analyze_plan,
-    vector_query_execute, vector_query_execute_stream, vector_query_explain_plan,
-    vector_query_output_schema,
+    build_full_text_search, parse_fts_query_json, query_analyze_plan, query_execute,
+    query_execute_stream, query_explain_plan, query_output_schema, stream_close, stream_next,
+    vector_query_analyze_plan, vector_query_execute, vector_query_execute_stream,
+    vector_query_explain_plan, vector_query_output_schema, QueryParams,
 };
 pub use table::{
     table_add, table_add_columns, table_add_columns_null, table_alter_columns,

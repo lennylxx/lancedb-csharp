@@ -28,6 +28,7 @@ namespace lancedb
         private readonly IntPtr _tablePtr;
         private readonly string _ftsQuery;
         private string[]? _ftsColumns;
+        private readonly string? _ftsQueryJson;
         private readonly float[] _vector;
         private IReranker _reranker = new RRFReranker();
         private string _normalize = "score";
@@ -64,6 +65,7 @@ namespace lancedb
             _tablePtr = source._tablePtr;
             _ftsQuery = source._fullTextSearchQuery!;
             _ftsColumns = source._fullTextSearchColumns;
+            _ftsQueryJson = source._fullTextQueryJson;
             _vector = vector;
             _predicate = source._predicate;
             _selectColumns = source._selectColumns;
@@ -83,6 +85,27 @@ namespace lancedb
             _tablePtr = source._tablePtr;
             _ftsQuery = ftsQuery;
             _ftsColumns = ftsColumns;
+            _vector = source._vector;
+            _predicate = source._predicate;
+            _selectColumns = source._selectColumns;
+            _selectExpressions = source._selectExpressions;
+            _limit = source._limit;
+            _offset = source._offset;
+            _fastSearch = source._fastSearch;
+            _postfilter = source._postfilter;
+            _withRowId = source._withRowId;
+            CopyVectorParams(source);
+        }
+
+        /// <summary>
+        /// Creates a HybridQuery from a VectorQuery and a structured full-text query.
+        /// </summary>
+        internal HybridQuery(VectorQuery source, FullTextQuery query)
+        {
+            _tablePtr = source._tablePtr;
+            _ftsQueryJson = query.ToJson();
+            _ftsQuery = query.RerankText;
+            _ftsColumns = null;
             _vector = source._vector;
             _predicate = source._predicate;
             _selectColumns = source._selectColumns;
@@ -358,6 +381,7 @@ namespace lancedb
             using var ftsSubQuery = new Query(_tablePtr);
             ftsSubQuery._fullTextSearchQuery = _ftsQuery;
             ftsSubQuery._fullTextSearchColumns = _ftsColumns;
+            ftsSubQuery._fullTextQueryJson = _ftsQueryJson;
             ApplySharedConfig(ftsSubQuery);
 
             using var vecBaseQuery = new Query(_tablePtr);
@@ -389,6 +413,7 @@ namespace lancedb
             using var ftsSubQuery = new Query(_tablePtr);
             ftsSubQuery._fullTextSearchQuery = _ftsQuery;
             ftsSubQuery._fullTextSearchColumns = _ftsColumns;
+            ftsSubQuery._fullTextQueryJson = _ftsQueryJson;
             ApplySharedConfig(ftsSubQuery);
 
             using var vecBaseQuery = new Query(_tablePtr);
@@ -453,6 +478,7 @@ namespace lancedb
             using var ftsSubQuery = new Query(_tablePtr);
             ftsSubQuery._fullTextSearchQuery = _ftsQuery;
             ftsSubQuery._fullTextSearchColumns = _ftsColumns;
+            ftsSubQuery._fullTextQueryJson = _ftsQueryJson;
             ftsSubQuery.WithRowId();
             ApplySharedConfig(ftsSubQuery);
 

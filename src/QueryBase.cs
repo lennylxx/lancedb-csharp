@@ -40,6 +40,7 @@ namespace lancedb
         internal bool _withRowId;
         internal string? _fullTextSearchQuery;
         internal string[]? _fullTextSearchColumns;
+        internal string? _fullTextQueryJson;
         internal bool _fastSearch;
         internal bool _postfilter;
 
@@ -79,13 +80,20 @@ namespace lancedb
             {
                 dict["with_row_id"] = true;
             }
-            if (_fullTextSearchQuery != null)
+            if (_fullTextQueryJson != null)
             {
-                dict["full_text_search"] = _fullTextSearchQuery;
+                dict["full_text_query"] = _fullTextQueryJson;
             }
-            if (_fullTextSearchColumns != null)
+            else
             {
-                dict["full_text_search_columns"] = _fullTextSearchColumns;
+                if (_fullTextSearchQuery != null)
+                {
+                    dict["full_text_search"] = _fullTextSearchQuery;
+                }
+                if (_fullTextSearchColumns != null)
+                {
+                    dict["full_text_search_columns"] = _fullTextSearchColumns;
+                }
             }
             if (_fastSearch)
             {
@@ -137,23 +145,6 @@ namespace lancedb
         private protected abstract void NativeConsolidatedExecuteStream(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,
             NativeCall.FfiCallback callback, IntPtr userData);
-
-        /// <summary>
-        /// Copies base parameters from another query builder.
-        /// </summary>
-        internal void CopyBaseParams(QueryBase<T> source)
-        {
-            _selectColumns = source._selectColumns;
-            _selectExpressions = source._selectExpressions;
-            _predicate = source._predicate;
-            _limit = source._limit;
-            _offset = source._offset;
-            _withRowId = source._withRowId;
-            _fullTextSearchQuery = source._fullTextSearchQuery;
-            _fullTextSearchColumns = source._fullTextSearchColumns;
-            _fastSearch = source._fastSearch;
-            _postfilter = source._postfilter;
-        }
 
         /// <summary>
         /// Set the columns to return.

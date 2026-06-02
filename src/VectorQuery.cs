@@ -71,7 +71,6 @@ namespace lancedb
             _limit = parentQuery._limit;
             _offset = parentQuery._offset;
             _withRowId = parentQuery._withRowId;
-            _fullTextSearchQuery = parentQuery._fullTextSearchQuery;
             _fastSearch = parentQuery._fastSearch;
             _postfilter = parentQuery._postfilter;
         }
@@ -403,6 +402,30 @@ namespace lancedb
         public HybridQuery NearestToText(string query, string[]? columns = null)
         {
             return new HybridQuery(this, query, columns);
+        }
+
+        /// <summary>
+        /// Combine this vector search with a structured full-text search to create a
+        /// hybrid query.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// The resulting <see cref="HybridQuery"/> executes both vector and FTS searches
+        /// independently and merges the results using a reranker (default: <see cref="RRFReranker"/>).
+        /// </para>
+        /// <para>
+        /// The columns to search are carried by the <see cref="FullTextQuery"/> nodes themselves.
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The structured full-text query to run.</param>
+        /// <returns>A <see cref="HybridQuery"/> that can be further parameterized.</returns>
+        public HybridQuery NearestToText(FullTextQuery query)
+        {
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+            return new HybridQuery(this, query);
         }
     }
 }

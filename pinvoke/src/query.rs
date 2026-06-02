@@ -1,4 +1,7 @@
-use lancedb::index::scalar::FullTextSearchQuery;
+use lancedb::index::scalar::{
+    BooleanQuery, BoostQuery, FtsQuery, FullTextSearchQuery, MatchQuery, MultiMatchQuery, Occur,
+    Operator, PhraseQuery,
+};
 use lancedb::query::{ExecutableQuery, Query, QueryBase, QueryExecutionOptions, Select, VectorQuery};
 use lancedb::table::Table;
 use libc::{c_char, c_float, size_t};
@@ -44,7 +47,7 @@ fn parse_select(json: &str) -> Result<Select, String> {
 /// All parameters for building a query, deserialized from JSON.
 /// Used by the query_* and vector_query_* FFI functions.
 #[derive(Deserialize, Default)]
-pub(crate) struct QueryParams {
+pub struct QueryParams {
     pub select: Option<sonic_rs::Value>,
     #[serde(rename = "where")]
     pub predicate: Option<String>,
@@ -53,6 +56,7 @@ pub(crate) struct QueryParams {
     pub with_row_id: Option<bool>,
     pub full_text_search: Option<String>,
     pub full_text_search_columns: Option<Vec<String>>,
+    pub full_text_query: Option<String>,
     pub fast_search: Option<bool>,
     pub postfilter: Option<bool>,
     // Vector-specific
@@ -81,6 +85,165 @@ pub(crate) fn parse_query_params(json: *const c_char) -> Result<QueryParams, Str
     sonic_rs::from_str(&json_str).map_err(|e| format!("Invalid query params JSON: {}", e))
 }
 
+/// Structured full-text query JSON, mirroring the externally-tagged shape
+/// emitted by the C# `FullTextQuery` types.
+///
+/// This is deserialized and converted to a `FtsQuery` natively (see
+/// [`parse_fts_query_json`]) rather than via lance-index's `from_json`,
+/// because lance-index's hand-written `MultiMatchQuery` serde does not
+/// round-trip the per-query `operator`. Building the query natively preserves
+/// `operator` at any nesting depth.
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum FtsQueryJson {
+    Match(MatchJson),
+    Phrase(PhraseJson),
+    Boost(BoostJson),
+    MultiMatch(MultiMatchJson),
+    Boolean(BooleanJson),
+}
+
+#[derive(Deserialize)]
+struct MatchJson {
+    column: Option<String>,
+    terms: String,
+    boost: Option<f32>,
+    fuzziness: Option<u32>,
+    max_expansions: Option<usize>,
+    operator: Option<String>,
+    prefix_length: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct PhraseJson {
+    column: Option<String>,
+    terms: String,
+    slop: Option<u32>,
+}
+
+#[derive(Deserialize)]
+struct BoostJson {
+    positive: Box<FtsQueryJson>,
+    negative: Box<FtsQueryJson>,
+    negative_boost: Option<f32>,
+}
+
+#[derive(Deserialize)]
+struct MultiMatchJson {
+    query: String,
+    columns: Vec<String>,
+    boost: Option<Vec<f32>>,
+    operator: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct BooleanJson {
+    #[serde(default)]
+    should: Vec<FtsQueryJson>,
+    #[serde(default)]
+    must: Vec<FtsQueryJson>,
+    #[serde(default)]
+    must_not: Vec<FtsQueryJson>,
+}
+
+fn parse_operator(value: &str) -> Result<Operator, String> {
+    Operator::try_from(value).map_err(|e| e.to_string())
+}
+
+impl FtsQueryJson {
+    fn into_fts(self) -> Result<FtsQuery, String> {
+        match self {
+            FtsQueryJson::Match(m) => {
+                let mut q = MatchQuery::new(m.terms).with_column(m.column);
+                if let Some(boost) = m.boost {
+                    q = q.with_boost(boost);
+                }
+                q = q.with_fuzziness(m.fuzziness);
+                if let Some(max_expansions) = m.max_expansions {
+                    q = q.with_max_expansions(max_expansions);
+                }
+                if let Some(ref op) = m.operator {
+                    q = q.with_operator(parse_operator(op)?);
+                }
+                if let Some(prefix_length) = m.prefix_length {
+                    q = q.with_prefix_length(prefix_length);
+                }
+                Ok(q.into())
+            }
+            FtsQueryJson::Phrase(p) => {
+                let mut q = PhraseQuery::new(p.terms).with_column(p.column);
+                if let Some(slop) = p.slop {
+                    q = q.with_slop(slop);
+                }
+                Ok(q.into())
+            }
+            FtsQueryJson::Boost(b) => {
+                let positive = (*b.positive).into_fts()?;
+                let negative = (*b.negative).into_fts()?;
+                Ok(BoostQuery::new(positive, negative, b.negative_boost).into())
+            }
+            FtsQueryJson::MultiMatch(mm) => {
+                let mut q =
+                    MultiMatchQuery::try_new(mm.query, mm.columns).map_err(|e| e.to_string())?;
+                if let Some(boosts) = mm.boost {
+                    q = q.try_with_boosts(boosts).map_err(|e| e.to_string())?;
+                }
+                if let Some(ref op) = mm.operator {
+                    q = q.with_operator(parse_operator(op)?);
+                }
+                Ok(q.into())
+            }
+            FtsQueryJson::Boolean(b) => {
+                let mut pairs: Vec<(Occur, FtsQuery)> = Vec::new();
+                for q in b.should {
+                    pairs.push((Occur::Should, q.into_fts()?));
+                }
+                for q in b.must {
+                    pairs.push((Occur::Must, q.into_fts()?));
+                }
+                for q in b.must_not {
+                    pairs.push((Occur::MustNot, q.into_fts()?));
+                }
+                Ok(BooleanQuery::new(pairs).into())
+            }
+        }
+    }
+}
+
+/// Parses the structured `full_text_query` JSON (as emitted by the C#
+/// `FullTextQuery` types) into a native `FtsQuery`.
+pub fn parse_fts_query_json(json: &str) -> Result<FtsQuery, String> {
+    let parsed: FtsQueryJson =
+        sonic_rs::from_str(json).map_err(|e| format!("Invalid full_text_query JSON: {}", e))?;
+    parsed.into_fts()
+}
+
+/// Builds a FullTextSearchQuery from the FTS-related query params.
+///
+/// `full_text_query` (a structured FtsQuery JSON) and `full_text_search` (a raw
+/// query string) are mutually exclusive. When a structured query is supplied the
+/// columns are carried by the query nodes themselves, so
+/// `full_text_search_columns` only applies to the raw-string path.
+pub fn build_full_text_search(params: &QueryParams) -> Result<Option<FullTextSearchQuery>, String> {
+    match (&params.full_text_query, &params.full_text_search) {
+        (Some(_), Some(_)) => {
+            Err("Cannot set both full_text_query and full_text_search".to_string())
+        }
+        (Some(json), None) => {
+            let fts = parse_fts_query_json(json)?;
+            Ok(Some(FullTextSearchQuery::new_query(fts)))
+        }
+        (None, Some(text)) => {
+            let mut fts = FullTextSearchQuery::new(text.clone());
+            if let Some(ref cols) = params.full_text_search_columns {
+                fts = fts.with_columns(cols).map_err(|e| e.to_string())?;
+            }
+            Ok(Some(fts))
+        }
+        (None, None) => Ok(None),
+    }
+}
+
 /// Applies base query parameters (shared between Query and VectorQuery).
 pub(crate) fn apply_base_params(mut query: Query, params: &QueryParams) -> Result<Query, String> {
     if let Some(ref select) = params.select {
@@ -99,11 +262,7 @@ pub(crate) fn apply_base_params(mut query: Query, params: &QueryParams) -> Resul
     if params.with_row_id == Some(true) {
         query = query.with_row_id();
     }
-    if let Some(ref text) = params.full_text_search {
-        let mut fts = FullTextSearchQuery::new(text.clone());
-        if let Some(ref cols) = params.full_text_search_columns {
-            fts = fts.with_columns(cols).map_err(|e| e.to_string())?;
-        }
+    if let Some(fts) = build_full_text_search(params)? {
         query = query.full_text_search(fts);
     }
     if params.fast_search == Some(true) {
@@ -136,11 +295,7 @@ pub(crate) fn apply_vector_params(
     if params.with_row_id == Some(true) {
         vq = vq.with_row_id();
     }
-    if let Some(ref text) = params.full_text_search {
-        let mut fts = FullTextSearchQuery::new(text.clone());
-        if let Some(ref cols) = params.full_text_search_columns {
-            fts = fts.with_columns(cols).map_err(|e| e.to_string())?;
-        }
+    if let Some(fts) = build_full_text_search(params)? {
         vq = vq.full_text_search(fts);
     }
     if params.fast_search == Some(true) {

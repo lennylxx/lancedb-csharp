@@ -175,5 +175,47 @@ namespace lancedb
             ftsQuery._fullTextSearchColumns = columns;
             return ftsQuery;
         }
+
+        /// <summary>
+        /// Find the nearest rows to the given structured full-text query.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This creates a new <see cref="FTSQuery"/> configured with a structured
+        /// <see cref="FullTextQuery"/> (for example <see cref="MatchQuery"/>,
+        /// <see cref="PhraseQuery"/>, <see cref="BoostQuery"/>,
+        /// <see cref="MultiMatchQuery"/>, or <see cref="BooleanQuery"/>). The columns
+        /// to search are carried by the query nodes themselves.
+        /// </para>
+        /// <para>
+        /// This method is only valid on tables that have a full-text search index.
+        /// Use <see cref="Table.CreateIndex"/> with <see cref="FtsIndex"/> to create one.
+        /// </para>
+        /// <para>
+        /// To combine full-text search with vector search (hybrid search), chain
+        /// with <see cref="FTSQuery.NearestTo"/>.
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The structured full-text query to run.</param>
+        /// <returns>A <see cref="FTSQuery"/> with full-text search applied.</returns>
+        public FTSQuery NearestToText(FullTextQuery query)
+        {
+            if (query == null)
+            {
+                throw new ArgumentNullException(nameof(query));
+            }
+            var ftsQuery = new FTSQuery(_tablePtr);
+            ftsQuery._selectColumns = _selectColumns;
+            ftsQuery._selectExpressions = _selectExpressions;
+            ftsQuery._predicate = _predicate;
+            ftsQuery._limit = _limit;
+            ftsQuery._offset = _offset;
+            ftsQuery._withRowId = _withRowId;
+            ftsQuery._fastSearch = _fastSearch;
+            ftsQuery._postfilter = _postfilter;
+            ftsQuery._fullTextQueryJson = query.ToJson();
+            ftsQuery._fullTextSearchQuery = query.RerankText;
+            return ftsQuery;
+        }
     }
 }
