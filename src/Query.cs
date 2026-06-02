@@ -214,7 +214,7 @@ namespace lancedb
             ftsQuery._fastSearch = _fastSearch;
             ftsQuery._postfilter = _postfilter;
             ftsQuery._fullTextQueryJson = query.ToJson();
-            ftsQuery._fullTextSearchQuery = query.RerankText;
+            ftsQuery._fullTextSearchQuery = query.QueryText;
             return ftsQuery;
         }
     }

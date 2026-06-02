@@ -56,6 +56,25 @@ namespace lancedb
         {
         }
 
+        /// <summary>
+        /// Gets the plain-text query string for this full-text search.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This mirrors the Python SDK's <c>AsyncFTSQuery.get_query()</c> accessor.
+        /// For a query created from a raw string it returns that string. For a
+        /// structured <see cref="FullTextQuery"/> it returns the underlying text:
+        /// </para>
+        /// <list type="bullet">
+        /// <item><description><see cref="MatchQuery"/> returns its terms.</description></item>
+        /// <item><description><see cref="PhraseQuery"/> returns its terms wrapped in double quotes.</description></item>
+        /// <item><description><see cref="BoostQuery"/> returns the positive query's text.</description></item>
+        /// <item><description><see cref="MultiMatchQuery"/> returns its terms.</description></item>
+        /// <item><description><see cref="BooleanQuery"/> returns an empty string, as it has no single query string.</description></item>
+        /// </list>
+        /// </remarks>
+        public string QueryString => _fullTextSearchQuery ?? string.Empty;
+
         /// <inheritdoc/>
         private protected override void NativeConsolidatedExecute(
             IntPtr tablePtr, IntPtr paramsJson, long timeoutMs, uint maxBatchLength,

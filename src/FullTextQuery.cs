@@ -57,10 +57,13 @@ namespace lancedb
         internal abstract JsonNode ToJsonNode();
 
         /// <summary>
-        /// A best-effort plain-text representation of this query, used only as the
-        /// query string passed to rerankers. It does not affect query execution.
+        /// The plain-text representation of this query, mirroring the Rust
+        /// <c>FtsQuery::query()</c> accessor exposed by the Python SDK's
+        /// <c>get_query()</c>. It is surfaced through <see cref="FTSQuery.QueryString"/>
+        /// and used as the query string passed to rerankers. It does not affect
+        /// query execution.
         /// </summary>
-        internal virtual string RerankText => ToJson();
+        internal abstract string QueryText { get; }
 
         /// <summary>
         /// Convert the query to a JSON string.
@@ -243,7 +246,7 @@ namespace lancedb
         /// <summary>The number of beginning characters kept unchanged for fuzzy matching.</summary>
         public int PrefixLength { get; }
 
-        internal override string RerankText => Query;
+        internal override string QueryText => Query;
 
         internal override JsonNode ToJsonNode()
         {
@@ -295,7 +298,7 @@ namespace lancedb
         /// <summary>The maximum number of intervening unmatched positions allowed between terms.</summary>
         public int Slop { get; }
 
-        internal override string RerankText => Query;
+        internal override string QueryText => "\"" + Query + "\"";
 
         internal override JsonNode ToJsonNode()
         {
@@ -341,7 +344,7 @@ namespace lancedb
         /// <summary>The boost factor for the negative query.</summary>
         public float NegativeBoost { get; }
 
-        internal override string RerankText => Positive.RerankText;
+        internal override string QueryText => Positive.QueryText;
 
         internal override JsonNode ToJsonNode()
         {
@@ -425,7 +428,7 @@ namespace lancedb
         /// <summary>The operator used for combining the query results.</summary>
         public FullTextOperator Operator { get; }
 
-        internal override string RerankText => Query;
+        internal override string QueryText => Query;
 
         internal override JsonNode ToJsonNode()
         {
@@ -492,6 +495,8 @@ namespace lancedb
 
         /// <summary>The list of sub-queries with their occurrence requirements.</summary>
         public IReadOnlyList<(Occur Occur, FullTextQuery Query)> Queries => _queries;
+
+        internal override string QueryText => string.Empty;
 
         internal override JsonNode ToJsonNode()
         {

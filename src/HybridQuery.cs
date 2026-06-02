@@ -104,7 +104,7 @@ namespace lancedb
         {
             _tablePtr = source._tablePtr;
             _ftsQueryJson = query.ToJson();
-            _ftsQuery = query.RerankText;
+            _ftsQuery = query.QueryText;
             _ftsColumns = null;
             _vector = source._vector;
             _predicate = source._predicate;
