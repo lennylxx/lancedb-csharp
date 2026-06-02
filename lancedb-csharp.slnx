@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="src/lancedb.csproj" />
+  <Project Path="benchmark/benchmark.csproj" />
+  <Project Path="tests/tests.csproj" />
+  <Folder Name="/samples/">
+    <Project Path="samples/ConsoleSample/ConsoleSample.csproj" />
+    <Project Path="samples/CloudSample/CloudSample.csproj" />
+  </Folder>
+</Solution>

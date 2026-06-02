@@ -51,7 +51,7 @@ The package includes pre-built native libraries for **Linux x64**, **Windows x64
 
 ### Prerequisites
 
-- [.NET 8.0 SDK](https://dotnet.microsoft.com) or later
+- [.NET 10.0 SDK](https://dotnet.microsoft.com) or later
 - [Rust toolchain](https://rustup.rs/) 1.93.1
 
 ### Build

@@ -4,7 +4,7 @@
 
 ```
 lancedb-csharp/
-├── src/           C# class library (net10.0, namespace: lancedb)
+├── src/           C# class library (netstandard2.0 + net8.0, namespace: lancedb)
 ├── pinvoke/       Rust cdylib (lancedb-ffi) exposing C-compatible FFI
 └── tests/         C# xUnit tests
 ```
