@@ -192,10 +192,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: native-win-x64
-          path: pinvoke/target/debug/
+          path: pinvoke/target/${{ inputs.configuration == 'Release' && 'release' || 'debug' }}/
 
       - name: Pack LanceDB with win-x64 native
-        run: dotnet pack src/lancedb.csproj -o artifacts
+        run: dotnet pack src/lancedb.csproj -c ${{ inputs.configuration || 'Debug' }} -o artifacts
 
       - name: Build and run net48 smoke test
         shell: pwsh
