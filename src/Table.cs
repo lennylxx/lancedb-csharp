@@ -328,6 +328,138 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Create a search query to find the nearest neighbors of the given query vector.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method equivalent to
+        /// <c>table.Query().NearestTo(vector)</c>, mirroring the Python SDK's
+        /// <c>vector_search</c> entry point.
+        /// </para>
+        /// <para>
+        /// Vector searches always have a limit. If <see cref="QueryBase{T}.Limit"/> has not
+        /// been called then a default limit of 10 will be used.
+        /// </para>
+        /// </remarks>
+        /// <param name="vector">The query vector to search for nearest neighbors.</param>
+        /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
+        public VectorQuery VectorSearch(float[] vector)
+        {
+            return Query().NearestTo(vector);
+        }
+
+        /// <summary>
+        /// Convenience overload of <see cref="VectorSearch(float[])"/> accepting
+        /// <c>double[]</c>. Values are cast to <c>float</c> before crossing the FFI,
+        /// matching Python SDK's sync path which normalizes the query vector to
+        /// <c>Float32</c> before invoking the native layer. No precision is lost.
+        /// Prefer the <c>float[]</c> overload to skip this conversion when possible.
+        /// </summary>
+        public VectorQuery VectorSearch(double[] vector)
+        {
+            return Query().NearestTo(vector);
+        }
+
+        /// <summary>
+        /// Create a vector search query to find the nearest neighbors of the given query vector.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method mirroring the Python SDK's <c>search</c> entry
+        /// point when called with a vector. It is equivalent to
+        /// <c>table.Query().NearestTo(vector)</c>.
+        /// </para>
+        /// <para>
+        /// Unlike the Python SDK, the C# SDK does not provide embedding functions, so a
+        /// string query is always treated as full-text search rather than being
+        /// auto-vectorized. Use the <see cref="Search(string, string[])"/> overload for
+        /// full-text search and <see cref="HybridSearch(string, float[], string[])"/> for
+        /// hybrid search.
+        /// </para>
+        /// </remarks>
+        /// <param name="vector">The query vector to search for nearest neighbors.</param>
+        /// <param name="vectorColumnName">
+        /// The name of the vector column to search. If <c>null</c>, the vector column is
+        /// inferred from the table schema. Must be specified when the table has multiple
+        /// vector columns.
+        /// </param>
+        /// <returns>A <see cref="VectorQuery"/> that can be used to further parameterize the search.</returns>
+        public VectorQuery Search(float[] vector, string? vectorColumnName = null)
+        {
+            var query = Query().NearestTo(vector);
+            if (vectorColumnName != null)
+            {
+                query = query.Column(vectorColumnName);
+            }
+            return query;
+        }
+
+        /// <summary>
+        /// Convenience overload of <see cref="Search(float[], string)"/> accepting
+        /// <c>double[]</c>. Values are cast to <c>float</c> before crossing the FFI,
+        /// matching Python SDK's sync path which normalizes the query vector to
+        /// <c>Float32</c> before invoking the native layer. No precision is lost.
+        /// Prefer the <c>float[]</c> overload to skip this conversion when possible.
+        /// </summary>
+        public VectorQuery Search(double[] vector, string? vectorColumnName = null)
+        {
+            var query = Query().NearestTo(vector);
+            if (vectorColumnName != null)
+            {
+                query = query.Column(vectorColumnName);
+            }
+            return query;
+        }
+
+        /// <summary>
+        /// Create a full-text search query to find the rows that best match the given text.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method equivalent to
+        /// <c>table.Query().NearestToText(text, ftsColumns)</c>. It mirrors the Python SDK's
+        /// <c>search</c> entry point when called with a string. Because the C# SDK does not
+        /// provide embedding functions, a string query is always treated as full-text search.
+        /// </para>
+        /// <para>
+        /// This method is only valid on tables that have a full-text search index.
+        /// Use <see cref="CreateIndex"/> with <see cref="FtsIndex"/> to create one.
+        /// </para>
+        /// </remarks>
+        /// <param name="text">The full-text search query string.</param>
+        /// <param name="ftsColumns">
+        /// Optional list of column names to search. If <c>null</c>, all FTS-indexed
+        /// columns are searched.
+        /// </param>
+        /// <returns>A <see cref="FTSQuery"/> with full-text search applied.</returns>
+        public FTSQuery Search(string text, string[]? ftsColumns = null)
+        {
+            return Query().NearestToText(text, ftsColumns);
+        }
+
+        /// <summary>
+        /// Create a full-text search query from a structured <see cref="FullTextQuery"/>.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This is a convenience method equivalent to
+        /// <c>table.Query().NearestToText(query)</c>, mirroring the Python SDK's
+        /// <c>search</c> entry point when called with a <c>FullTextQuery</c>. The columns
+        /// to search are carried by the query nodes themselves.
+        /// </para>
+        /// <para>
+        /// This method is only valid on tables that have a full-text search index.
+        /// Use <see cref="CreateIndex"/> with <see cref="FtsIndex"/> to create one.
+        /// </para>
+        /// </remarks>
+        /// <param name="query">The structured full-text query to run.</param>
+        /// <returns>A <see cref="FTSQuery"/> with full-text search applied.</returns>
+        public FTSQuery Search(FullTextQuery query)
+        {
+            return Query().NearestToText(query);
+        }
+
+        /// <summary>
         /// Return the first <paramref name="n"/> rows of the table.
         /// </summary>
         /// <param name="n">The number of rows to return. Defaults to 5.</param>
