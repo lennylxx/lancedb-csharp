@@ -137,6 +137,7 @@ jobs:
           for EXPECTED in \
             "lib/net8.0/lancedb.dll" \
             "lib/netstandard2.0/lancedb.dll" \
+            "build/LanceDB.targets" \
             "runtimes/linux-x64/native/liblancedb_ffi.so" \
             "runtimes/win-x64/native/lancedb_ffi.dll" \
             "runtimes/osx-arm64/native/liblancedb_ffi.dylib"; do
@@ -162,7 +163,7 @@ jobs:
           cp -r samples/ConsoleSample smoke-runner && cd smoke-runner
           # Swap ProjectReference for PackageReference to the nupkg
           sed -i 's|<ProjectReference Include=".*" />|<PackageReference Include="LanceDB" Version="*-*" />|' ConsoleSample.csproj
-          cp ../ci/nuget.config nuget.config
+          cp ../.github/workflows/nuget.config nuget.config
           dotnet run
 
       - name: Upload NuGet package
@@ -204,11 +205,11 @@ jobs:
           Copy-Item -Recurse samples/ConsoleSample smoke-runner
           $csproj = "smoke-runner/ConsoleSample.csproj"
           $proj = Get-Content $csproj -Raw
-          $proj = $proj -replace '<TargetFramework>net8.0</TargetFramework>', '<TargetFramework>net48</TargetFramework><PlatformTarget>x64</PlatformTarget><AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>'
+          $proj = $proj -replace '<TargetFramework>net8.0</TargetFramework>', '<TargetFramework>net48</TargetFramework><PlatformTarget>x64</PlatformTarget><AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects><LangVersion>latest</LangVersion>'
           $proj = $proj -replace '<ProjectReference\b[^>]*/>', '<PackageReference Include="LanceDB" Version="*-*" />'
           Set-Content $csproj $proj
 
-          Copy-Item ci/nuget.config smoke-runner/nuget.config
+          Copy-Item .github/workflows/nuget.config smoke-runner/nuget.config
 
           dotnet build $csproj -c Release
           & "smoke-runner/bin/Release/net48/ConsoleSample.exe"

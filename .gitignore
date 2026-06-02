@@ -6,4 +6,5 @@
 target
 
 # GitHub
-.github/
+.github/*
+!.github/workflows/
