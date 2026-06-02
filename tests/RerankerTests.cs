@@ -198,27 +198,30 @@ namespace lancedb.tests
         [Fact]
         public async Task LinearCombination_OverlappingResults_HigherRelevance()
         {
-            // "b" appears in both sets with good scores → should rank highest
+            // "a" appears in both sets with strong scores (closest vector + best
+            // FTS), so it should rank highest.
             var vecResults = CreateVectorResults(
                 new[] { "a", "b" },
                 new ulong[] { 1, 2 },
-                new float[] { 0.2f, 0.3f });
+                new float[] { 0.05f, 0.8f });
 
             var ftsResults = CreateFtsResults(
-                new[] { "b", "c" },
-                new ulong[] { 2, 3 },
-                new float[] { 0.1f, 0.9f });
+                new[] { "a", "c" },
+                new ulong[] { 1, 3 },
+                new float[] { 0.9f, 0.2f });
 
-            // weight=0.5: relevance = 1 - (0.5 * vecScore + 0.5 * ftsScore)
-            // vecScore = 1 - distance
-            // "a": 1-(0.5*0.8 + 0.5*1.0)=0.1, "b": 1-(0.5*0.7+0.5*0.1)=0.6, "c": 1-(0.5*0+0.5*0.9)=0.55
+            // weight=0.5: relevance = 0.5 * vecScore + 0.5 * ftsScore
+            // vecScore = 1 - distance; missing side penalised with (1 - fill) = 0.
+            // "a": 0.5*0.95 + 0.5*0.9 = 0.925
+            // "b": 0.5*0.2  + 0.5*0   = 0.1
+            // "c": 0.5*0    + 0.5*0.2 = 0.1
             var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
             var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
 
             Assert.Equal(3, result.Length);
 
             var names = (StringArray)result.Column(0);
-            Assert.Equal("b", names.GetString(0));
+            Assert.Equal("a", names.GetString(0));
         }
 
         [Fact]
@@ -287,12 +290,11 @@ namespace lancedb.tests
             var reranker = new LinearCombinationReranker(weight: 0f);
             var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
 
-            // relevance = 1 - (0 * vecScore + 1 * ftsScore)
-            // "a": 1 - (0 + 0.9) = 0.1, "b": 1 - (0 + 0.1) = 0.9
-            // "b" should rank first
+            // relevance = 0 * vecScore + 1 * ftsScore = ftsScore
+            // "a": 0.9, "b": 0.1 → "a" should rank first
             var names = (StringArray)result.Column(0);
-            Assert.Equal("b", names.GetString(0));
-            Assert.Equal("a", names.GetString(1));
+            Assert.Equal("a", names.GetString(0));
+            Assert.Equal("b", names.GetString(1));
         }
 
         [Fact]
@@ -312,15 +314,51 @@ namespace lancedb.tests
             var reranker = new LinearCombinationReranker(weight: 1f);
             var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
 
-            // relevance = 1 - (1 * (1-dist) + 0)
-            // "a": 1 - (1-0.1) = 0.1, "b": 1 - (1-0.9) = 0.9
-            // "b" should rank first (higher distance = lower vector score = higher relevance? No...)
-            // Actually: vectorScore = 1-dist. "a" vecScore=0.9, "b" vecScore=0.1
-            // relevance = 1 - vecScore. "a": 1-0.9=0.1, "b": 1-0.1=0.9
-            // So "b" ranks first
+            // relevance = 1 * (1 - distance) + 0 = vectorScore
+            // "a" distance=0.1 → vecScore=0.9, "b" distance=0.9 → vecScore=0.1
+            // The closest vector match ("a") should rank first.
             var names = (StringArray)result.Column(0);
-            Assert.Equal("b", names.GetString(0));
-            Assert.Equal("a", names.GetString(1));
+            Assert.Equal("a", names.GetString(0));
+            Assert.Equal("b", names.GetString(1));
+        }
+
+        [Fact]
+        public async Task LinearCombination_BothSides_ComputesWeightedScoreAndSymmetricPenalty()
+        {
+            // Regression test for the upstream fix "inverted scores and incorrect
+            // missing-FTS penalty". Verifies (a) higher combined score ranks first
+            // (no spurious final inversion) and (b) a missing FTS score is penalised
+            // with (1 - fill), symmetrically with a missing vector score.
+            var vecResults = CreateVectorResults(
+                new[] { "both", "vecOnly" },
+                new ulong[] { 1, 2 },
+                new float[] { 0.2f, 0.6f });
+
+            var ftsResults = CreateFtsResults(
+                new[] { "both", "ftsOnly" },
+                new ulong[] { 1, 3 },
+                new float[] { 0.7f, 0.4f });
+
+            // weight=0.5, fill=1.0 → missing side contributes (1 - fill) = 0.
+            // "both":    0.5*(1-0.2) + 0.5*0.7 = 0.75
+            // "vecOnly": 0.5*(1-0.6) + 0.5*0   = 0.20
+            // "ftsOnly": 0.5*0       + 0.5*0.4 = 0.20
+            var reranker = new LinearCombinationReranker(weight: 0.5f, fill: 1.0f);
+            var result = await reranker.RerankHybrid("test", vecResults, ftsResults);
+
+            Assert.Equal(3, result.Length);
+
+            var names = (StringArray)result.Column(0);
+            var scores = (FloatArray)result.Column(result.Schema.GetFieldIndex("_relevance_score"));
+
+            Assert.Equal("both", names.GetString(0));
+            Assert.Equal(0.75f, scores.GetValue(0)!.Value, 5);
+
+            // Descending order preserved (no final 1 - inversion).
+            for (int i = 0; i < result.Length - 1; i++)
+            {
+                Assert.True(scores.GetValue(i) >= scores.GetValue(i + 1));
+            }
         }
 
         // ===== MRR Reranker Tests =====

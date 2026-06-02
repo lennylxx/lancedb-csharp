@@ -69,8 +69,9 @@ namespace lancedb.tests
                 var connection = new Connection();
                 await connection.Connect(tmpDir);
 
-                await Assert.ThrowsAsync<LanceDbException>(
+                var ex = await Assert.ThrowsAsync<LanceDbException>(
                     () => connection.OpenTable("does_not_exist"));
+                Assert.Contains("Table 'does_not_exist' was not found", ex.Message);
 
                 connection.Close();
             }
@@ -96,8 +97,9 @@ namespace lancedb.tests
                 await connection.Connect(tmpDir);
                 await connection.CreateEmptyTable("my_table");
 
-                await Assert.ThrowsAsync<LanceDbException>(
+                var ex = await Assert.ThrowsAsync<LanceDbException>(
                     () => connection.CreateEmptyTable("my_table"));
+                Assert.Contains("Table 'my_table' already exists", ex.Message);
 
                 connection.Close();
             }
@@ -281,8 +283,9 @@ namespace lancedb.tests
                 var batch = CreateTestBatch(3);
                 await connection.CreateTable("dup_table", batch);
 
-                await Assert.ThrowsAsync<LanceDbException>(
+                var ex = await Assert.ThrowsAsync<LanceDbException>(
                     () => connection.CreateTable("dup_table", CreateTestBatch(2)));
+                Assert.Contains("Table 'dup_table' already exists", ex.Message);
 
                 connection.Dispose();
             }
@@ -1435,7 +1438,7 @@ namespace lancedb.tests
                 await connection.TableNames();
             });
             // The error should be OSS-specific, proving the backend is registered.
-            Assert.Contains("OSS", ex.Message);
+            Assert.Contains("service: oss", ex.Message);
         }
 
         /// <summary>

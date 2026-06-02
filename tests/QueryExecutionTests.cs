@@ -929,5 +929,89 @@ namespace lancedb.tests
 
             Assert.True(totalRows > 0);
         }
+
+        /// <summary>
+        /// ToBatches with maxBatchLength on a full scan should split the result
+        /// into multiple native batches, each no larger than the limit. Verifies
+        /// the Rust crate honors max_batch_length (fixed in lancedb v0.27.2).
+        /// </summary>
+        [Fact]
+        public async Task ToBatches_Query_RespectsMaxBatchLength()
+        {
+            using var fixture = await TestFixture.CreateWithTable("tobatches_maxlen");
+            await fixture.Table.Add(CreateTestBatch(10));
+
+            using var query = fixture.Table.Query();
+            using var reader = await query.ToBatches(maxBatchLength: 4);
+
+            int totalRows = 0;
+            int batchCount = 0;
+            await foreach (var batch in reader)
+            {
+                Assert.NotNull(batch);
+                Assert.True(batch.Length <= 4, $"batch of {batch.Length} exceeds maxBatchLength 4");
+                totalRows += batch.Length;
+                batchCount++;
+            }
+
+            Assert.Equal(10, totalRows);
+            Assert.True(batchCount > 1, "expected the result to be split into multiple batches");
+        }
+
+        /// <summary>
+        /// ToBatches with maxBatchLength on a vector query (native streaming path,
+        /// no reranker) should split results into batches no larger than the limit.
+        /// Verifies the Rust crate honors max_batch_length for vector queries
+        /// (fixed in lancedb v0.27.2).
+        /// </summary>
+        [Fact]
+        public async Task ToBatches_VectorQuery_RespectsMaxBatchLength()
+        {
+            using var fixture = await TestFixture.CreateWithTable("tobatches_vq_maxlen",
+                CreateVectorBatch(20, dimension: 8));
+
+            var queryVector = new double[8];
+            for (int i = 0; i < 8; i++)
+            {
+                queryVector[i] = 0.5;
+            }
+
+            using var query = fixture.Table.Query()
+                .NearestTo(queryVector)
+                .Limit(20);
+            using var reader = await query.ToBatches(maxBatchLength: 5);
+
+            int totalRows = 0;
+            int batchCount = 0;
+            await foreach (var batch in reader)
+            {
+                Assert.NotNull(batch);
+                Assert.True(batch.Length <= 5, $"batch of {batch.Length} exceeds maxBatchLength 5");
+                totalRows += batch.Length;
+                batchCount++;
+            }
+
+            Assert.Equal(20, totalRows);
+            Assert.True(batchCount > 1, "expected the result to be split into multiple batches");
+        }
+
+        /// <summary>
+        /// A vector search without an explicit column should auto-discover a vector column
+        /// nested inside a struct ("meta.vector"). Verifies nested vector-column discovery
+        /// (fixed in the lancedb core bundled with the Rust upgrade).
+        /// </summary>
+        [Fact]
+        public async Task NearestTo_NestedVectorColumn_AutoDiscovered()
+        {
+            using var fixture = await TestFixture.CreateWithTable("nested_vec_discovery",
+                CreateNestedVectorBatch(300, dimension: 4));
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 0.5, 0.5, 0.5, 0.5 })
+                .Limit(3);
+            var result = await query.ToArrow();
+
+            Assert.Equal(3, result.Length);
+        }
     }
 }

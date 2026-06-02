@@ -115,10 +115,11 @@ pub fn ffi_to_index_type(i: i32) -> Result<lancedb::index::IndexType, String> {
         3 => Ok(IndexType::IvfRq),
         4 => Ok(IndexType::IvfHnswPq),
         5 => Ok(IndexType::IvfHnswSq),
-        6 => Ok(IndexType::BTree),
-        7 => Ok(IndexType::Bitmap),
-        8 => Ok(IndexType::LabelList),
-        9 => Ok(IndexType::FTS),
+        6 => Ok(IndexType::IvfHnswFlat),
+        7 => Ok(IndexType::BTree),
+        8 => Ok(IndexType::Bitmap),
+        9 => Ok(IndexType::LabelList),
+        10 => Ok(IndexType::FTS),
         _ => Err(format!("Unknown index type: {}", i)),
     }
 }
@@ -133,10 +134,11 @@ pub fn index_type_to_ffi(t: &lancedb::index::IndexType) -> i32 {
         IndexType::IvfRq => 3,
         IndexType::IvfHnswPq => 4,
         IndexType::IvfHnswSq => 5,
-        IndexType::BTree => 6,
-        IndexType::Bitmap => 7,
-        IndexType::LabelList => 8,
-        IndexType::FTS => 9,
+        IndexType::IvfHnswFlat => 6,
+        IndexType::BTree => 7,
+        IndexType::Bitmap => 8,
+        IndexType::LabelList => 9,
+        IndexType::FTS => 10,
     }
 }
 

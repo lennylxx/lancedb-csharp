@@ -726,6 +726,31 @@ fn build_index(index_type: i32, config: &sonic_rs::Value) -> Result<LanceIndex, 
             }
             Ok(LanceIndex::IvfHnswSq(builder))
         }
+        IndexType::IvfHnswFlat => {
+            let mut builder = IvfHnswFlatIndexBuilder::default();
+            if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {
+                builder = builder.distance_type(ffi::ffi_to_distance_type(v as i32)?);
+            }
+            if let Some(v) = config.get("num_partitions").and_then(|v| v.as_u64()) {
+                builder = builder.num_partitions(v as u32);
+            }
+            if let Some(v) = config.get("max_iterations").and_then(|v| v.as_u64()) {
+                builder = builder.max_iterations(v as u32);
+            }
+            if let Some(v) = config.get("sample_rate").and_then(|v| v.as_u64()) {
+                builder = builder.sample_rate(v as u32);
+            }
+            if let Some(v) = config.get("num_edges").and_then(|v| v.as_u64()) {
+                builder = builder.num_edges(v as u32);
+            }
+            if let Some(v) = config.get("ef_construction").and_then(|v| v.as_u64()) {
+                builder = builder.ef_construction(v as u32);
+            }
+            if let Some(v) = config.get("target_partition_size").and_then(|v| v.as_u64()) {
+                builder = builder.target_partition_size(v as u32);
+            }
+            Ok(LanceIndex::IvfHnswFlat(builder))
+        }
         IndexType::IvfFlat => {
             let mut builder = IvfFlatIndexBuilder::default();
             if let Some(v) = config.get("distance_type").and_then(|v| v.as_i64()) {

@@ -255,6 +255,51 @@ namespace lancedb.tests
                 new IArrowArray[] { idBuilder.Build(), listArray }, numRows);
         }
 
+        /// <summary>
+        /// Returns a batch with an id column and a struct column named "meta" that nests a
+        /// vector field ("vector": <c>FixedSizeList&lt;float&gt;[dimension]</c>) and a scalar
+        /// field ("label": string). Used to exercise nested vector-column discovery and
+        /// nested (dotted) field-path index creation.
+        /// </summary>
+        public static RecordBatch CreateNestedVectorBatch(int numRows, int dimension = 4)
+        {
+            var idBuilder = new Int32Array.Builder();
+            var itemField = new Field("item", FloatType.Default, nullable: false);
+            var vectorBuilder = new FixedSizeListArray.Builder(itemField, dimension);
+            var floatBuilder = (FloatArray.Builder)vectorBuilder.ValueBuilder;
+            var labelBuilder = new StringArray.Builder();
+            var rng = new Random(7);
+
+            for (int i = 0; i < numRows; i++)
+            {
+                idBuilder.Append(i);
+                vectorBuilder.Append();
+                for (int d = 0; d < dimension; d++)
+                {
+                    floatBuilder.Append((float)rng.NextDouble());
+                }
+
+                labelBuilder.Append("label" + i);
+            }
+
+            var structType = new StructType(new List<Field>
+            {
+                new Field("vector", new FixedSizeListType(itemField, dimension), nullable: false),
+                new Field("label", StringType.Default, nullable: false),
+            });
+            var structArray = new StructArray(structType, numRows,
+                new IArrowArray[] { vectorBuilder.Build(), labelBuilder.Build() },
+                ArrowBuffer.Empty, nullCount: 0);
+
+            var schema = new Schema.Builder()
+                .Field(new Field("id", Int32Type.Default, nullable: false))
+                .Field(new Field("meta", structType, nullable: false))
+                .Build();
+
+            return new RecordBatch(schema,
+                new IArrowArray[] { idBuilder.Build(), structArray }, numRows);
+        }
+
         // -----------------------------------------------------------------------
         // Reranker-test schema and result factories
         // -----------------------------------------------------------------------

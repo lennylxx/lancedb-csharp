@@ -305,6 +305,71 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// Update with literal values escapes string values so that embedded
+        /// single quotes round-trip correctly (matching Python's value_to_sql).
+        /// </summary>
+        [Fact]
+        public async Task Update_LiteralStringValue_EscapesQuotesAndRoundTrips()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_lit_quote",
+                CreateIdValueBatch(new[] { 1, 2 }, new[] { "alice", "bob" }));
+
+            var result = await fixture.Table.Update(
+                new Dictionary<string, object?> { { "value", "O'Brien" } },
+                @where: "id = 1");
+
+            Assert.Equal(1UL, result.RowsUpdated);
+
+            var batch = await fixture.Table.ToArrow();
+            var idCol = batch.Column("id") as Apache.Arrow.Int32Array;
+            var valCol = batch.Column("value") as Apache.Arrow.StringArray;
+            for (int i = 0; i < batch.Length; i++)
+            {
+                if (idCol!.GetValue(i) == 1)
+                {
+                    Assert.Equal("O'Brien", valCol!.GetString(i));
+                }
+            }
+        }
+
+        /// <summary>
+        /// A SQL-injection-style literal string is stored verbatim, not executed.
+        /// </summary>
+        [Fact]
+        public async Task Update_LiteralStringValue_PreventsSqlInjection()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_lit_inject",
+                CreateIdValueBatch(new[] { 1, 2 }, new[] { "alice", "bob" }));
+
+            const string payload = "x'; DROP TABLE foo; --";
+            var result = await fixture.Table.Update(
+                new Dictionary<string, object?> { { "value", payload } });
+
+            Assert.Equal(2UL, result.RowsUpdated);
+
+            long stored = await fixture.Table.CountRows("value = 'x''; DROP TABLE foo; --'");
+            Assert.Equal(2, stored);
+        }
+
+        /// <summary>
+        /// Literal numeric values update without manual SQL string formatting.
+        /// </summary>
+        [Fact]
+        public async Task Update_LiteralIntValue_UpdatesEveryRow()
+        {
+            using var fixture = await TestFixture.CreateWithTable("update_lit_int",
+                CreateTestBatch(5));
+
+            var result = await fixture.Table.Update(
+                new Dictionary<string, object?> { { "id", 99 } });
+
+            Assert.Equal(5UL, result.RowsUpdated);
+
+            long count = await fixture.Table.CountRows("id = 99");
+            Assert.Equal(5, count);
+        }
+
+        /// <summary>
         /// Add a single RecordBatch and verify row count increases.
         /// </summary>
         [Fact]
@@ -1938,6 +2003,44 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// CreateIndex with HnswFlat on a vector column should succeed and report IvfHnswFlat.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswFlat_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_flat_idx",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswFlatIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswFlat);
+        }
+
+        /// <summary>
+        /// CreateIndex with HnswFlat using custom parameters should succeed.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_HnswFlat_WithParams_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("hnsw_flat_params",
+                CreateVectorBatch(256));
+
+            await fixture.Table.CreateIndex(new[] { "vector" }, new HnswFlatIndex
+            {
+                DistanceType = lancedb.DistanceType.Cosine,
+                NumPartitions = 2,
+                MaxIterations = 10,
+                SampleRate = 128,
+                NumEdges = 16,
+                EfConstruction = 100,
+            });
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("vector") && i.IndexType == IndexType.IvfHnswFlat);
+        }
+
+        /// <summary>
         /// CreateIndex with LabelList on a list column should succeed and report LabelList.
         /// </summary>
         [Fact]
@@ -1950,6 +2053,38 @@ namespace lancedb.tests
 
             var indices = await fixture.Table.ListIndices();
             Assert.Contains(indices, i => i.Columns.Contains("tags") && i.IndexType == IndexType.LabelList);
+        }
+
+        /// <summary>
+        /// CreateIndex with a dotted nested field path on a scalar sub-field of a struct
+        /// column should succeed (native nested field-path support).
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_NestedScalarPath_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("nested_scalar_idx",
+                CreateNestedVectorBatch(300));
+
+            await fixture.Table.CreateIndex(new[] { "meta.label" }, new BTreeIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.IndexType == IndexType.BTree);
+        }
+
+        /// <summary>
+        /// CreateIndex with a dotted nested field path on a vector sub-field of a struct
+        /// column should succeed (native nested field-path support).
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_NestedVectorPath_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("nested_vector_idx",
+                CreateNestedVectorBatch(300));
+
+            await fixture.Table.CreateIndex(new[] { "meta.vector" }, new IvfFlatIndex { NumPartitions = 1 });
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.IndexType == IndexType.IvfFlat);
         }
 
         /// <summary>

@@ -457,6 +457,47 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Update rows in the table with literal values.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This can be used to update zero to all rows in the table.
+        /// If a filter is provided with <paramref name="where"/> then only rows matching
+        /// the filter will be updated. Otherwise all rows will be updated.
+        /// </para>
+        /// <para>
+        /// The keys are column names, and the values are the new literal values to
+        /// assign. Values are converted to SQL literals (and escaped) via
+        /// <see cref="SqlValue.ValueToSql"/>, so embedded characters such as single
+        /// quotes are handled safely. To update a column using an expression based on
+        /// the previous value (e.g. <c>"x + 1"</c>), use
+        /// <see cref="Update(Dictionary{string, string}, string)"/> instead.
+        /// </para>
+        /// </remarks>
+        /// <param name="updates">
+        /// A dictionary mapping column names to the new values to assign. For example,
+        /// <c>new Dictionary&lt;string, object?&gt; { { "name", "O'Brien" }, { "x", 7 } }</c>.
+        /// </param>
+        /// <param name="where">
+        /// An optional SQL filter that controls which rows are updated
+        /// (e.g., <c>"x = 2"</c>). If <c>null</c>, all rows are updated.
+        /// </param>
+        /// <returns>
+        /// An <see cref="UpdateResult"/> containing the number of rows updated and the
+        /// commit version of the operation.
+        /// </returns>
+        public Task<UpdateResult> Update(Dictionary<string, object?> updates, string? @where = null)
+        {
+            var updatesSql = new Dictionary<string, string>(updates.Count);
+            foreach (var kv in updates)
+            {
+                updatesSql[kv.Key] = SqlValue.ValueToSql(kv.Value);
+            }
+
+            return Update(updatesSql, @where);
+        }
+
+        /// <summary>
         /// Update rows in the table using SQL expressions.
         /// </summary>
         /// <remarks>

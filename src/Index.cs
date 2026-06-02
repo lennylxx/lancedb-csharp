@@ -590,4 +590,71 @@ namespace lancedb
             return JsonSerializer.SerializeToUtf8Bytes(dict);
         }
     }
+
+    /// <summary>
+    /// An IVF-HNSW-Flat (Hierarchical Navigable Small World, no quantization) vector index.
+    /// </summary>
+    /// <remarks>
+    /// This index type combines an IVF partition structure with HNSW graphs over raw,
+    /// uncompressed vectors. It provides exact distances within each partition at the
+    /// cost of higher storage and memory usage compared to the quantized HNSW variants
+    /// (<see cref="HnswSqIndex"/> and <see cref="HnswPqIndex"/>).
+    /// </remarks>
+    public class HnswFlatIndex : Index
+    {
+        /// <summary>
+        /// The distance metric used to train the index.
+        /// Default is <see cref="lancedb.DistanceType.L2"/>.
+        /// </summary>
+        public DistanceType DistanceType { get; set; } = lancedb.DistanceType.L2;
+
+        /// <summary>
+        /// The number of IVF partitions. Default is the square root of the number of rows.
+        /// </summary>
+        public int? NumPartitions { get; set; }
+
+        /// <summary>
+        /// Max iterations to train kmeans. Default is 50.
+        /// </summary>
+        public int MaxIterations { get; set; } = 50;
+
+        /// <summary>
+        /// The rate used to calculate the number of training vectors for kmeans. Default is 256.
+        /// </summary>
+        public int SampleRate { get; set; } = 256;
+
+        /// <summary>
+        /// The number of neighbors per node in the HNSW graph (also known as <c>m</c>).
+        /// Default is 20.
+        /// </summary>
+        public int NumEdges { get; set; } = 20;
+
+        /// <summary>
+        /// The number of candidates evaluated during HNSW construction (<c>ef_construction</c>).
+        /// Default is 300.
+        /// </summary>
+        public int EfConstruction { get; set; } = 300;
+
+        /// <summary>
+        /// The target size of each partition. Default is 1,048,576.
+        /// </summary>
+        public int? TargetPartitionSize { get; set; }
+
+        internal override IndexType IndexType => IndexType.IvfHnswFlat;
+
+        internal override byte[] ToConfigJsonUtf8()
+        {
+            var dict = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["distance_type"] = (int)DistanceType,
+                ["max_iterations"] = MaxIterations,
+                ["sample_rate"] = SampleRate,
+                ["num_edges"] = NumEdges,
+                ["ef_construction"] = EfConstruction,
+            };
+            if (NumPartitions.HasValue) { dict["num_partitions"] = NumPartitions.Value; }
+            if (TargetPartitionSize.HasValue) { dict["target_partition_size"] = TargetPartitionSize.Value; }
+            return JsonSerializer.SerializeToUtf8Bytes(dict);
+        }
+    }
 }

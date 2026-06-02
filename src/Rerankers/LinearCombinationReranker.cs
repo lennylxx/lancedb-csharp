@@ -10,10 +10,12 @@ namespace lancedb
     /// </summary>
     /// <remarks>
     /// The relevance score is computed as:
-    /// <c>1 - (weight * vectorScore + (1 - weight) * ftsScore)</c>
-    /// where <c>vectorScore = 1 - distance</c> (inverted from distance to similarity).
-    /// For results appearing in only one search, the missing score defaults to the
-    /// <c>fill</c> value (treated as a penalty — higher fill means lower relevance).
+    /// <c>weight * vectorScore + (1 - weight) * ftsScore</c>
+    /// where <c>vectorScore = 1 - distance</c> (inverted from distance to a
+    /// "higher is more relevant" similarity). A higher relevance score means a
+    /// more relevant result. For results appearing in only one search, the
+    /// missing score is penalised with <c>1 - fill</c> (so a higher <c>fill</c>
+    /// produces a lower relevance contribution).
     /// </remarks>
     public class LinearCombinationReranker : IReranker
     {
@@ -194,12 +196,19 @@ namespace lancedb
                 var id = combinedRowIds.GetValue(i);
                 if (id.HasValue)
                 {
-                    float distance = vectorScores.TryGetValue(id.Value, out var d) ? d : _fill;
-                    float ftsScore = ftsScores.TryGetValue(id.Value, out var s) ? s : _fill;
+                    // Vector distance → similarity in a "higher = more relevant"
+                    // space. A missing vector entry is penalised with (1 - fill).
+                    float vectorScore = vectorScores.TryGetValue(id.Value, out var d)
+                        ? 1f - d
+                        : 1f - _fill;
 
-                    // Invert distance to similarity: vectorScore = 1 - distance
-                    float vectorScore = 1f - distance;
-                    relevanceScores[i] = 1f - (_weight * vectorScore + (1f - _weight) * ftsScore);
+                    // FTS (BM25) scores are already "higher = more relevant".
+                    // A missing FTS entry is penalised symmetrically with (1 - fill).
+                    float ftsScore = ftsScores.TryGetValue(id.Value, out var s)
+                        ? s
+                        : 1f - _fill;
+
+                    relevanceScores[i] = _weight * vectorScore + (1f - _weight) * ftsScore;
                 }
             }
 

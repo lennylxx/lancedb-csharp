@@ -327,18 +327,21 @@ namespace lancedb.tests
         /// resulting in different RRF scores than when all 5 candidates are ranked.
         /// </summary>
         /// <remarks>
-        /// Python equivalent (verified with lancedb pip v0.29.2, exact fixture data):
+        /// Python equivalent (verified by running lancedb python 0.33.0, exact fixture data):
         /// <code>
         /// data = [
-        ///     {"id": 1, "text": "apple banana fruit", "vector": [1.0, 0.0]},
-        ///     {"id": 2, "text": "cherry date sweet",  "vector": [0.0, 1.0]},
-        ///     {"id": 3, "text": "apple cherry tart",  "vector": [0.5, 0.5]},
-        ///     {"id": 4, "text": "banana fig jam",     "vector": [0.9, 0.1]},
-        ///     {"id": 5, "text": "apple pie dessert",  "vector": [0.0, 0.9]},
+        ///     {"id": 1, "content": "apple apple apple banana fruit", "vector": [1.0, 0.0]},
+        ///     {"id": 2, "content": "cherry date sweet",              "vector": [0.0, 1.0]},
+        ///     {"id": 3, "content": "apple apple cherry tart",        "vector": [0.5, 0.5]},
+        ///     {"id": 4, "content": "banana fig jam",                 "vector": [0.9, 0.1]},
+        ///     {"id": 5, "content": "apple pie dessert",              "vector": [0.0, 0.9]},
         /// ]
-        /// # limit=2: ids=[1, 3], scores=[0.032522, 0.016393]
-        /// # no limit: ids=[1, 3, 5, 4, 2], scores=[0.032266, 0.032266, ...]
-        /// # Scores differ because limit constrains each sub-query's candidate set.
+        /// # limit=2: vector top-2 = {id1, id4}, fts top-2 = {id1, id3}.
+        /// # RRF (k=60): id1 = 1/61 + 1/61 = 0.032787 (in both sub-queries);
+        /// #             id3 and id4 each appear once at rank 2 = 1/62 = 0.016129 (a tie).
+        /// # So id1 ranks first unambiguously; the runner-up score is 1/62.
+        /// # Without limit propagation each sub-query would rank all 5 rows and id1
+        /// # would instead score 2/61 against a different candidate set.
         /// </code>
         /// </remarks>
         [Fact]
@@ -354,14 +357,16 @@ namespace lancedb.tests
 
             Assert.Equal(2, results.Length);
 
-            // Python with limit=2 propagated: id=1 score=0.032522, id=3 score=0.016393
-            // Without propagation (C# before fix): id=1 score=0.032266 (different!)
+            // id1 wins unambiguously (present in both sub-queries' top-2).
+            // The runner-up is one of id3/id4, which tie at RRF 1/62; the exact
+            // winner depends on the FTS/vector engine's tie-ordering, so we assert
+            // the tie-tolerant facts: id1 first at 1/61+1/61, runner-up at 1/62.
             var ids = (Int32Array)results.Column("id");
             var scores = (FloatArray)results.Column("_relevance_score");
             Assert.Equal(1, ids.GetValue(0)!.Value);
-            Assert.Equal(3, ids.GetValue(1)!.Value);
-            Assert.Equal(0.0325f, scores.GetValue(0)!.Value, precision: 4);
-            Assert.Equal(0.0164f, scores.GetValue(1)!.Value, precision: 4);
+            Assert.Contains(ids.GetValue(1)!.Value, new[] { 3, 4 });
+            Assert.Equal(0.032787f, scores.GetValue(0)!.Value, precision: 4);
+            Assert.Equal(0.016129f, scores.GetValue(1)!.Value, precision: 4);
         }
         [Fact]
         public async Task HybridQuery_OffsetThenLimit_ReturnsCorrectCount()
@@ -604,6 +609,47 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// ToBatches with maxBatchLength on a hybrid query should split the reranked
+        /// result into batches no larger than the limit. Hybrid results are
+        /// materialized before chunking, so this verifies the client-side splitting
+        /// honors max_batch_length.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_ToBatches_RespectsMaxBatchLength()
+        {
+            using var fixture = await TestFixture.CreateNormalizationFixture("hybrid_batches_maxlen");
+
+            int unboundedTotal = 0;
+            using (var fullReader = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0 })
+                .ToBatches())
+            {
+                await foreach (var batch in fullReader)
+                {
+                    unboundedTotal += batch.Length;
+                }
+            }
+            Assert.True(unboundedTotal > 2, "fixture must return enough rows to require splitting");
+
+            using var reader = await fixture.Table
+                .HybridSearch("apple", new double[] { 1.0, 0.0 })
+                .ToBatches(maxBatchLength: 2);
+
+            int totalRows = 0;
+            int batchCount = 0;
+            await foreach (var batch in reader)
+            {
+                Assert.NotNull(batch);
+                Assert.True(batch.Length <= 2, $"batch of {batch.Length} exceeds maxBatchLength 2");
+                totalRows += batch.Length;
+                batchCount++;
+            }
+
+            Assert.Equal(unboundedTotal, totalRows);
+            Assert.True(batchCount > 1, "expected the result to be split into multiple batches");
+        }
+
+        /// <summary>
         /// Verifies that when FTS sub-query returns no results, LinearCombinationReranker
         /// short-circuits to use inverted distance as relevance score (matching Python).
         /// Python skips the weighted formula and returns _relevance_score = 1 - distance.
@@ -758,29 +804,32 @@ namespace lancedb.tests
         /// and FTS scores are on incomparable scales.
         /// </summary>
         /// <remarks>
-        /// Python equivalent (verified with lancedb v0.29.2):
+        /// Python equivalent (verified by running lancedb python 0.33.0, which
+        /// contains the LinearCombinationReranker score-inversion fix):
         /// <code>
         /// db = lancedb.connect("/tmp/test")
         /// data = [
-        ///     {"id": 1, "text": "apple banana fruit", "vector": [1.0, 0.0]},
-        ///     {"id": 2, "text": "cherry date sweet",  "vector": [0.0, 1.0]},
-        ///     {"id": 3, "text": "apple cherry tart",  "vector": [0.5, 0.5]},
-        ///     {"id": 4, "text": "banana fig jam",     "vector": [0.9, 0.1]},
-        ///     {"id": 5, "text": "apple pie dessert",  "vector": [0.0, 0.9]},
+        ///     {"id": 1, "content": "apple apple apple banana fruit", "vector": [1.0, 0.0]},
+        ///     {"id": 2, "content": "cherry date sweet",              "vector": [0.0, 1.0]},
+        ///     {"id": 3, "content": "apple apple cherry tart",        "vector": [0.5, 0.5]},
+        ///     {"id": 4, "content": "banana fig jam",                 "vector": [0.9, 0.1]},
+        ///     {"id": 5, "content": "apple pie dessert",              "vector": [0.0, 0.9]},
         /// ]
         /// table = db.create_table("test", data)
-        /// table.create_fts_index("text")
+        /// table.create_fts_index("content", use_tantivy=False)
         /// reranker = LinearCombinationReranker(weight=0.5, fill=1.0)
         /// results = (table.search(query_type="hybrid")
         ///     .vector([1.0, 0.0]).text("apple")
         ///     .rerank(reranker).limit(5).to_arrow())
         ///
-        /// # Output:
-        /// #   id=5, _relevance_score=0.9525
-        /// #   id=3, _relevance_score=0.6250
-        /// #   id=1, _relevance_score=0.5000
-        /// #   id=2, _relevance_score=0.5000
-        /// #   id=4, _relevance_score=0.0050
+        /// # Vector distances: id1=0.0, id4=0.02, id3=0.5, id5=1.81, id2=2.0.
+        /// # FTS BM25 scores:  id1=0.7818, id3=0.7187, id5=0.5784 (distinct).
+        /// # After min-max normalization, relevance = 0.5*(1 - normDist) + 0.5*normScore:
+        /// #   id=1, _relevance_score=1.0000
+        /// #   id=3, _relevance_score=0.7197
+        /// #   id=4, _relevance_score=0.4950
+        /// #   id=5, _relevance_score=0.0475
+        /// #   id=2, _relevance_score=0.0000
         /// </code>
         /// </remarks>
         [Fact]
@@ -802,12 +851,13 @@ namespace lancedb.tests
 
             Assert.Equal(5, results.Length);
 
-            var expectedIds = new int[] { 5, 3, 1, 2, 4 };
-            var expectedScores = new float[] { 0.9525f, 0.625f, 0.5f, 0.5f, 0.005f };
+            var expectedIds = new int[] { 1, 3, 4, 5, 2 };
+            var expectedScores = new float[] { 1.0000f, 0.7197f, 0.4950f, 0.0475f, 0.0000f };
             for (int i = 0; i < results.Length; i++)
             {
                 Assert.Equal(expectedIds[i], ids.GetValue(i));
-                Assert.Equal(expectedScores[i], scores.GetValue(i)!.Value, precision: 2);
+                Assert.True(Math.Abs(expectedScores[i] - scores.GetValue(i)!.Value) < 1e-3f,
+                    $"Score mismatch at {i}: expected {expectedScores[i]}, got {scores.GetValue(i)}");
             }
         }
 
@@ -816,7 +866,8 @@ namespace lancedb.tests
         /// min-max normalization, producing different rankings than normalize="score".
         /// </summary>
         /// <remarks>
-        /// Python equivalent (verified with lancedb v0.29.2):
+        /// Python equivalent (verified by running lancedb python 0.33.0, which
+        /// contains the LinearCombinationReranker score-inversion fix):
         /// <code>
         /// # Same data as NormalizesScoresBeforeReranking test
         /// reranker = LinearCombinationReranker(weight=0.5, fill=1.0)
@@ -824,12 +875,15 @@ namespace lancedb.tests
         ///     .vector([1.0, 0.0]).text("apple")
         ///     .rerank(reranker, normalize="rank").limit(5).to_arrow())
         ///
-        /// # Output:
-        /// #   id=3, _relevance_score=0.7500
-        /// #   id=5, _relevance_score=0.6250
-        /// #   id=2, _relevance_score=0.5000
-        /// #   id=4, _relevance_score=0.1250
-        /// #   id=1, _relevance_score=0.0000
+        /// # Vector ranks (ascending distance) normalize to: id1=0, id4=0.25,
+        /// # id3=0.5, id5=0.75, id2=1.0. FTS ranks (ascending BM25 id5&lt;id3&lt;id1)
+        /// # normalize to: id5=0, id3=0.5, id1=1.0. The distinct BM25 scores make
+        /// # this deterministic (independent of FTS tie-ordering). Output:
+        /// #   id=1, _relevance_score=1.0000
+        /// #   id=3, _relevance_score=0.5000
+        /// #   id=4, _relevance_score=0.3750
+        /// #   id=5, _relevance_score=0.1250
+        /// #   id=2, _relevance_score=0.0000
         /// </code>
         /// </remarks>
         [Fact]
@@ -850,12 +904,13 @@ namespace lancedb.tests
 
             Assert.Equal(5, results.Length);
 
-            var expectedIds = new int[] { 3, 5, 2, 4, 1 };
-            var expectedScores = new float[] { 0.75f, 0.625f, 0.5f, 0.125f, 0.0f };
+            var expectedIds = new int[] { 1, 3, 4, 5, 2 };
+            var expectedScores = new float[] { 1.0000f, 0.5000f, 0.3750f, 0.1250f, 0.0000f };
             for (int i = 0; i < results.Length; i++)
             {
                 Assert.Equal(expectedIds[i], ids.GetValue(i));
-                Assert.Equal(expectedScores[i], scores.GetValue(i)!.Value, precision: 2);
+                Assert.True(Math.Abs(expectedScores[i] - scores.GetValue(i)!.Value) < 1e-3f,
+                    $"Score mismatch at {i}: expected {expectedScores[i]}, got {scores.GetValue(i)}");
             }
         }
 

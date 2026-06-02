@@ -9,14 +9,14 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-lancedb = { version = "0.27.0", features = ["aws", "azure", "gcs", "oss", "dynamodb", "huggingface"] }
-lance-namespace = "=3.0.0"
+lancedb = { version = "0.30.0", features = ["aws", "azure", "gcs", "oss", "dynamodb", "huggingface"] }
+lance-namespace = "=7.0.0"
 tokio = { version = "1", features = ["rt-multi-thread"] }
 libc = "0.2"
-arrow-schema = "57"
-arrow-array = "57"
-arrow-data = "57"
-arrow-select = "57"
+arrow-schema = "58"
+arrow-array = "58"
+arrow-data = "58"
+arrow-select = "58"
 serde = { version = "1", features = ["derive"] }
 sonic-rs = "0.5"
 chrono = "0.4"

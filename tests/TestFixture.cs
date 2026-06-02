@@ -146,16 +146,19 @@ namespace lancedb.tests
             var idBuilder = new Int32Array.Builder();
             var contentBuilder = new StringArray.Builder();
 
-            // id=1: matches FTS + closest vector
+            // id=1: matches FTS (apple x3) + closest vector
             // id=2: no FTS match + farthest vector
-            // id=3: matches FTS + mid vector
+            // id=3: matches FTS (apple x2) + mid vector
             // id=4: no FTS match + close vector
-            // id=5: matches FTS + far vector
+            // id=5: matches FTS (apple x1) + far vector
+            // Distinct apple term-frequencies give ids 1,3,5 distinct BM25 scores
+            // (no ties), so rank-based normalization is deterministic and does not
+            // depend on the FTS engine's tie-ordering of equal scores.
             string[] texts = new[]
             {
-                "apple banana fruit",
+                "apple apple apple banana fruit",
                 "cherry date sweet",
-                "apple cherry tart",
+                "apple apple cherry tart",
                 "banana fig jam",
                 "apple pie dessert",
             };

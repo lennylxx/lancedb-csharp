@@ -7,6 +7,13 @@ namespace lancedb
     /// <summary>
     /// The type of index built on a table column.
     /// </summary>
+    /// <remarks>
+    /// The underlying integer values are an internal FFI detail used only to
+    /// communicate the index type across the native boundary; they must stay in
+    /// sync with the Rust side. Do not persist or serialize these values as
+    /// integers. The associated <see cref="IndexTypeJsonConverter"/> serializes
+    /// each value as its string name (for example, "BTREE") instead.
+    /// </remarks>
     [JsonConverter(typeof(IndexTypeJsonConverter))]
     public enum IndexType
     {
@@ -28,17 +35,20 @@ namespace lancedb
         /// <summary>IVF-HNSW-SQ vector index.</summary>
         IvfHnswSq = 5,
 
+        /// <summary>IVF-HNSW-Flat vector index.</summary>
+        IvfHnswFlat = 6,
+
         /// <summary>BTree scalar index.</summary>
-        BTree = 6,
+        BTree = 7,
 
         /// <summary>Bitmap scalar index.</summary>
-        Bitmap = 7,
+        Bitmap = 8,
 
         /// <summary>Label list scalar index.</summary>
-        LabelList = 8,
+        LabelList = 9,
 
         /// <summary>Full-text search (inverted) index.</summary>
-        FTS = 9,
+        FTS = 10,
     }
 
     /// <summary>
@@ -64,6 +74,7 @@ namespace lancedb
                 "IVF_RQ" => IndexType.IvfRq,
                 "IVF_HNSW_PQ" => IndexType.IvfHnswPq,
                 "IVF_HNSW_SQ" => IndexType.IvfHnswSq,
+                "IVF_HNSW_FLAT" => IndexType.IvfHnswFlat,
                 "BTREE" => IndexType.BTree,
                 "BITMAP" => IndexType.Bitmap,
                 "LABEL_LIST" => IndexType.LabelList,
@@ -83,6 +94,7 @@ namespace lancedb
                 IndexType.IvfRq => "IVF_RQ",
                 IndexType.IvfHnswPq => "IVF_HNSW_PQ",
                 IndexType.IvfHnswSq => "IVF_HNSW_SQ",
+                IndexType.IvfHnswFlat => "IVF_HNSW_FLAT",
                 IndexType.BTree => "BTREE",
                 IndexType.Bitmap => "BITMAP",
                 IndexType.LabelList => "LABEL_LIST",

@@ -99,7 +99,7 @@ fn test_table_create_index_with_name_succeeds() {
     table_create_index(
         table_ptr,
         columns_json.as_ptr(),
-        6, // BTree
+        7, // BTree
         config_json.as_ptr(),
         true,
         name.as_ptr(),
@@ -133,7 +133,7 @@ fn test_table_create_index_train_false_succeeds() {
     table_create_index(
         table_ptr,
         columns_json.as_ptr(),
-        6, // BTree
+        7, // BTree
         config_json.as_ptr(),
         true,
         ptr::null(),
@@ -734,7 +734,7 @@ fn test_table_index_stats_returns_stats() {
     let stats = unsafe { &*ffi_stats };
     assert_eq!(stats.num_indexed_rows, 100);
     assert_eq!(stats.num_unindexed_rows, 0);
-    assert_eq!(stats.index_type, 6); // BTree
+    assert_eq!(stats.index_type, 7); // BTree
 
     table_index_stats_free(ffi_stats);
     table_close(table_ptr);
