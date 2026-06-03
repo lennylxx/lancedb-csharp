@@ -814,3 +814,133 @@ fn test_table_latest_storage_options_local_returns_null() {
     table_close(table_ptr);
     connection_close(conn_ptr);
 }
+
+#[test]
+fn test_table_set_unenforced_primary_key_succeeds() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "pk_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    let columns_json = std::ffi::CString::new(r#"["id"]"#).unwrap();
+    table_set_unenforced_primary_key(
+        table_ptr,
+        columns_json.as_ptr(),
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    ctx.wait_success();
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_set_unset_lsm_write_spec_unsharded_round_trips() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "lsm_unsharded_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    let column = std::ffi::CString::new("").unwrap();
+    let indexes_json = std::ffi::CString::new("[]").unwrap();
+    let defaults_json = std::ffi::CString::new("{}").unwrap();
+
+    let set_ctx = common::FfiTestContext::new();
+    table_set_lsm_write_spec(
+        table_ptr,
+        2, // unsharded
+        column.as_ptr(),
+        0,
+        indexes_json.as_ptr(),
+        defaults_json.as_ptr(),
+        common::ffi_callback,
+        set_ctx.user_data(),
+    );
+    set_ctx.wait_success();
+
+    let unset_ctx = common::FfiTestContext::new();
+    table_unset_lsm_write_spec(table_ptr, common::ffi_callback, unset_ctx.user_data());
+    unset_ctx.wait_success();
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_set_lsm_write_spec_bucket_succeeds() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "lsm_bucket_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    let column = std::ffi::CString::new("id").unwrap();
+    let indexes_json = std::ffi::CString::new("[]").unwrap();
+    let defaults_json = std::ffi::CString::new("{}").unwrap();
+
+    table_set_lsm_write_spec(
+        table_ptr,
+        0, // bucket
+        column.as_ptr(),
+        16,
+        indexes_json.as_ptr(),
+        defaults_json.as_ptr(),
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    ctx.wait_success();
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_unset_lsm_write_spec_not_set_errors() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "lsm_unset_none_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    table_unset_lsm_write_spec(table_ptr, common::ffi_callback, ctx.user_data());
+    let (result, error) = ctx.wait_raw();
+    assert!(result.is_null());
+    assert!(!error.is_null());
+    free_string(error as *mut libc::c_char);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_set_lsm_write_spec_invalid_kind_errors() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "lsm_bad_kind_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    let column = std::ffi::CString::new("").unwrap();
+    let indexes_json = std::ffi::CString::new("[]").unwrap();
+    let defaults_json = std::ffi::CString::new("{}").unwrap();
+
+    table_set_lsm_write_spec(
+        table_ptr,
+        99, // invalid
+        column.as_ptr(),
+        0,
+        indexes_json.as_ptr(),
+        defaults_json.as_ptr(),
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    let (result, error) = ctx.wait_raw();
+    assert!(result.is_null());
+    assert!(!error.is_null());
+    free_string(error as *mut libc::c_char);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}

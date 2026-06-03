@@ -131,6 +131,21 @@ namespace lancedb
             NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_set_unenforced_primary_key(
+            IntPtr table_ptr, IntPtr columns_json,
+            NativeCall.FfiCallback completion, IntPtr userData);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_set_lsm_write_spec(
+            IntPtr table_ptr, int kind, IntPtr column, uint num_buckets,
+            IntPtr maintained_indexes_json, IntPtr writer_config_defaults_json,
+            NativeCall.FfiCallback completion, IntPtr userData);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_unset_lsm_write_spec(
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_index_stats(
             IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion, IntPtr userData);
 
@@ -1273,6 +1288,123 @@ namespace lancedb
                             completion, userData);
                     }
                 }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Set the unenforced primary key for this table to the given column.
+        /// </summary>
+        /// <remarks>
+        /// "Unenforced" means LanceDB does not check uniqueness on writes; the
+        /// column is recorded in the schema as the primary key so that features
+        /// such as <c>merge_insert</c> and LSM write specs can use it. Calling this
+        /// again replaces any previously-set primary key.
+        /// </remarks>
+        /// <param name="column">
+        /// The primary key column. Its dtype must be one of: int32, int64, utf8,
+        /// large_utf8, binary, large_binary, fixed_size_binary.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="column"/> is null.</exception>
+        public Task SetUnenforcedPrimaryKey(string column)
+        {
+            if (column == null)
+            {
+                throw new ArgumentNullException(nameof(column));
+            }
+
+            return SetUnenforcedPrimaryKey(new[] { column });
+        }
+
+        /// <summary>
+        /// Set the unenforced primary key for this table to the given ordered
+        /// list of columns.
+        /// </summary>
+        /// <remarks>
+        /// "Unenforced" means LanceDB does not check uniqueness on writes; the
+        /// columns are recorded in the schema as the primary key so that features
+        /// such as <c>merge_insert</c> and LSM write specs can use them. Calling this
+        /// again replaces any previously-set primary key.
+        /// </remarks>
+        /// <param name="columns">
+        /// An ordered list of column names forming a composite key. Each column
+        /// dtype must be one of: int32, int64, utf8, large_utf8, binary,
+        /// large_binary, fixed_size_binary.
+        /// </param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="columns"/> is null.</exception>
+        public async Task SetUnenforcedPrimaryKey(IEnumerable<string> columns)
+        {
+            if (columns == null)
+            {
+                throw new ArgumentNullException(nameof(columns));
+            }
+
+            byte[] columnsJson = JsonSerializer.SerializeToUtf8Bytes(columns);
+            await NativeCall.Async((completion, userData) =>
+            {
+                unsafe
+                {
+                    fixed (byte* p = columnsJson)
+                    {
+                        table_set_unenforced_primary_key(
+                            _handle!.DangerousGetHandle(), (IntPtr)p, completion, userData);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Install an <see cref="LsmWriteSpec"/> on this table, selecting Lance's
+        /// MemWAL LSM-style write path for future <c>merge_insert</c> calls.
+        /// </summary>
+        /// <remarks>
+        /// All variants require the table to have an unenforced primary key set
+        /// via <see cref="SetUnenforcedPrimaryKey(string)"/>; bucket sharding
+        /// additionally requires it to be the single column being bucketed.
+        /// </remarks>
+        /// <param name="spec">The sharding spec to install.</param>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="spec"/> is null.</exception>
+        public async Task SetLsmWriteSpec(LsmWriteSpec spec)
+        {
+            if (spec == null)
+            {
+                throw new ArgumentNullException(nameof(spec));
+            }
+
+            byte[] columnBytes = NativeCall.ToUtf8(spec.Column);
+            byte[] indexesJson = JsonSerializer.SerializeToUtf8Bytes(spec.MaintainedIndexes);
+            byte[] defaultsJson = JsonSerializer.SerializeToUtf8Bytes(spec.WriterConfigDefaults);
+
+            await NativeCall.Async((completion, userData) =>
+            {
+                unsafe
+                {
+                    fixed (byte* pColumn = columnBytes)
+                    fixed (byte* pIndexes = indexesJson)
+                    fixed (byte* pDefaults = defaultsJson)
+                    {
+                        table_set_lsm_write_spec(
+                            _handle!.DangerousGetHandle(), spec.Kind, (IntPtr)pColumn,
+                            spec.NumBuckets, (IntPtr)pIndexes, (IntPtr)pDefaults,
+                            completion, userData);
+                    }
+                }
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Remove the <see cref="LsmWriteSpec"/> from this table, reverting to the
+        /// standard <c>merge_insert</c> write path.
+        /// </summary>
+        /// <remarks>
+        /// Throws if no spec is currently set.
+        /// </remarks>
+        /// <exception cref="LanceDbException">Thrown if no spec is currently set.</exception>
+        public async Task UnsetLsmWriteSpec()
+        {
+            await NativeCall.Async((completion, userData) =>
+            {
+                table_unset_lsm_write_spec(
+                    _handle!.DangerousGetHandle(), completion, userData);
             }).ConfigureAwait(false);
         }
 

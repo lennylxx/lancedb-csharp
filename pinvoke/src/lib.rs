@@ -30,11 +30,12 @@ pub use table::{
     table_initial_storage_options, table_is_open, table_latest_storage_options,
     table_list_indices, table_list_versions, table_merge_insert, table_merge_result_free,
     table_migrate_manifest_paths_v2, table_optimize, table_prewarm_index,
-    table_replace_field_metadata, table_restore, table_schema, table_stats, table_stats_free,
+    table_replace_field_metadata, table_restore, table_schema,
+    table_set_lsm_write_spec, table_set_unenforced_primary_key, table_stats, table_stats_free,
     table_tags_create, table_tags_delete, table_tags_get_version, table_tags_list,
-    table_tags_update, table_take_offsets, table_take_row_ids, table_update,
-    table_update_result_free, table_uri, table_uses_v2_manifest_paths, table_version,
-    table_wait_for_index,
+    table_tags_update, table_take_offsets, table_take_row_ids, table_unset_lsm_write_spec,
+    table_update, table_update_result_free, table_uri, table_uses_v2_manifest_paths,
+    table_version, table_wait_for_index,
 };
 pub use table::{
     FfiDeleteResult, FfiIndexStats, FfiMergeResult, FfiTableStats, FfiUpdateResult,

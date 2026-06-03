@@ -1,6 +1,6 @@
 use lancedb::index::Index as LanceIndex;
 use lancedb::query::ExecutableQuery;
-use lancedb::table::{ColumnAlteration, NewColumnTransform, OptimizeAction, Table};
+use lancedb::table::{ColumnAlteration, LsmWriteSpec, NewColumnTransform, OptimizeAction, Table};
 use libc::c_char;
 use sonic_rs::JsonValueTrait;
 use std::ffi::CString;
@@ -1292,6 +1292,104 @@ pub extern "C" fn table_index_stats_free(ptr: *mut FfiIndexStats) {
 #[unsafe(no_mangle)]
 pub extern "C" fn table_close(table_ptr: *const Table) {
     ffi_free!(table_ptr, Table);
+}
+
+/// Set the unenforced primary key for the table to the given ordered columns.
+///
+/// `columns_json` is a JSON array of column names. "Unenforced" means
+/// uniqueness is not checked on writes; the columns are recorded in the schema
+/// so features such as `merge_insert` and LSM write specs can use them.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_set_unenforced_primary_key(
+    table_ptr: *const Table,
+    columns_json: *const c_char,
+    completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
+) {
+    let user_data = UserData(user_data);
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let json_str = crate::ffi::to_string(columns_json);
+    let columns: Vec<String> = sonic_rs::from_str(&json_str).unwrap_or_default();
+    crate::spawn(async move {
+        match table.set_unenforced_primary_key(columns).await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
+        }
+    });
+}
+
+/// Install an LsmWriteSpec on the table, selecting Lance's MemWAL LSM-style
+/// write path for future `merge_insert` calls.
+///
+/// `kind` selects the sharding strategy: 0 = bucket, 1 = identity,
+/// 2 = unsharded. `column` is used by bucket/identity and ignored when
+/// unsharded. `num_buckets` is used by bucket only. `maintained_indexes_json`
+/// is a JSON array of index names; `writer_config_defaults_json` is a JSON
+/// object of default `ShardWriter` configuration. Both may be null/empty.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_set_lsm_write_spec(
+    table_ptr: *const Table,
+    kind: i32,
+    column: *const c_char,
+    num_buckets: u32,
+    maintained_indexes_json: *const c_char,
+    writer_config_defaults_json: *const c_char,
+    completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
+) {
+    let user_data = UserData(user_data);
+    let table = ffi_clone_arc!(table_ptr, Table);
+    let column = crate::ffi::to_string(column);
+    let maintained_indexes: Vec<String> = {
+        let s = crate::ffi::to_string(maintained_indexes_json);
+        sonic_rs::from_str(&s).unwrap_or_default()
+    };
+    let writer_config_defaults =
+        crate::ffi::parse_optional_json_map(writer_config_defaults_json).unwrap_or_default();
+
+    let base = match kind {
+        0 => LsmWriteSpec::bucket(column, num_buckets),
+        1 => LsmWriteSpec::identity(column),
+        2 => LsmWriteSpec::unsharded(),
+        _ => {
+            callback_error(
+                completion,
+                user_data,
+                lancedb::Error::InvalidInput {
+                    message: format!("unknown LsmWriteSpec kind: {}", kind),
+                },
+            );
+            return;
+        }
+    };
+    let spec = base
+        .with_maintained_indexes(maintained_indexes)
+        .with_writer_config_defaults(writer_config_defaults);
+
+    crate::spawn(async move {
+        match table.set_lsm_write_spec(spec).await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
+        }
+    });
+}
+
+/// Remove the LsmWriteSpec from the table, reverting to the standard
+/// `merge_insert` write path. Errors if no spec is currently set.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_unset_lsm_write_spec(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
+) {
+    let user_data = UserData(user_data);
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.unset_lsm_write_spec().await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
+        }
+    });
 }
 
 /// C-compatible struct for fragment row count summary statistics.
