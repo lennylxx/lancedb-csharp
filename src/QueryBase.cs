@@ -181,6 +181,33 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Set the columns to return, with type-safe expression transformations.
+        /// </summary>
+        /// <remarks>
+        /// Each key is the output column name, and each value is an <see cref="Expr"/>
+        /// that computes the column value. This is the type-safe equivalent of
+        /// <see cref="Select(Dictionary{string, string})"/>.
+        /// </remarks>
+        /// <param name="columns">A dictionary mapping output column names to expressions.</param>
+        /// <returns>This query instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="columns"/> is null.</exception>
+        public T Select(Dictionary<string, Expr> columns)
+        {
+            if (columns == null)
+            {
+                throw new ArgumentNullException(nameof(columns));
+            }
+
+            var converted = new Dictionary<string, string>(columns.Count);
+            foreach (var pair in columns)
+            {
+                converted[pair.Key] = pair.Value.ToSql();
+            }
+
+            return Select(converted);
+        }
+
+        /// <summary>
         /// Only return rows which match the given filter.
         /// </summary>
         /// <remarks>
@@ -196,6 +223,27 @@ namespace lancedb
         {
             _predicate = predicate;
             return (T)this;
+        }
+
+        /// <summary>
+        /// Only return rows which match the given type-safe filter expression.
+        /// </summary>
+        /// <remarks>
+        /// This is the type-safe equivalent of <see cref="Where(string)"/>, accepting an
+        /// <see cref="Expr"/> built with <see cref="Expr.Col(string)"/> and
+        /// <see cref="Expr.Lit(object?)"/> instead of a raw SQL string.
+        /// </remarks>
+        /// <param name="predicate">A filter expression.</param>
+        /// <returns>This query instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="predicate"/> is null.</exception>
+        public T Where(Expr predicate)
+        {
+            if (predicate == null)
+            {
+                throw new ArgumentNullException(nameof(predicate));
+            }
+
+            return Where(predicate.ToSql());
         }
 
         /// <summary>

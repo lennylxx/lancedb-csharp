@@ -180,6 +180,22 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Only return rows which match the given type-safe filter expression.
+        /// </summary>
+        /// <param name="predicate">A filter expression.</param>
+        /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="predicate"/> is null.</exception>
+        public HybridQuery Where(Expr predicate)
+        {
+            if (predicate == null)
+            {
+                throw new ArgumentNullException(nameof(predicate));
+            }
+
+            return Where(predicate.ToSql());
+        }
+
+        /// <summary>
         /// Set the columns to return.
         /// </summary>
         /// <param name="columns">A list of column names to return.</param>
@@ -201,6 +217,28 @@ namespace lancedb
             _selectExpressions = columns;
             _selectColumns = null;
             return this;
+        }
+
+        /// <summary>
+        /// Set the columns to return, with type-safe expression transformations.
+        /// </summary>
+        /// <param name="columns">A dictionary mapping output column names to expressions.</param>
+        /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="columns"/> is null.</exception>
+        public HybridQuery Select(Dictionary<string, Expr> columns)
+        {
+            if (columns == null)
+            {
+                throw new ArgumentNullException(nameof(columns));
+            }
+
+            var converted = new Dictionary<string, string>(columns.Count);
+            foreach (var pair in columns)
+            {
+                converted[pair.Key] = pair.Value.ToSql();
+            }
+
+            return Select(converted);
         }
 
         /// <summary>
