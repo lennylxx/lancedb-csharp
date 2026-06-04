@@ -45,9 +45,9 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Install Protobuf compiler
-        uses: arduino/setup-protoc@v3
+        uses: taiki-e/install-action@v2
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          tool: protoc
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
