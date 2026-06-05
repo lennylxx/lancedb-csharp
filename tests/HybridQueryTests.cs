@@ -409,6 +409,73 @@ namespace lancedb.tests
             }
         }
 
+        /// <summary>
+        /// Verifies that a hybrid query with a hard filter that matches no rows
+        /// returns an empty result with a <c>_relevance_score</c> column, rather
+        /// than crashing in the reranker pipeline.
+        /// </summary>
+        /// <remarks>
+        /// When both vector and FTS sub-queries return zero rows, the hybrid
+        /// reranker pipeline must produce an empty result table with a
+        /// <c>_relevance_score</c> column attached.
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_WhereMatchesNothing_ReturnsEmptyWithRelevanceScore()
+        {
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_where_empty");
+
+            foreach (var reranker in new IReranker[]
+            {
+                new RRFReranker(),
+                new LinearCombinationReranker(),
+                new MRRReranker(),
+            })
+            {
+                var results = await fixture.Table.Query()
+                    .NearestToText("apple")
+                    .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                    .Where("id = 999")
+                    .Rerank(reranker)
+                    .ToArrow();
+
+                Assert.Equal(0, results.Length);
+                Assert.Contains(results.Schema.FieldsList, f => f.Name == "_relevance_score");
+                Assert.DoesNotContain(results.Schema.FieldsList, f => f.Name == "_rowid");
+            }
+        }
+
+        /// <summary>
+        /// Same as <see cref="HybridQuery_WhereMatchesNothing_ReturnsEmptyWithRelevanceScore"/>,
+        /// but exercises <see cref="HybridQuery.ToList"/> and
+        /// <see cref="HybridQuery.ToBatches"/> to ensure the empty-result path
+        /// works across all output adapters without throwing.
+        /// </summary>
+        [Fact]
+        public async Task HybridQuery_WhereMatchesNothing_ToListAndToBatches_ReturnEmpty()
+        {
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_where_empty_outputs");
+
+            var list = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Where("id = 999")
+                .ToList();
+            Assert.Empty(list);
+
+            using var reader = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .Where("id = 999")
+                .ToBatches();
+            int rowCount = 0;
+            await foreach (var batch in reader)
+            {
+                rowCount += batch.Length;
+                batch.Dispose();
+            }
+            Assert.Equal(0, rowCount);
+        }
+
         [Fact]
         public async Task HybridQuery_WithSelect_ProjectsColumns()
         {
@@ -526,6 +593,46 @@ namespace lancedb.tests
                 .ToArrow();
             Assert.True(filtered.Length < allResults.Length);
             Assert.True(filtered.Length > 0);
+        }
+
+        /// <summary>
+        /// Verifies that <see cref="VectorQuery.DistanceRange"/> set BEFORE the
+        /// vector query is promoted to a hybrid query (via
+        /// <see cref="VectorQuery.NearestToText(string, string[]?)"/>) is carried
+        /// over to the final hybrid execution.
+        /// </summary>
+        /// <remarks>
+        /// Regression: previously, a vector-first chain such as
+        /// <c>NearestTo(vec).DistanceRange(...).NearestToText("apple")</c>
+        /// silently dropped the distance range because
+        /// <see cref="HybridQuery"/>'s internal copy of <see cref="VectorQuery"/>
+        /// state did not include the distance-range bounds. The FTS-first chain
+        /// covered by <see cref="HybridQuery_DistanceRange_FiltersResults"/> was
+        /// unaffected because it sets the range directly on
+        /// <see cref="HybridQuery"/>.
+        /// </remarks>
+        [Fact]
+        public async Task HybridQuery_DistanceRangeBeforePromotion_IsApplied()
+        {
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_distrange_vec_first");
+
+            // Vector-first chain: DistanceRange set on VectorQuery, then promoted via NearestToText.
+            var filtered = await fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .DistanceRange(upperBound: 1.5f)
+                .NearestToText("apple")
+                .ToArrow();
+
+            // FTS-first chain produces the same filter — used as the expected result.
+            var expected = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .DistanceRange(upperBound: 1.5f)
+                .ToArrow();
+
+            Assert.Equal(expected.Length, filtered.Length);
+            Assert.True(filtered.Length > 0);
+            Assert.True(filtered.Length < 3, "DistanceRange should drop at least one of the 3 fixture rows.");
         }
 
         /// <summary>

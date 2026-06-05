@@ -52,8 +52,8 @@ namespace lancedb
         internal int? _refineFactor;
         internal bool _bypassVectorIndex;
         internal int? _ef;
-        private float? _distanceRangeLower;
-        private float? _distanceRangeUpper;
+        internal float? _distanceRangeLower;
+        internal float? _distanceRangeUpper;
         internal int? _minimumNprobes;
         internal int? _maximumNprobes;
         private List<float[]>? _additionalVectors;

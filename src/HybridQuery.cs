@@ -140,6 +140,8 @@ namespace lancedb
             _ef = source._ef;
             _minimumNprobes = source._minimumNprobes;
             _maximumNprobes = source._maximumNprobes;
+            _distanceRangeLower = source._distanceRangeLower;
+            _distanceRangeUpper = source._distanceRangeUpper;
         }
 
         /// <summary>
