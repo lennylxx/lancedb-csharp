@@ -54,6 +54,7 @@ namespace lancedb
         private int? _ef;
         private int? _minimumNprobes;
         private int? _maximumNprobes;
+        private ApproxMode? _approxMode;
         private float? _distanceRangeLower;
         private float? _distanceRangeUpper;
 
@@ -140,6 +141,7 @@ namespace lancedb
             _ef = source._ef;
             _minimumNprobes = source._minimumNprobes;
             _maximumNprobes = source._maximumNprobes;
+            _approxMode = source._approxMode;
             _distanceRangeLower = source._distanceRangeLower;
             _distanceRangeUpper = source._distanceRangeUpper;
         }
@@ -369,6 +371,21 @@ namespace lancedb
         public HybridQuery MaximumNprobes(int n)
         {
             _maximumNprobes = n;
+            return this;
+        }
+
+        /// <summary>
+        /// Set the speed / accuracy tradeoff for approximate vector search.
+        /// </summary>
+        /// <remarks>
+        /// This currently only affects RQ-quantized vector indexes, such as
+        /// <c>IVF_RQ</c>. Other index types ignore this setting.
+        /// </remarks>
+        /// <param name="mode">The approximate search mode to use.</param>
+        /// <returns>This <see cref="HybridQuery"/> instance for method chaining.</returns>
+        public HybridQuery ApproxMode(ApproxMode mode)
+        {
+            _approxMode = mode;
             return this;
         }
 
@@ -709,6 +726,10 @@ namespace lancedb
             if (_maximumNprobes.HasValue)
             {
                 query.MaximumNprobes(_maximumNprobes.Value);
+            }
+            if (_approxMode.HasValue)
+            {
+                query.ApproxMode(_approxMode.Value);
             }
             if (_distanceRangeLower.HasValue || _distanceRangeUpper.HasValue)
             {

@@ -636,6 +636,32 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// ListIndices on a local table should surface the rich per-index metadata
+        /// (creation time, row counts, size, segments, version) in addition to the
+        /// name, type, and columns.
+        /// </summary>
+        [Fact]
+        public async Task ListIndices_AfterCreatingIndex_PopulatesRichMetadata()
+        {
+            using var fixture = await TestFixture.CreateWithTable("idx_metadata");
+            await fixture.Table.Add(CreateTestBatch(100));
+
+            await fixture.Table.CreateIndex(new[] { "id" }, new BTreeIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            var config = Assert.Single(indices, i => i.Columns.Contains("id"));
+
+            Assert.Equal(IndexType.BTree, config.IndexType);
+            Assert.Equal(100ul, config.NumIndexedRows);
+            Assert.Equal(0ul, config.NumUnindexedRows);
+            Assert.False(string.IsNullOrEmpty(config.IndexUuid));
+            Assert.NotNull(config.CreatedAt);
+            Assert.True(config.SizeBytes > 0);
+            Assert.True(config.NumSegments >= 1);
+            Assert.NotNull(config.IndexVersion);
+        }
+
+        /// <summary>
         /// CreateIndex with Bitmap on a scalar column should succeed.
         /// </summary>
         [Fact]
@@ -2053,6 +2079,22 @@ namespace lancedb.tests
 
             var indices = await fixture.Table.ListIndices();
             Assert.Contains(indices, i => i.Columns.Contains("tags") && i.IndexType == IndexType.LabelList);
+        }
+
+        /// <summary>
+        /// CreateIndex with FmIndex on a string column should succeed and report Fm.
+        /// The FM-index accelerates substring search via <c>contains(col, 'needle')</c>.
+        /// </summary>
+        [Fact]
+        public async Task CreateIndex_Fm_Succeeds()
+        {
+            using var fixture = await TestFixture.CreateWithTable("fm_idx",
+                CreateTextBatch(new[] { "running fast", "the cat sat", "Apple iPhone" }));
+
+            await fixture.Table.CreateIndex(new[] { "content" }, new FmIndex());
+
+            var indices = await fixture.Table.ListIndices();
+            Assert.Contains(indices, i => i.Columns.Contains("content") && i.IndexType == IndexType.Fm);
         }
 
         /// <summary>

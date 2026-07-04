@@ -255,6 +255,40 @@ namespace lancedb.tests
             Assert.Equal("(`x` + `y`)", (Expr.Col("x") + Expr.Col("y")).ToSql());
         }
 
+        // ── membership (IN) ──────────────────────────────────────────────────
+
+        [Fact]
+        public void IsIn_IntLiterals_ProducesInList()
+        {
+            Assert.Equal("(`id` IN (1, 2, 3))", Expr.Col("id").IsIn(1, 2, 3).ToSql());
+        }
+
+        [Fact]
+        public void IsIn_StringValues_QuotesEachValue()
+        {
+            Assert.Equal("(`name` IN ('a', 'b'))", Expr.Col("name").IsIn("a", "b").ToSql());
+        }
+
+        [Fact]
+        public void IsIn_Collection_ProducesInList()
+        {
+            var ids = new List<int> { 4, 5 };
+            Assert.Equal("(`id` IN (4, 5))", Expr.Col("id").IsIn(ids).ToSql());
+        }
+
+        [Fact]
+        public void IsIn_Empty_MatchesNothing()
+        {
+            Assert.Equal("FALSE", Expr.Col("id").IsIn().ToSql());
+        }
+
+        [Fact]
+        public void IsIn_NullCollection_Throws()
+        {
+            Assert.Throws<ArgumentNullException>(
+                () => Expr.Col("id").IsIn((IEnumerable<int>)null!));
+        }
+
         // ── misc ─────────────────────────────────────────────────────────────
 
         [Fact]

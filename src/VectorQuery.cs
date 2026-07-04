@@ -56,6 +56,7 @@ namespace lancedb
         internal float? _distanceRangeUpper;
         internal int? _minimumNprobes;
         internal int? _maximumNprobes;
+        internal ApproxMode? _approxMode;
         private List<float[]>? _additionalVectors;
         private IReranker? _reranker;
         private string? _rerankQueryString;
@@ -118,6 +119,10 @@ namespace lancedb
             if (_maximumNprobes.HasValue)
             {
                 dict["maximum_nprobes"] = _maximumNprobes.Value;
+            }
+            if (_approxMode.HasValue)
+            {
+                dict["approx_mode"] = (int)_approxMode.Value;
             }
             if (_additionalVectors != null && _additionalVectors.Count > 0)
             {
@@ -298,6 +303,21 @@ namespace lancedb
         public VectorQuery MaximumNprobes(int n)
         {
             _maximumNprobes = n;
+            return this;
+        }
+
+        /// <summary>
+        /// Set the speed / accuracy tradeoff for approximate vector search.
+        /// </summary>
+        /// <remarks>
+        /// This currently only affects RQ-quantized vector indexes, such as
+        /// <c>IVF_RQ</c>. Other index types ignore this setting.
+        /// </remarks>
+        /// <param name="mode">The approximate search mode to use.</param>
+        /// <returns>This <see cref="VectorQuery"/> instance for method chaining.</returns>
+        public VectorQuery ApproxMode(ApproxMode mode)
+        {
+            _approxMode = mode;
             return this;
         }
 

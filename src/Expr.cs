@@ -276,6 +276,58 @@ namespace lancedb
             return new Expr($"contains({_sql}, {Coerce(substr)})");
         }
 
+        // ── membership ───────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Return true where this expression's value is one of <paramref name="values"/>.
+        /// </summary>
+        /// <remarks>
+        /// Produces a SQL <c>IN</c> list. Each value may be an <see cref="Expr"/> or a
+        /// literal. An empty set matches no rows.
+        /// </remarks>
+        /// <param name="values">The candidate values.</param>
+        /// <returns>The membership predicate expression.</returns>
+        public Expr IsIn(params object?[] values)
+        {
+            return BuildIsIn(values ?? Array.Empty<object?>());
+        }
+
+        /// <summary>
+        /// Return true where this expression's value is one of <paramref name="values"/>.
+        /// </summary>
+        /// <remarks>
+        /// Produces a SQL <c>IN</c> list. An empty set matches no rows.
+        /// </remarks>
+        /// <typeparam name="T">The element type of the collection.</typeparam>
+        /// <param name="values">The candidate values.</param>
+        /// <returns>The membership predicate expression.</returns>
+        /// <exception cref="ArgumentNullException">Thrown if <paramref name="values"/> is null.</exception>
+        public Expr IsIn<T>(IEnumerable<T> values)
+        {
+            if (values == null)
+            {
+                throw new ArgumentNullException(nameof(values));
+            }
+
+            return BuildIsIn(values);
+        }
+
+        private Expr BuildIsIn(System.Collections.IEnumerable values)
+        {
+            var items = new List<string>();
+            foreach (var value in values)
+            {
+                items.Add(Coerce(value));
+            }
+
+            if (items.Count == 0)
+            {
+                return new Expr("FALSE");
+            }
+
+            return new Expr($"({_sql} IN ({string.Join(", ", items)}))");
+        }
+
         // ── cast ─────────────────────────────────────────────────────────────
 
         /// <summary>

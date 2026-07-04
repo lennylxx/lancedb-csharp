@@ -70,6 +70,7 @@ pub struct QueryParams {
     pub distance_range_upper: Option<f32>,
     pub minimum_nprobes: Option<u32>,
     pub maximum_nprobes: Option<u32>,
+    pub approx_mode: Option<i32>,
     pub additional_vectors: Option<Vec<Vec<f32>>>,
 }
 
@@ -338,6 +339,10 @@ pub(crate) fn apply_vector_params(
         vq = vq
             .maximum_nprobes(max)
             .map_err(|e| format!("Invalid maximum_nprobes: {}", e))?;
+    }
+    if let Some(mode) = params.approx_mode {
+        let mode = ffi::ffi_to_approx_mode(mode)?;
+        vq = vq.approx_mode(mode);
     }
     if let Some(ref vectors) = params.additional_vectors {
         for v in vectors {

@@ -30,6 +30,15 @@ namespace lancedb.tests
         }
 
         [Fact]
+        public async Task Where_IsIn_FiltersRows()
+        {
+            using var fixture = await TestFixture.CreateWithTable("expr_isin", CreateTwoColumnBatch(10));
+
+            using var query = fixture.Table.Query().Where(Expr.Col("id").IsIn(1, 3, 5, 7));
+            Assert.Equal(4, await CountAsync(query));
+        }
+
+        [Fact]
         public async Task Where_AndOr_FiltersRows()
         {
             using var fixture = await TestFixture.CreateWithTable("expr_andor", CreateTwoColumnBatch(10));

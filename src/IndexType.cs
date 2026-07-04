@@ -49,6 +49,16 @@ namespace lancedb
 
         /// <summary>Full-text search (inverted) index.</summary>
         FTS = 10,
+
+        /// <summary>
+        /// FM-index scalar index for substring search.
+        /// </summary>
+        /// <remarks>
+        /// Accelerates substring predicates such as <c>contains(col, 'needle')</c>.
+        /// It matches arbitrary substrings of the raw bytes, unlike the tokenized
+        /// <see cref="FTS"/> index.
+        /// </remarks>
+        Fm = 11,
     }
 
     /// <summary>
@@ -79,6 +89,7 @@ namespace lancedb
                 "BITMAP" => IndexType.Bitmap,
                 "LABEL_LIST" => IndexType.LabelList,
                 "FTS" => IndexType.FTS,
+                "FM" => IndexType.Fm,
                 _ => throw new JsonException($"Unknown index type: {value}"),
             };
         }
@@ -99,6 +110,7 @@ namespace lancedb
                 IndexType.Bitmap => "BITMAP",
                 IndexType.LabelList => "LABEL_LIST",
                 IndexType.FTS => "FTS",
+                IndexType.Fm => "FM",
                 _ => throw new JsonException($"Unknown index type: {value}"),
             };
             writer.WriteStringValue(s);

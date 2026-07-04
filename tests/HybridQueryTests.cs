@@ -176,6 +176,18 @@ namespace lancedb.tests
         }
 
         [Fact]
+        public async Task HybridQuery_ApproxMode_ChainsAndExecutes()
+        {
+            using var fixture = await TestFixture.CreateHybridFixture("hybrid_approx_mode");
+            var results = await fixture.Table.Query()
+                .NearestToText("apple")
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ApproxMode(ApproxMode.Accurate)
+                .ToArrow();
+            Assert.True(results.Length > 0);
+        }
+
+        [Fact]
         public async Task HybridQuery_FromVectorQuery_ReturnsResults()
         {
             using var fixture = await TestFixture.CreateHybridFixture("hybrid_from_vec");

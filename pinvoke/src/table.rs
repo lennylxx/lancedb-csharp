@@ -366,9 +366,13 @@ pub extern "C" fn table_replace_field_metadata(
                     }
                 };
                 let field_id = field.id as u32;
-                match native
+                // TODO: migrate FFI surface from replace_field_metadata to the
+                // newer update_field_metadata API in a dedicated change.
+                #[allow(deprecated)]
+                let res = native
                     .replace_field_metadata(vec![(field_id, metadata)])
-                    .await
+                    .await;
+                match res
                 {
                     Ok(()) => {
                         completion(1 as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
@@ -520,7 +524,8 @@ pub extern "C" fn table_uri(
 
 /// Creates an index on the table.
 /// columns_json: JSON array of column names, e.g. '["vector"]'.
-/// index_type: integer matching IndexType enum (0=IvfFlat, 1=IvfSq, ..., 9=FTS).
+/// index_type: integer matching the IndexType enum mapping in `ffi_to_index_type`
+/// (0=IvfFlat, 1=IvfSq, ..., 9=LabelList, 10=FTS, 11=Fm).
 /// config_json: JSON object with index-specific parameters (can be null for defaults).
 /// replace: whether to replace an existing index on the same columns.
 /// name: optional custom index name (null for auto-generated).
@@ -608,6 +613,7 @@ fn build_index(index_type: i32, config: &sonic_rs::Value) -> Result<LanceIndex, 
         IndexType::BTree => Ok(LanceIndex::BTree(BTreeIndexBuilder::default())),
         IndexType::Bitmap => Ok(LanceIndex::Bitmap(BitmapIndexBuilder::default())),
         IndexType::LabelList => Ok(LanceIndex::LabelList(LabelListIndexBuilder::default())),
+        IndexType::Fm => Ok(LanceIndex::Fm(FmIndexBuilder::default())),
         IndexType::FTS => {
             let mut builder = FtsIndexBuilder::default();
             if let Some(v) = config.get("with_position").and_then(|v| v.as_bool()) {
@@ -834,6 +840,15 @@ pub extern "C" fn table_list_indices(
                             "name": idx.name,
                             "index_type": ffi::index_type_to_ffi(&idx.index_type),
                             "columns": idx.columns,
+                            "index_uuid": idx.index_uuid,
+                            "type_url": idx.type_url,
+                            "created_at": idx.created_at.map(|dt| dt.to_rfc3339()),
+                            "num_indexed_rows": idx.num_indexed_rows,
+                            "num_unindexed_rows": idx.num_unindexed_rows,
+                            "size_bytes": idx.size_bytes,
+                            "num_segments": idx.num_segments,
+                            "index_version": idx.index_version,
+                            "index_details": idx.index_details,
                         })
                     })
                     .collect();

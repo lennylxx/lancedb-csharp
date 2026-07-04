@@ -68,6 +68,20 @@ namespace lancedb
     }
 
     /// <summary>
+    /// An FM-index scalar index on string or binary columns.
+    /// </summary>
+    /// <remarks>
+    /// Accelerates substring search, i.e. <c>contains(col, 'needle')</c>. Unlike the
+    /// tokenized <see cref="FtsIndex"/>, it matches arbitrary substrings of the raw
+    /// bytes. For example, it works with <c>url</c>, <c>path</c>, <c>content</c>, etc.
+    /// </remarks>
+    public class FmIndex : Index
+    {
+        internal override IndexType IndexType => IndexType.Fm;
+        internal override byte[] ToConfigJsonUtf8() => EmptyConfig;
+    }
+
+    /// <summary>
     /// A full-text search index on string columns.
     /// </summary>
     /// <remarks>

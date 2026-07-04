@@ -120,6 +120,7 @@ pub fn ffi_to_index_type(i: i32) -> Result<lancedb::index::IndexType, String> {
         8 => Ok(IndexType::Bitmap),
         9 => Ok(IndexType::LabelList),
         10 => Ok(IndexType::FTS),
+        11 => Ok(IndexType::Fm),
         _ => Err(format!("Unknown index type: {}", i)),
     }
 }
@@ -139,6 +140,7 @@ pub fn index_type_to_ffi(t: &lancedb::index::IndexType) -> i32 {
         IndexType::Bitmap => 8,
         IndexType::LabelList => 9,
         IndexType::FTS => 10,
+        IndexType::Fm => 11,
     }
 }
 
@@ -152,6 +154,17 @@ pub fn distance_type_to_ffi(d: Option<lancedb::DistanceType>) -> i32 {
         Some(lancedb::DistanceType::Hamming) => 3,
         None => -1,
         _ => -1,
+    }
+}
+
+/// Converts an FFI integer to a LanceDB ApproxMode.
+/// Fast=0, Normal=1, Accurate=2.
+pub fn ffi_to_approx_mode(i: i32) -> Result<lancedb::ApproxMode, String> {
+    match i {
+        0 => Ok(lancedb::ApproxMode::Fast),
+        1 => Ok(lancedb::ApproxMode::Normal),
+        2 => Ok(lancedb::ApproxMode::Accurate),
+        _ => Err(format!("Unknown approx mode: {}", i)),
     }
 }
 

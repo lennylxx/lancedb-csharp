@@ -686,6 +686,27 @@ namespace lancedb.tests
         }
 
         /// <summary>
+        /// ApproxMode should chain successfully and execute for each speed/accuracy
+        /// tradeoff. It only affects RQ-quantized indexes but is a no-op otherwise.
+        /// </summary>
+        [Theory]
+        [InlineData(ApproxMode.Fast)]
+        [InlineData(ApproxMode.Normal)]
+        [InlineData(ApproxMode.Accurate)]
+        public async Task VectorQuery_ApproxMode_ChainsAndExecutes(ApproxMode mode)
+        {
+            using var fixture = await TestFixture.CreateVectorTextFixture("vq_approx_mode");
+
+            using var query = fixture.Table.Query()
+                .NearestTo(new double[] { 1.0, 0.0, 0.0 })
+                .ApproxMode(mode);
+            var batch = await query.ToArrow();
+
+            Assert.NotNull(batch);
+            Assert.True(batch.Length > 0);
+        }
+
+        /// <summary>
         /// Plain Nprobes(int) should chain successfully and execute. Mirrors the
         /// MinimumNprobes/MaximumNprobes coverage for the single-value setter.
         /// </summary>
