@@ -249,6 +249,11 @@ namespace lancedb.tests
                 .Execute(secondBatch);
 
             Assert.Equal((ulong)1, secondResult.NumRows);
+
+            // Drain the writer reopened by the second merge so its MemWAL I/O is
+            // flushed and the writer is closed before the fixture removes the
+            // temporary directory.
+            await fixture.Table.CloseLsmWriters();
         }
     }
 }

@@ -50,9 +50,33 @@ namespace lancedb.tests
         {
             Table.Dispose();
             Connection.Dispose();
-            if (Directory.Exists(_tmpDir))
+            DeleteDirectoryWithRetry(_tmpDir);
+        }
+
+        // The native runtime may still be flushing background filesystem work
+        // when the managed handles are freed, so a recursive delete can
+        // transiently race with those writes and fail with "directory not
+        // empty" or an access error. Retry a few times before giving up.
+        private static void DeleteDirectoryWithRetry(string dir)
+        {
+            if (!Directory.Exists(dir))
             {
-                Directory.Delete(_tmpDir, true);
+                return;
+            }
+
+            const int maxAttempts = 5;
+            for (int attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    Directory.Delete(dir, true);
+                    return;
+                }
+                catch (Exception ex) when (
+                    (ex is IOException || ex is UnauthorizedAccessException) && attempt < maxAttempts)
+                {
+                    Thread.Sleep(100);
+                }
             }
         }
 
