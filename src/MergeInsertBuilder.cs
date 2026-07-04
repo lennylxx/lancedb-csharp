@@ -38,6 +38,7 @@ namespace lancedb
         private string? _whenNotMatchedBySourceDeleteFilter;
         private bool _useIndex = true;
         private TimeSpan? _timeout;
+        private bool? _useLsmWrite;
 
         internal MergeInsertBuilder(Table table, IReadOnlyList<string> onColumns)
         {
@@ -130,6 +131,40 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Controls whether this merge operation routes through Lance's MemWAL
+        /// LSM-style write path.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// When <c>true</c>, the operation requires an <see cref="LsmWriteSpec"/>
+        /// to be installed on the table via
+        /// <see cref="Table.SetLsmWriteSpec(LsmWriteSpec)"/>. The merge is routed
+        /// to the shard derived from the configured sharding strategy. The table
+        /// caches a writer per shard across calls; switching shards requires
+        /// flushing those writers with <see cref="Table.CloseLsmWriters"/>.
+        /// </para>
+        /// <para>
+        /// When <c>false</c>, the LSM write path is explicitly opted out and the
+        /// standard <c>merge_insert</c> path runs even if an
+        /// <see cref="LsmWriteSpec"/> is installed.
+        /// </para>
+        /// <para>
+        /// When this method is not called, the builder defers to the table's
+        /// default routing (LSM if a spec is installed, standard otherwise).
+        /// </para>
+        /// </remarks>
+        /// <param name="useLsmWrite">
+        /// <c>true</c> to require LSM routing; <c>false</c> to require the
+        /// standard path.
+        /// </param>
+        /// <returns>This builder for chaining.</returns>
+        public MergeInsertBuilder UseLsmWrite(bool useLsmWrite)
+        {
+            _useLsmWrite = useLsmWrite;
+            return this;
+        }
+
+        /// <summary>
         /// Execute the merge insert operation with the provided data.
         /// </summary>
         /// <param name="data">
@@ -146,7 +181,7 @@ namespace lancedb
                 _whenMatchedUpdateAll, _whenMatchedUpdateAllFilter,
                 _whenNotMatchedInsertAll,
                 _whenNotMatchedBySourceDelete, _whenNotMatchedBySourceDeleteFilter,
-                data, _useIndex, _timeout).ConfigureAwait(false);
+                data, _useIndex, _timeout, _useLsmWrite).ConfigureAwait(false);
         }
 
         /// <summary>

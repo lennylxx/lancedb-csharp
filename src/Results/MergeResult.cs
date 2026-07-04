@@ -45,5 +45,23 @@ namespace lancedb
         /// </summary>
         [JsonPropertyName("num_attempts")]
         public uint NumAttempts;
+
+        /// <summary>
+        /// Total number of rows written.
+        /// </summary>
+        /// <remarks>
+        /// On the standard <c>merge_insert</c> path this equals
+        /// <see cref="NumInsertedRows"/> + <see cref="NumUpdatedRows"/>. On the
+        /// MemWAL LSM write path (enabled via
+        /// <see cref="MergeInsertBuilder.UseLsmWrite(bool)"/> with a configured
+        /// <see cref="LsmWriteSpec"/>) the insert/update breakdown is not known
+        /// until compaction; in that mode <see cref="NumInsertedRows"/>,
+        /// <see cref="NumUpdatedRows"/>, <see cref="NumDeletedRows"/>,
+        /// <see cref="Version"/>, and <see cref="NumAttempts"/> are all <c>0</c>
+        /// and this field holds the total number of rows written through the
+        /// shard writer.
+        /// </remarks>
+        [JsonPropertyName("num_rows")]
+        public ulong NumRows;
     }
 }

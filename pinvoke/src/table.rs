@@ -23,6 +23,7 @@ pub struct FfiMergeResult {
     pub num_updated_rows: u64,
     pub num_deleted_rows: u64,
     pub num_attempts: u32,
+    pub num_rows: u64,
 }
 
 /// C-compatible struct for delete results, passed across FFI.
@@ -1407,6 +1408,25 @@ pub extern "C" fn table_unset_lsm_write_spec(
     });
 }
 
+/// Drain and close every cached MemWAL shard writer for the table. A no-op
+/// when no writers are cached. Required before the table is allowed to route
+/// `merge_insert` to a different shard.
+#[unsafe(no_mangle)]
+pub extern "C" fn table_close_lsm_writers(
+    table_ptr: *const Table,
+    completion: FfiCallback,
+    user_data: *mut std::ffi::c_void,
+) {
+    let user_data = UserData(user_data);
+    let table = ffi_clone_arc!(table_ptr, Table);
+    crate::spawn(async move {
+        match table.close_lsm_writers().await {
+            Ok(()) => completion(std::ptr::null(), std::ptr::null(), user_data.as_ptr()),
+            Err(e) => callback_error(completion, user_data, e),
+        }
+    });
+}
+
 /// C-compatible struct for fragment row count summary statistics.
 #[repr(C)]
 pub struct FfiFragmentSummaryStats {
@@ -1491,6 +1511,9 @@ pub extern "C" fn table_stats_free(ptr: *mut FfiTableStats) {
 /// when_not_matched_by_source_delete: if true, delete target rows not in source.
 /// when_not_matched_by_source_delete_filter: optional SQL filter for source delete (null for none).
 /// arrays/schema/batch_count: Arrow C Data Interface arrays containing the new data.
+/// use_lsm_write: sentinel `-1` leaves the routing default unset; `0` opts out
+/// of the LSM write path; `1` requires the LSM path (and errors if no
+/// LsmWriteSpec is installed on the table).
 #[unsafe(no_mangle)]
 pub extern "C" fn table_merge_insert(
     table_ptr: *const Table,
@@ -1505,6 +1528,7 @@ pub extern "C" fn table_merge_insert(
     batch_count: usize,
     use_index: bool,
     timeout_ms: i64,
+    use_lsm_write: i32,
     completion: FfiCallback,
     user_data: *mut std::ffi::c_void,
 ) {
@@ -1564,6 +1588,13 @@ pub extern "C" fn table_merge_insert(
         if timeout_ms >= 0 {
             builder.timeout(std::time::Duration::from_millis(timeout_ms as u64));
         }
+        // Only forward use_lsm_write when the caller explicitly sets it
+        // (sentinel `-1` means "leave the builder's default in place").
+        if use_lsm_write == 0 {
+            builder.use_lsm_write(false);
+        } else if use_lsm_write == 1 {
+            builder.use_lsm_write(true);
+        }
 
         let reader = arrow_array::RecordBatchIterator::new(
             batches.into_iter().map(Ok),
@@ -1578,6 +1609,7 @@ pub extern "C" fn table_merge_insert(
                     num_updated_rows: result.num_updated_rows,
                     num_deleted_rows: result.num_deleted_rows,
                     num_attempts: result.num_attempts,
+                    num_rows: result.num_rows,
                 });
                 completion(Box::into_raw(ffi) as *const std::ffi::c_void, std::ptr::null(), user_data.as_ptr());
             }

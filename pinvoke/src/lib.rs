@@ -24,7 +24,8 @@ pub use query::{
 };
 pub use table::{
     table_add, table_add_columns, table_add_columns_null, table_alter_columns,
-    table_checkout, table_checkout_latest, table_checkout_tag, table_close, table_count_rows,
+    table_checkout, table_checkout_latest, table_checkout_tag, table_close,
+    table_close_lsm_writers, table_count_rows,
     table_create_index, table_delete, table_delete_result_free, table_drop_columns,
     table_drop_index, table_get_name, table_index_stats, table_index_stats_free,
     table_initial_storage_options, table_is_open, table_latest_storage_options,

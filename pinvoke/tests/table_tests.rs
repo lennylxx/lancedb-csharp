@@ -330,6 +330,7 @@ fn test_table_merge_insert_upsert_updates_and_inserts() {
         1,             // batch_count
         true,          // use_index
         -1,            // timeout_ms (no timeout)
+        -1,            // use_lsm_write (sentinel: leave default)
         common::ffi_callback,
         ctx.user_data(),
     );
@@ -368,6 +369,7 @@ fn test_table_merge_insert_insert_only_appends_new_rows() {
         1,             // batch_count
         true,          // use_index
         -1,            // timeout_ms
+        -1,            // use_lsm_write (sentinel: leave default)
         common::ffi_callback,
         ctx.user_data(),
     );
@@ -405,6 +407,7 @@ fn test_table_merge_insert_delete_not_in_source_removes_rows() {
         1,             // batch_count
         true,          // use_index
         -1,            // timeout_ms
+        -1,            // use_lsm_write (sentinel: leave default)
         common::ffi_callback,
         ctx.user_data(),
     );
@@ -690,6 +693,7 @@ fn test_table_merge_insert_returns_merge_result() {
         1,
         true,
         -1,
+        -1,            // use_lsm_write (sentinel: leave default)
         common::ffi_callback,
         ctx.user_data(),
     );
@@ -940,6 +944,226 @@ fn test_table_set_lsm_write_spec_invalid_kind_errors() {
     assert!(result.is_null());
     assert!(!error.is_null());
     free_string(error as *mut libc::c_char);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_close_lsm_writers FFI =====
+
+#[test]
+fn test_table_close_lsm_writers_no_writers_cached_succeeds() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+    let table_ptr = common::create_table_sync(conn_ptr, "lsm_close_noop_ffi");
+    common::add_sync(table_ptr, vec![create_test_batch(10)]);
+
+    // No LSM spec installed, no writers cached: must succeed as a no-op.
+    table_close_lsm_writers(table_ptr, common::ffi_callback, ctx.user_data());
+    ctx.wait_success();
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+// ===== table_merge_insert: use_lsm_write sentinel =====
+
+#[test]
+fn test_table_merge_insert_use_lsm_write_false_falls_back_to_standard_path() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let initial = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(
+        conn_ptr, "merge_lsm_opt_out_ffi", vec![initial]);
+
+    let (mut ffi_array, mut ffi_schema) =
+        batch_to_cdata(&create_id_value_batch(&[3, 4, 5], &["C", "D", "E"]));
+    let on_columns = std::ffi::CString::new(r#"["id"]"#).unwrap();
+
+    // No LsmWriteSpec installed on the table, and use_lsm_write=0 (false)
+    // explicitly opts out. The standard merge_insert path must run.
+    table_merge_insert(
+        table_ptr,
+        on_columns.as_ptr(),
+        true,          // when_matched_update_all
+        ptr::null(),
+        true,          // when_not_matched_insert_all
+        false,
+        ptr::null(),
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,
+        true,          // use_index
+        -1,            // timeout_ms
+        0,             // use_lsm_write = false (opt out)
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    let result = ctx.wait_success();
+    assert!(!result.is_null());
+
+    let ffi_result = result as *mut FfiMergeResult;
+    let merge_result = unsafe { &*ffi_result };
+    // Standard path populates the insert/update breakdown.
+    assert_eq!(merge_result.num_inserted_rows, 2);
+    assert_eq!(merge_result.num_updated_rows, 1);
+    assert_eq!(merge_result.num_deleted_rows, 0);
+    table_merge_result_free(ffi_result);
+
+    assert_eq!(common::count_rows_sync(table_ptr, None), 5);
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_merge_insert_use_lsm_write_true_without_spec_errors() {
+    let ctx = common::FfiTestContext::new();
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let initial = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(
+        conn_ptr, "merge_lsm_no_spec_ffi", vec![initial]);
+
+    let (mut ffi_array, mut ffi_schema) =
+        batch_to_cdata(&create_id_value_batch(&[4], &["D"]));
+    let on_columns = std::ffi::CString::new(r#"["id"]"#).unwrap();
+
+    // use_lsm_write=1 (true) requires an LsmWriteSpec on the table; without
+    // one, the operation must fail.
+    table_merge_insert(
+        table_ptr,
+        on_columns.as_ptr(),
+        true,
+        ptr::null(),
+        true,
+        false,
+        ptr::null(),
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,
+        true,
+        -1,
+        1,             // use_lsm_write = true (require LSM, no spec installed)
+        common::ffi_callback,
+        ctx.user_data(),
+    );
+    let (result, error) = ctx.wait_raw();
+    assert!(result.is_null());
+    assert!(!error.is_null());
+    free_string(error as *mut libc::c_char);
+
+    table_close(table_ptr);
+    connection_close(conn_ptr);
+}
+
+#[test]
+fn test_table_merge_insert_lsm_path_then_close_lsm_writers() {
+    let tmp = TempDir::new().unwrap();
+    let conn_ptr = common::connect_sync(tmp.path().to_str().unwrap());
+
+    let initial = create_id_value_batch(&[1, 2, 3], &["a", "b", "c"]);
+    let table_ptr = common::create_table_with_data_sync(
+        conn_ptr, "merge_lsm_close_ffi", vec![initial]);
+
+    // 1. Mark `id` as the unenforced primary key.
+    let pk_columns = std::ffi::CString::new(r#"["id"]"#).unwrap();
+    let pk_ctx = common::FfiTestContext::new();
+    table_set_unenforced_primary_key(
+        table_ptr,
+        pk_columns.as_ptr(),
+        common::ffi_callback,
+        pk_ctx.user_data(),
+    );
+    pk_ctx.wait_success();
+
+    // 2. Install a bucket spec on `id` with one bucket (every row routes there).
+    let bucket_col = std::ffi::CString::new("id").unwrap();
+    let indexes_json = std::ffi::CString::new("[]").unwrap();
+    let defaults_json = std::ffi::CString::new("{}").unwrap();
+    let spec_ctx = common::FfiTestContext::new();
+    table_set_lsm_write_spec(
+        table_ptr,
+        0, // bucket
+        bucket_col.as_ptr(),
+        1,
+        indexes_json.as_ptr(),
+        defaults_json.as_ptr(),
+        common::ffi_callback,
+        spec_ctx.user_data(),
+    );
+    spec_ctx.wait_success();
+
+    // 3. merge_insert through the LSM path. Empty `on` defaults to the PK.
+    let (mut ffi_array, mut ffi_schema) =
+        batch_to_cdata(&create_id_value_batch(&[3, 4, 5], &["C", "D", "E"]));
+    let on_columns = std::ffi::CString::new(r#"[]"#).unwrap();
+    let merge_ctx = common::FfiTestContext::new();
+    table_merge_insert(
+        table_ptr,
+        on_columns.as_ptr(),
+        true,
+        ptr::null(),
+        true,
+        false,
+        ptr::null(),
+        &mut ffi_array,
+        &mut ffi_schema,
+        1,
+        true,
+        -1,
+        1, // use_lsm_write = true
+        common::ffi_callback,
+        merge_ctx.user_data(),
+    );
+    let result = merge_ctx.wait_success();
+    assert!(!result.is_null());
+    let ffi_result = result as *mut FfiMergeResult;
+    let merge_result = unsafe { &*ffi_result };
+    // LSM path: num_rows reports total written; insert/update breakdown stays 0
+    // until compaction.
+    assert_eq!(merge_result.num_rows, 3);
+    assert_eq!(merge_result.num_inserted_rows, 0);
+    assert_eq!(merge_result.num_updated_rows, 0);
+    assert_eq!(merge_result.version, 0);
+    table_merge_result_free(ffi_result);
+
+    // 4. Close the cached shard writer. Required before a different shard
+    // can be written; safe to call here even with a single bucket.
+    let close_ctx = common::FfiTestContext::new();
+    table_close_lsm_writers(table_ptr, common::ffi_callback, close_ctx.user_data());
+    close_ctx.wait_success();
+
+    // 5. A subsequent merge_insert reopens the writer lazily and succeeds.
+    let (mut ffi_array2, mut ffi_schema2) =
+        batch_to_cdata(&create_id_value_batch(&[6], &["F"]));
+    let merge_ctx2 = common::FfiTestContext::new();
+    table_merge_insert(
+        table_ptr,
+        on_columns.as_ptr(),
+        true,
+        ptr::null(),
+        true,
+        false,
+        ptr::null(),
+        &mut ffi_array2,
+        &mut ffi_schema2,
+        1,
+        true,
+        -1,
+        1, // use_lsm_write = true
+        common::ffi_callback,
+        merge_ctx2.user_data(),
+    );
+    let result2 = merge_ctx2.wait_success();
+    assert!(!result2.is_null());
+    let ffi_result2 = result2 as *mut FfiMergeResult;
+    let merge_result2 = unsafe { &*ffi_result2 };
+    assert_eq!(merge_result2.num_rows, 1);
+    table_merge_result_free(ffi_result2);
 
     table_close(table_ptr);
     connection_close(conn_ptr);

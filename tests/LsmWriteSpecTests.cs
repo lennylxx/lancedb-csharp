@@ -132,5 +132,123 @@ namespace lancedb.tests
 
             await Assert.ThrowsAsync<LanceDbException>(() => fixture.Table.UnsetLsmWriteSpec());
         }
+
+        // ===== CloseLsmWriters =====
+
+        /// <summary>
+        /// <see cref="Table.CloseLsmWriters"/> must succeed as a no-op when no
+        /// MemWAL shard writers are cached for the table (i.e., either no
+        /// <see cref="LsmWriteSpec"/> is installed or no LSM-routed
+        /// <c>merge_insert</c> has run yet).
+        /// </summary>
+        [Fact]
+        public async Task CloseLsmWriters_NoCachedWriters_IsNoOp()
+        {
+            using var fixture = await TestFixture.CreateWithTable("lsm_close_noop", CreateTwoColumnBatch(5));
+
+            // No spec, no merge_insert: nothing cached. Must not throw.
+            await fixture.Table.CloseLsmWriters();
+        }
+
+        // ===== MergeInsertBuilder.UseLsmWrite =====
+
+        /// <summary>
+        /// <see cref="MergeInsertBuilder.UseLsmWrite(bool)"/> with <c>false</c>
+        /// explicitly opts out of the MemWAL LSM write path. The standard
+        /// <c>merge_insert</c> path runs even without an
+        /// <see cref="LsmWriteSpec"/> installed, and the result reports the
+        /// per-row insert/update breakdown.
+        /// </summary>
+        [Fact]
+        public async Task MergeInsert_UseLsmWriteFalse_FallsBackToStandardPath()
+        {
+            using var fixture = await TestFixture.CreateWithTable(
+                "lsm_optout", CreateTwoColumnBatch(3));
+
+            // New data: row 0..2 match (will update), 3..4 are new (will insert).
+            var newData = CreateTwoColumnBatch(5);
+            var result = await fixture.Table
+                .MergeInsert(new[] { "id" })
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedInsertAll()
+                .UseLsmWrite(false)
+                .Execute(newData);
+
+            Assert.Equal((ulong)2, result.NumInsertedRows);
+            Assert.Equal((ulong)3, result.NumUpdatedRows);
+            Assert.Equal((ulong)0, result.NumDeletedRows);
+            Assert.Equal(5L, await fixture.Table.CountRows());
+        }
+
+        /// <summary>
+        /// <see cref="MergeInsertBuilder.UseLsmWrite(bool)"/> with <c>true</c>
+        /// requires an <see cref="LsmWriteSpec"/> to be installed. Calling it
+        /// on a table without a spec must fail.
+        /// </summary>
+        [Fact]
+        public async Task MergeInsert_UseLsmWriteTrue_WithoutSpec_Throws()
+        {
+            using var fixture = await TestFixture.CreateWithTable(
+                "lsm_no_spec", CreateTwoColumnBatch(3));
+
+            var newData = CreateTwoColumnBatch(1);
+            await Assert.ThrowsAsync<LanceDbException>(() => fixture.Table
+                .MergeInsert(new[] { "id" })
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedInsertAll()
+                .UseLsmWrite(true)
+                .Execute(newData));
+        }
+
+        /// <summary>
+        /// End-to-end LSM write loop: install an <see cref="LsmWriteSpec"/>,
+        /// merge_insert through the MemWAL path with
+        /// <see cref="MergeInsertBuilder.UseLsmWrite(bool)"/>(<c>true</c>),
+        /// drain the cached writer with <see cref="Table.CloseLsmWriters"/>,
+        /// then merge_insert again. The LSM path reports
+        /// <see cref="MergeResult.NumRows"/> and leaves the per-row
+        /// breakdown fields at zero.
+        /// </summary>
+        [Fact]
+        public async Task MergeInsert_UseLsmWriteTrue_WithSpec_RoundTripsThroughCloseLsmWriters()
+        {
+            using var fixture = await TestFixture.CreateWithTable(
+                "lsm_e2e", CreateTwoColumnBatch(3));
+
+            await fixture.Table.SetUnenforcedPrimaryKey("id");
+            // num_buckets=1: every row routes to the same shard.
+            await fixture.Table.SetLsmWriteSpec(LsmWriteSpec.Bucket("id", 1));
+
+            // First LSM merge — empty `on` defaults to the primary key.
+            var firstBatch = CreateTwoColumnBatch(5);
+            var firstResult = await fixture.Table
+                .MergeInsert(System.Array.Empty<string>())
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedInsertAll()
+                .UseLsmWrite(true)
+                .Execute(firstBatch);
+
+            // LSM path: num_rows reports total written; the insert/update
+            // breakdown is unknown until compaction.
+            Assert.Equal((ulong)5, firstResult.NumRows);
+            Assert.Equal((ulong)0, firstResult.NumInsertedRows);
+            Assert.Equal((ulong)0, firstResult.NumUpdatedRows);
+            Assert.Equal((ulong)0, firstResult.NumDeletedRows);
+            Assert.Equal((ulong)0, firstResult.Version);
+
+            // Drain and close the cached shard writer.
+            await fixture.Table.CloseLsmWriters();
+
+            // A subsequent merge_insert reopens the writer lazily.
+            var secondBatch = CreateTwoColumnBatch(1);
+            var secondResult = await fixture.Table
+                .MergeInsert(System.Array.Empty<string>())
+                .WhenMatchedUpdateAll()
+                .WhenNotMatchedInsertAll()
+                .UseLsmWrite(true)
+                .Execute(secondBatch);
+
+            Assert.Equal((ulong)1, secondResult.NumRows);
+        }
     }
 }

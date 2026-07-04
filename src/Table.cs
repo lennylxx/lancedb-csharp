@@ -146,6 +146,10 @@ namespace lancedb
             IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
+        private static extern void table_close_lsm_writers(
+            IntPtr table_ptr, NativeCall.FfiCallback completion, IntPtr userData);
+
+        [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
         private static extern void table_index_stats(
             IntPtr table_ptr, IntPtr index_name, NativeCall.FfiCallback completion, IntPtr userData);
 
@@ -209,6 +213,7 @@ namespace lancedb
             [MarshalAs(UnmanagedType.U1)] bool when_not_matched_by_source_delete, IntPtr when_not_matched_by_source_delete_filter,
             CArrowArray* arrays, CArrowSchema* schema, nuint batch_count,
             [MarshalAs(UnmanagedType.U1)] bool use_index, long timeout_ms,
+            int use_lsm_write,
             NativeCall.FfiCallback completion, IntPtr userData);
 
         [DllImport(NativeLibrary.Name, CallingConvention = CallingConvention.Cdecl)]
@@ -1409,6 +1414,31 @@ namespace lancedb
         }
 
         /// <summary>
+        /// Drain and close every cached MemWAL shard writer for this table.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// When an <see cref="LsmWriteSpec"/> is installed and
+        /// <see cref="MergeInsertBuilder.UseLsmWrite(bool)"/> is enabled, each
+        /// <c>merge_insert</c> call writes through a per-shard writer that the
+        /// table caches across calls for amortized I/O. A different shard cannot
+        /// be written until the currently cached writer is flushed and closed.
+        /// </para>
+        /// <para>
+        /// This method drains and closes every cached shard writer. It is a no-op
+        /// when no writers are cached.
+        /// </para>
+        /// </remarks>
+        public async Task CloseLsmWriters()
+        {
+            await NativeCall.Async((completion, userData) =>
+            {
+                table_close_lsm_writers(
+                    _handle!.DangerousGetHandle(), completion, userData);
+            }).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Retrieve statistics about an index.
         /// </summary>
         /// <param name="indexName">The name of the index to retrieve statistics for.</param>
@@ -1677,7 +1707,8 @@ namespace lancedb
             bool whenNotMatchedInsertAll,
             bool whenNotMatchedBySourceDelete, string? whenNotMatchedBySourceDeleteFilter,
             IReadOnlyList<RecordBatch> data,
-            bool useIndex = true, TimeSpan? timeout = null)
+            bool useIndex = true, TimeSpan? timeout = null,
+            bool? useLsmWrite = null)
         {
             byte[] onColumnsBytes = JsonSerializer.SerializeToUtf8Bytes(onColumns);
             byte[]? matchedFilterBytes = whenMatchedUpdateAllFilter != null
@@ -1685,6 +1716,8 @@ namespace lancedb
             byte[]? sourceDeleteFilterBytes = whenNotMatchedBySourceDeleteFilter != null
                 ? NativeCall.ToUtf8(whenNotMatchedBySourceDeleteFilter) : null;
             long timeoutMs = timeout.HasValue ? (long)timeout.Value.TotalMilliseconds : -1;
+            // Sentinel: -1 = leave default, 0 = false, 1 = true.
+            int useLsmWriteFlag = useLsmWrite.HasValue ? (useLsmWrite.Value ? 1 : 0) : -1;
 
             IntPtr resultPtr = await NativeCall.Async((completion, userData) =>
             {
@@ -1718,6 +1751,7 @@ namespace lancedb
                                     whenNotMatchedBySourceDelete, (IntPtr)pSourceDeleteFilter,
                                     pArrays, pSchema, (nuint)data.Count,
                                     useIndex, timeoutMs,
+                                    useLsmWriteFlag,
                                     completion, userData);
                             }
                         }
