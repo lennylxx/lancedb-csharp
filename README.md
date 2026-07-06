@@ -7,10 +7,11 @@ A C# SDK for [LanceDB](https://lancedb.github.io/lancedb/) — the developer-fri
 - **Connection management** — connect to local or cloud databases with configurable options
 - **Table CRUD** — create, open, rename, clone, drop tables; add, update, delete, merge-insert rows
 - **Vector search** — nearest-neighbor queries with distance metrics, nprobes, refine factor, multi-vector search
-- **Full-text search** — FTS indexing with configurable tokenization, stemming, and stop words
+- **Full-text search** — FTS indexing with configurable tokenization, stemming, and stop words; structured queries (Match, Phrase, Boost, MultiMatch, Boolean)
 - **Hybrid search** — combine vector and full-text search with reranking (RRF, Linear Combination, MRR)
+- **Type-safe filters** — build `Where` predicates and `Select` projections with the `Expr` expression builder or raw SQL
 - **Streaming results** — `ToBatches()` returns `AsyncRecordBatchReader` for memory-efficient iteration
-- **Indexing** — BTree, Bitmap, LabelList, FTS, IVF-PQ, IVF-Flat, IVF-SQ, IVF-RQ, HNSW-PQ, HNSW-SQ
+- **Indexing** — BTree, Bitmap, LabelList, FTS, IVF-PQ, IVF-Flat, IVF-SQ, IVF-RQ, HNSW-Flat, HNSW-PQ, HNSW-SQ
 - **Schema management** — add, alter, drop columns; add null-filled columns from Arrow Schema
 - **Versioning** — checkout, restore, list versions; tag management
 - **Namespace management** — create, list, drop, describe namespaces for multi-tenant organization
@@ -34,7 +35,7 @@ dotnet add package LanceDB
 Or add it to your `.csproj`:
 
 ```xml
-<PackageReference Include="LanceDB" Version="2.4.1" />
+<PackageReference Include="LanceDB" Version="2.5.0" />
 ```
 
 The package includes pre-built native libraries for **Linux x64**, **Windows x64**, and **macOS arm64**. No Rust toolchain required.
